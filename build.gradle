@@ -1,0 +1,44 @@
+buildscript {
+    repositories {
+        maven { url = 'https://maven.minecraftforge.net' }
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'net.minecraftforge.gradle:ForgeGradle:2.3-SNAPSHOT'
+    }
+}
+
+apply plugin: 'net.minecraftforge.gradle.forge'
+apply plugin: 'java'
+
+version = '0.1.0'
+group = 'net.vas.rdp.uav'
+archivesBaseName = 'rdp-uav-addon'
+
+sourceCompatibility = 1.8
+targetCompatibility = 1.8
+
+minecraft {
+    version = '1.12.2-14.23.5.2768'
+    runDir = 'run'
+    mappings = 'stable_39'
+}
+
+repositories {
+}
+
+def mcheliJar = file(System.getenv('RDP_MCHELI_JAR') ?: 'libs/mcheli-ce-1.5.1.jar')
+def rdpCoreJar = file(System.getenv('RDP_CORE_JAR') ?: 'libs/rdpcore-1.0.0.jar')
+
+dependencies {
+    // Use explicit runtime paths in CI/local instance builds; fall back to libs for distribution.
+    compile files(mcheliJar, rdpCoreJar)
+    testCompile 'junit:junit:4.13.2'
+}
+
+processResources {
+    inputs.property 'version', project.version
+    filesMatching('mcmod.info') {
+        expand 'version': project.version
+    }
+}

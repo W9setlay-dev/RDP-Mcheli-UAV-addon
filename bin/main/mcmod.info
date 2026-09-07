@@ -1,0 +1,16 @@
+[
+  {
+    "modid": "rdpuav",
+    "name": "RDP UAV Missions",
+    "description": "Persistent player-configured UAV reconnaissance missions for McHeli CE and WingMan.",
+    "version": "${version}",
+    "mcversion": "1.12.2",
+    "url": "https://github.com/VadimTrenbolon/RDP---Reality-Distortion-Phenomen-Modpack",
+    "authorList": ["RDP"],
+    "credits": "McHeli Community Edition and WingMan",
+    "dependencies": [
+      "required-after:mcheli@[1.5.1,)",
+      "required-after:rdpcore"
+    ]
+  }
+]

@@ -1,0 +1,16 @@
+# RDP UAV mission defaults for the Forge 1.12.2 addon.
+# Copy this file to the instance config directory after installing the addon.
+
+mission_update_interval_ticks=10
+target_tracking_interval_ticks=10
+quick_scan_interval_ticks=20
+deep_scan_interval_ticks=40
+default_search_radius=256
+default_observation_distance=64
+max_search_radius=1024
+automatic_missions_enabled=false
+allow_player_abort=true
+
+# The addon recognizes these aircraft as kamikaze-capable only when the
+# installed McHeli aircraft definition also has a self-destructing weapon.
+kamikaze_aircraft=switchblade,shahed136

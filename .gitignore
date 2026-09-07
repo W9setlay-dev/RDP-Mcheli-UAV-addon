@@ -1,0 +1,4 @@
+/libs/*.jar
+/build/
+/.gradle/
+/run/
