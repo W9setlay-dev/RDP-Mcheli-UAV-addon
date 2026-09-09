@@ -1,5 +1,7 @@
 package net.vas.rdp.uav.mission;
 
+import com.norwood.mcheli.aircraft.MCH_EntityAircraft;
+import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.world.World;
 import net.vas.rdp.uav.persistence.RDPMissionWorldData;
 
@@ -12,6 +14,26 @@ public final class MissionManager {
 
     public void registerAircraft(AircraftRecord record) { aircraft.register(record); }
     public AircraftRecord findAircraft(UUID aircraftId) { return aircraft.find(aircraftId); }
+    public boolean canAssignAircraft(UUID aircraftId, UUID ownerId) {
+        return aircraft.canAssign(aircraftId, ownerId);
+    }
+
+    /**
+     * McHeli's UAV station is the ownership boundary. Re-registering the
+     * currently operated craft makes authorization survive server reloads
+     * without allowing a player who is not operating it to claim the craft.
+     */
+    public boolean ensureAuthorized(MCH_EntityAircraft aircraft, EntityPlayer player) {
+        if (aircraft == null || player == null) return false;
+        AircraftRecord existing = this.aircraft.find(aircraft.getUniqueID());
+        if (existing == null) {
+            registerAircraft(new AircraftRecord(aircraft.getUniqueID(), player.getUniqueID(),
+                    aircraft.dimension, aircraft.getAcInfo().name, true, true));
+            return true;
+        }
+        return existing.getOwnerId().equals(player.getUniqueID())
+                && existing.getDimension() == aircraft.dimension;
+    }
 
     public RDPMission create(World world, RDPMission mission) {
         if (!assignments.reserve(mission.getAircraftId(), mission.getMissionId())) {
@@ -19,11 +41,13 @@ public final class MissionManager {
         }
 
         try {
+            aircraft.assign(mission.getAircraftId(), mission.getMissionId(), mission.getOwnerId());
             RDPMissionWorldData.get(world).add(mission);
             queue.enqueue(mission);
             return mission;
         } catch (RuntimeException failure) {
             assignments.release(mission.getAircraftId(), mission.getMissionId());
+            aircraft.release(mission.getAircraftId());
             throw failure;
         }
     }
@@ -31,6 +55,7 @@ public final class MissionManager {
     public void release(RDPMission mission) {
         if (mission != null) {
             assignments.release(mission.getAircraftId(), mission.getMissionId());
+            aircraft.release(mission.getAircraftId());
         }
     }
 
@@ -40,6 +65,22 @@ public final class MissionManager {
 
     public RDPMission pollQueuedMission() {
         return queue.poll();
+    }
+
+    public void enqueueQueuedMission(RDPMission mission) {
+        if (mission != null && mission.isQueued() && !queue.contains(mission)) {
+            queue.enqueue(mission);
+        }
+    }
+
+    public int queuedMissionCount() {
+        return queue.size();
+    }
+
+    public void restoreQueued(World world) {
+        if (world != null) {
+            RDPMissionWorldData.get(world).restoreQueued(queue);
+        }
     }
 
     public RDPMission peekQueuedMission() { return queue.peek(); }

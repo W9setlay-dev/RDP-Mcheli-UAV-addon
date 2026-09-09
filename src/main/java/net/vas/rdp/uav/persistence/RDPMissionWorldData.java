@@ -42,7 +42,7 @@ public final class RDPMissionWorldData extends WorldSavedData {
 
     public void restoreQueued(net.vas.rdp.uav.mission.MissionQueue queue) {
         for (RDPMission mission : repository.snapshot()) {
-            if (mission.isQueued()) queue.enqueue(mission);
+            if (mission.isQueued() && !queue.contains(mission)) queue.enqueue(mission);
         }
     }
 

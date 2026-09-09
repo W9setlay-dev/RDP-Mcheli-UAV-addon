@@ -10,6 +10,8 @@ import net.minecraftforge.fml.common.network.simpleimpl.MessageContext;
 import net.minecraftforge.fml.common.network.simpleimpl.SimpleNetworkWrapper;
 import net.minecraftforge.fml.relauncher.Side;
 import net.vas.rdp.uav.RDPUavMod;
+import com.norwood.mcheli.aircraft.MCH_EntityAircraft;
+import com.norwood.mcheli.wingman.wingman.WingmanRegistry;
 
 public final class RdpUavNetwork {
     private static final SimpleNetworkWrapper CHANNEL = NetworkRegistry.INSTANCE.newSimpleChannel(
@@ -25,6 +27,11 @@ public final class RdpUavNetwork {
         CHANNEL.registerMessage(ClientMissionControlHandler.class, OpenMissionControl.class, 1, Side.CLIENT);
         CHANNEL.registerMessage(ClientMissionDataHandler.class, MissionData.class, 2, Side.CLIENT);
         CHANNEL.registerMessage(ServerAbortMissionHandler.class, AbortMission.class, 3, Side.SERVER);
+        CHANNEL.registerMessage(ServerAuthorizeAttackHandler.class, AuthorizeAttack.class, 4, Side.SERVER);
+        CHANNEL.registerMessage(ServerCreateMissionHandler.class, CreateMission.class, 5, Side.SERVER);
+        CHANNEL.registerMessage(ServerKamikazeHandler.class, KamikazeAttack.class, 6, Side.SERVER);
+        CHANNEL.registerMessage(ClientMissionDataHandler.ClientTargetTelemetryHandler.class,
+                TargetTelemetry.class, 7, Side.CLIENT);
     }
 
     public static void openMissionControl(EntityPlayerMP player) {
@@ -39,8 +46,29 @@ public final class RdpUavNetwork {
         CHANNEL.sendToServer(new AbortMission(missionId));
     }
 
+    public static void authorizeAttack(String missionId) {
+        CHANNEL.sendToServer(new AuthorizeAttack(missionId));
+    }
+
+    public static void armKamikaze(String missionId) {
+        CHANNEL.sendToServer(new KamikazeAttack(missionId));
+    }
+
+    public static void createMission(String target, boolean attack) {
+        if (target == null || !target.matches("[A-Za-z0-9_.-]+:[A-Za-z0-9_./-]+")) return;
+        CHANNEL.sendToServer(new CreateMission(target, attack, false));
+    }
+
+    public static void createPointMission() {
+        CHANNEL.sendToServer(new CreateMission("", false, true));
+    }
+
     static void sendMissionData(EntityPlayerMP player) {
         CHANNEL.sendTo(MissionData.from(player), player);
+    }
+
+    public static void syncTargetTelemetry(EntityPlayerMP player) {
+        CHANNEL.sendTo(TargetTelemetry.from(player), player);
     }
 
     public static final class OpenMissionControl implements IMessage {
@@ -59,6 +87,46 @@ public final class RdpUavNetwork {
         public AbortMission(String missionId) { this.missionId = missionId == null ? "" : missionId; }
         public void fromBytes(ByteBuf buffer) { missionId = readString(buffer); }
         public void toBytes(ByteBuf buffer) { writeString(buffer, missionId); }
+    }
+
+    public static final class AuthorizeAttack implements IMessage {
+        private String missionId = "";
+        public AuthorizeAttack() { }
+        public AuthorizeAttack(String missionId) { this.missionId = missionId == null ? "" : missionId; }
+        public void fromBytes(ByteBuf buffer) { missionId = readString(buffer); }
+        public void toBytes(ByteBuf buffer) { writeString(buffer, missionId); }
+    }
+
+    public static final class KamikazeAttack implements IMessage {
+        private String missionId = "";
+        public KamikazeAttack() { }
+        public KamikazeAttack(String missionId) { this.missionId = missionId == null ? "" : missionId; }
+        public void fromBytes(ByteBuf buffer) { missionId = readString(buffer); }
+        public void toBytes(ByteBuf buffer) { writeString(buffer, missionId); }
+    }
+
+    public static final class CreateMission implements IMessage {
+        private String target = "";
+        private boolean attack;
+        private boolean point;
+
+        public CreateMission() { }
+        public CreateMission(String target, boolean attack, boolean point) {
+            this.target = target == null ? "" : target;
+            this.attack = attack;
+            this.point = point;
+        }
+        public void fromBytes(ByteBuf buffer) {
+            target = readString(buffer);
+            attack = buffer.readBoolean();
+            point = buffer.readBoolean();
+        }
+        public void toBytes(ByteBuf buffer) {
+            writeString(buffer, target);
+            buffer.writeBoolean(attack);
+            buffer.writeBoolean(point);
+        }
+
     }
 
     public static final class MissionData implements IMessage {
@@ -101,6 +169,136 @@ public final class RdpUavNetwork {
         }
     }
 
+    public static final class TargetTelemetry implements IMessage {
+                private boolean active;
+                private boolean hasPosition;
+                private String missionId = "";
+                private String aircraftType = "";
+                private String missionState = "NO TARGET";
+                private String targetState = "NO TARGET";
+                private String registryId = "";
+                private String entityName = "";
+                private String targetUuid = "";
+                private String priority = "NORMAL";
+                private String scanState = "READY";
+                private String deepScanState = "OFF";
+                private int dimension;
+                private boolean outOfRange;
+                private double x;
+                private double y;
+                private double z;
+                private double distance;
+
+                public TargetTelemetry() { }
+
+                private TargetTelemetry(boolean active, boolean hasPosition, String missionId, String aircraftType,
+                                        String missionState, String targetState, String registryId, String targetUuid,
+                                        String priority, String scanState, String deepScanState, int dimension,
+                                        double x, double y, double z, double distance) {
+                    this.active = active; this.hasPosition = hasPosition; this.missionId = missionId;
+                    this.aircraftType = aircraftType; this.missionState = missionState;
+                    this.targetState = targetState; this.registryId = registryId == null ? "" : registryId;
+                    this.entityName = "";
+                    this.targetUuid = targetUuid == null ? "" : targetUuid; this.priority = priority;
+                    this.scanState = scanState; this.deepScanState = deepScanState; this.dimension = dimension;
+                    this.x = x; this.y = y; this.z = z; this.distance = distance;
+                }
+
+                static TargetTelemetry from(EntityPlayerMP player) {
+                    MCH_EntityAircraft ridden = MCH_EntityAircraft.getAircraft_RiddenOrControl(player);
+                    if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(ridden, player)) {
+                        return new TargetTelemetry(false, false, "", "", "NO TARGET", "NO TARGET",
+                                null, null, "NORMAL", "READY", "OFF", player.dimension, 0, 0, 0, 0);
+                    }
+                    java.util.List<net.vas.rdp.uav.mission.RDPMission> missions =
+                            net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
+                                    .getRepository().byOwner(player.getUniqueID());
+                    net.vas.rdp.uav.mission.RDPMission selected = null;
+                    for (net.vas.rdp.uav.mission.RDPMission mission : missions) {
+                        if (ridden != null && mission.getAircraftId().equals(ridden.getUniqueID())) {
+                            selected = mission;
+                            break;
+                        }
+                        if (selected == null && !mission.getState().name().equals("COMPLETE")
+                                && !mission.getState().name().equals("ABORTED")
+                                && !mission.getState().name().equals("FAILED")) selected = mission;
+                    }
+                    if (selected == null) return new TargetTelemetry(false, false, "", "", "NO TARGET", "NO TARGET",
+                            null, null, "NORMAL", "READY", "OFF", player.dimension, 0, 0, 0, 0);
+
+                    net.minecraft.entity.Entity aircraftEntity = null;
+                    for (net.minecraft.entity.Entity entity : player.world.loadedEntityList) {
+                        if (selected.getAircraftId().equals(entity.getUniqueID())) {
+                            aircraftEntity = entity;
+                            break;
+                        }
+                    }
+                    net.minecraft.entity.Entity target = selected.getTargetId() == null ? null
+                            : new net.vas.rdp.uav.target.TargetResolver().findLoaded(player.world, selected.getTargetId());
+                    boolean point = selected.getTargetSelectionMode()
+                            == net.vas.rdp.uav.target.TargetSelectionMode.POINT;
+                    boolean targetStateRequiresEntity = !point && selected.getTargetId() != null;
+                    boolean lost = targetStateRequiresEntity && target == null;
+                    boolean locked = selected.getState() == net.vas.rdp.uav.mission.MissionState.TARGET_LOCKED
+                            || selected.getState() == net.vas.rdp.uav.mission.MissionState.ATTACK_TARGET
+                            || selected.getState() == net.vas.rdp.uav.mission.MissionState.KAMIKADZE_TARGET;
+                    String targetState = lost ? "TARGET_LOST"
+                            : locked ? "TARGET_LOCKED"
+                            : selected.getState() == net.vas.rdp.uav.mission.MissionState.SEARCHING
+                            ? "SEARCHING" : target == null && !point ? "NO TARGET"
+                            : target != null && net.minecraft.entity.EntityList.getKey(target) == null
+                            ? "TARGET_INVALID" : "TARGET_ACQUIRED";
+                    double tx = point ? selected.getTargetSpec().getX() : target == null ? 0 : target.posX;
+                    double ty = point ? selected.getTargetSpec().getY() : target == null ? 0 : target.posY;
+                    double tz = point ? selected.getTargetSpec().getZ() : target == null ? 0 : target.posZ;
+                    double distance = aircraftEntity == null ? 0 : aircraftEntity.getDistance(tx, ty, tz);
+                    String registry = point ? "rdpuav:point" : target == null ? selected.getTargetSpec().getRegistryId()
+                            : String.valueOf(net.minecraft.entity.EntityList.getKey(target));
+                    String scan = selected.getState() == net.vas.rdp.uav.mission.MissionState.SCANNING
+                            || selected.getState() == net.vas.rdp.uav.mission.MissionState.DEEP_SCANNING
+                            ? "ACTIVE" : selected.getReportId() == null ? "READY" : "COMPLETE";
+                    String deep = selected.isDeepScan()
+                            ? (selected.getReportId() == null ? "ACTIVE" : "COMPLETE") : "OFF";
+                    TargetTelemetry telemetry = new TargetTelemetry(true, !lost && (point || target != null), selected.getMissionId().toString(),
+                            selected.getAircraftType(), selected.getState().name(), targetState, registry,
+                            selected.getTargetId() == null ? null : selected.getTargetId().toString(),
+                            selected.getTargetPriority().name(), scan, deep, selected.getDimension(),
+                            tx, ty, tz, distance);
+                    telemetry.entityName = target == null ? (point ? "POINT" : "") : target.getName();
+                    telemetry.outOfRange = distance > selected.getSearchRadius();
+                    return telemetry;
+                }
+
+                public void fromBytes(ByteBuf buffer) {
+                    active = buffer.readBoolean();
+                    hasPosition = buffer.readBoolean();
+                    missionId = readString(buffer);
+                    aircraftType = readString(buffer);
+                    missionState = readString(buffer);
+                    targetState = readString(buffer);
+                    registryId = readString(buffer);
+                    entityName = readString(buffer);
+                    targetUuid = readString(buffer);
+                    priority = readString(buffer);
+                    scanState = readString(buffer);
+                    deepScanState = readString(buffer);
+                    dimension = buffer.readInt();
+                    outOfRange = buffer.readBoolean();
+                    x = buffer.readDouble(); y = buffer.readDouble(); z = buffer.readDouble();
+                    distance = buffer.readDouble();
+                }
+
+                public void toBytes(ByteBuf buffer) {
+                    buffer.writeBoolean(active).writeBoolean(hasPosition);
+                    writeString(buffer, missionId); writeString(buffer, aircraftType);
+                    writeString(buffer, missionState); writeString(buffer, targetState);
+                    writeString(buffer, registryId); writeString(buffer, entityName); writeString(buffer, targetUuid);
+                    writeString(buffer, priority); writeString(buffer, scanState);
+                    writeString(buffer, deepScanState); buffer.writeInt(dimension); buffer.writeBoolean(outOfRange);
+                    buffer.writeDouble(x).writeDouble(y).writeDouble(z).writeDouble(distance);
+                }
+            }
+
     private static String readString(ByteBuf buffer) {
         int length = buffer.readUnsignedShort();
         return buffer.readCharSequence(length, java.nio.charset.StandardCharsets.UTF_8).toString();
@@ -137,8 +335,17 @@ public final class RdpUavNetwork {
                                     || mission.getState() == net.vas.rdp.uav.mission.MissionState.FAILED) {
                                 return;
                             }
+
                             mission.transitionTo(net.vas.rdp.uav.mission.MissionState.ABORTED,
                                     player.world.getTotalWorldTime());
+                            for (net.minecraft.entity.Entity entity : player.world.loadedEntityList) {
+                                if (entity instanceof MCH_EntityAircraft
+                                        && mission.getAircraftId().equals(entity.getUniqueID())) {
+                                    new net.vas.rdp.uav.flight.WingManFlightAdapter()
+                                            .release((MCH_EntityAircraft) entity);
+                                    break;
+                                }
+                            }
                             net.vas.rdp.uav.RDPUavMod.missions().release(mission);
                             net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world).markDirty();
                             sendMissionData(player);
@@ -150,6 +357,133 @@ public final class RdpUavNetwork {
                 return null;
             }
         }
+
+    public static final class ServerAuthorizeAttackHandler
+            implements IMessageHandler<AuthorizeAttack, IMessage> {
+        public IMessage onMessage(final AuthorizeAttack message, MessageContext context) {
+            final EntityPlayerMP player = context.getServerHandler().player;
+            player.getServer().addScheduledTask(new Runnable() {
+                public void run() {
+                    try {
+                        java.util.UUID id = java.util.UUID.fromString(message.missionId);
+                        net.vas.rdp.uav.mission.RDPMission mission =
+                                net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
+                                        .getRepository().find(id);
+                        if (mission == null || !mission.isAttack()
+                                || !player.getUniqueID().equals(mission.getOwnerId())
+                                || mission.getState() != net.vas.rdp.uav.mission.MissionState.TARGET_LOCKED) {
+                            return;
+                        }
+
+                        MCH_EntityAircraft aircraft = null;
+                        for (net.minecraft.entity.Entity entity : player.world.loadedEntityList) {
+                            if (entity instanceof MCH_EntityAircraft
+                                    && mission.getAircraftId().equals(entity.getUniqueID())) {
+                                aircraft = (MCH_EntityAircraft) entity;
+                                break;
+                            }
+                        }
+                        if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, player)) return;
+                        double x = mission.getTargetSpec().getX();
+                        double y = mission.getTargetSpec().getY();
+                        double z = mission.getTargetSpec().getZ();
+                        if (mission.getTargetId() != null) {
+                            net.minecraft.entity.Entity target = new net.vas.rdp.uav.target.TargetResolver()
+                                    .findLoaded(player.world, mission.getTargetId());
+                            if (target == null) {
+                                return;
+                            }
+                            x = target.posX;
+                            y = target.posY;
+                            z = target.posZ;
+                        }
+                        if (!new net.vas.rdp.uav.flight.WingManFlightAdapter().armAttack(
+                                aircraft, x, y, z, mission.getObservationDistance(), mission.getTargetId())) {
+                            return;
+                        }
+                        mission.transitionTo(net.vas.rdp.uav.mission.MissionState.ATTACK_TARGET,
+                                player.world.getTotalWorldTime());
+                        net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world).markDirty();
+                        sendMissionData(player);
+                    } catch (IllegalArgumentException ignored) {
+                        // Invalid client input is rejected without changing mission state.
+                    }
+                }
+            });
+            return null;
+        }
+    }
+
+    public static final class ServerKamikazeHandler
+            implements IMessageHandler<KamikazeAttack, IMessage> {
+        public IMessage onMessage(final KamikazeAttack message, MessageContext context) {
+            final EntityPlayerMP player = context.getServerHandler().player;
+            player.getServer().addScheduledTask(new Runnable() {
+                public void run() {
+                    try {
+                        java.util.UUID id = java.util.UUID.fromString(message.missionId);
+                        net.vas.rdp.uav.mission.RDPMission mission =
+                                net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
+                                        .getRepository().find(id);
+                        if (mission == null || !mission.isAttack()
+                                || !player.getUniqueID().equals(mission.getOwnerId())
+                                || mission.getState() != net.vas.rdp.uav.mission.MissionState.TARGET_LOCKED) return;
+                        MCH_EntityAircraft aircraft = null;
+                        for (net.minecraft.entity.Entity entity : player.world.loadedEntityList) {
+                            if (entity instanceof MCH_EntityAircraft
+                                    && mission.getAircraftId().equals(entity.getUniqueID())) {
+                                aircraft = (MCH_EntityAircraft) entity;
+                                break;
+                            }
+                        }
+                        if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, player)) return;
+                        double x = mission.getTargetSpec().getX();
+                        double y = mission.getTargetSpec().getY();
+                        double z = mission.getTargetSpec().getZ();
+                        if (mission.getTargetId() != null) {
+                            net.minecraft.entity.Entity target = new net.vas.rdp.uav.target.TargetResolver()
+                                    .findLoaded(player.world, mission.getTargetId());
+                            if (target == null) return;
+                            x = target.posX; y = target.posY; z = target.posZ;
+                        }
+                        net.vas.rdp.uav.flight.WingManFlightAdapter adapter =
+                                new net.vas.rdp.uav.flight.WingManFlightAdapter();
+                        if (!adapter.armKamikaze(aircraft, x, y, z,
+                                mission.getObservationDistance(), mission.getTargetId())) return;
+                        mission.transitionTo(net.vas.rdp.uav.mission.MissionState.ATTACK_TARGET,
+                                player.world.getTotalWorldTime());
+                        net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world).markDirty();
+                        sendMissionData(player);
+                    } catch (IllegalArgumentException ignored) {
+                    }
+                }
+            });
+            return null;
+        }
+    }
+
+    public static final class ServerCreateMissionHandler
+            implements IMessageHandler<CreateMission, IMessage> {
+        public IMessage onMessage(final CreateMission message, MessageContext context) {
+            final EntityPlayerMP player = context.getServerHandler().player;
+            player.getServer().addScheduledTask(new Runnable() {
+                public void run() {
+                    if (!message.point && (message.target == null
+                            || !message.target.matches("[A-Za-z0-9_.-]+:[A-Za-z0-9_./-]+"))) {
+                        return;
+                    }
+                    MCH_EntityAircraft aircraft = MCH_EntityAircraft.getAircraft_RiddenOrControl(player);
+                    if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, player)) return;
+                    String command = message.point
+                            ? "rdpuav mission attack-point"
+                            : "rdpuav mission create " + message.target
+                                    + (message.attack ? " attack" : "");
+                    player.getServer().getCommandManager().executeCommand(player, command);
+                }
+            });
+            return null;
+        }
+    }
 
     public static final class ClientMissionControlHandler implements IMessageHandler<OpenMissionControl, IMessage> {
         public IMessage onMessage(OpenMissionControl message, MessageContext context) {
@@ -171,6 +505,27 @@ public final class RdpUavNetwork {
                 }
             });
             return null;
+        }
+
+        public static final class ClientTargetTelemetryHandler
+                implements IMessageHandler<RdpUavNetwork.TargetTelemetry, IMessage> {
+            public IMessage onMessage(final RdpUavNetwork.TargetTelemetry message, MessageContext context) {
+                net.minecraft.client.Minecraft.getMinecraft().addScheduledTask(new Runnable() {
+                    public void run() {
+                        net.vas.rdp.uav.client.RdpUavTargetHud.instance().receive(
+                                new net.vas.rdp.uav.client.RdpUavTargetHud.Telemetry(
+                                        message.active, message.hasPosition, message.missionId,
+                                        message.aircraftType, message.missionState, message.targetState,
+                                        message.registryId.isEmpty() ? null : message.registryId,
+                                        message.entityName,
+                                        message.targetUuid.isEmpty() ? null : message.targetUuid,
+                                        message.priority, message.scanState, message.deepScanState,
+                                        message.dimension, message.outOfRange,
+                                        message.x, message.y, message.z, message.distance));
+                    }
+                });
+                return null;
+            }
         }
     }
 }

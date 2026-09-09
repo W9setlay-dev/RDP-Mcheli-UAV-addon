@@ -78,6 +78,11 @@ rdp-uav-addon/
       RDPMissionWorldData.java
     flight/
       WingManFlightAdapter.java
+    energy/
+      UavEnergy.java
+      UavEnergyProvider.java
+      UavEnergyConfig.java
+      UavEnergyHandler.java
   src/test/java/
     net/vas/rdp/uav/CoreMissionTest.java
 ```
@@ -113,6 +118,58 @@ server handler.
 **`client`** contains GUI code. It must never decide whether a player owns a
 mission or whether a mission can be aborted.
 
+**`energy`** owns the Forge Energy capability attached to real McHeli UAV
+entities. The capability is server-authoritative, persists with the entity's
+NBT data, and is consumed from the server world tick. It does not replace
+McHeli flight physics, fuel, weapons, or WingMan steering.
+
+### Per-aircraft energy configuration
+
+The addon currently enables Forge Energy only for the McHeli aircraft whose
+internal name is `switchblade`. The internal name is the aircraft definition
+name, not its display name; therefore `switchblade.yml` maps to the
+`aircraft.switchblade` category.
+
+After the first launch, edit:
+
+```text
+<minecraft>/config/rdp-uav-energy.cfg
+```
+
+The global defaults and Switchblade override can be configured as follows:
+
+```properties
+[energy]
+    capacity=250000
+    idleDrainPerTick=2
+    flightDrainPerTick=8
+    minimumOperatingEnergy=1
+
+[aircraft.switchblade]
+    enabled=true
+    capacity=150000
+    idleDrainPerTick=2
+    flightDrainPerTick=10
+    minimumOperatingEnergy=1
+```
+
+`aircraft.switchblade` overrides the global values. Other UAVs, including
+`shahed136`, are deliberately excluded and do not receive the capability.
+Restart the game after changing the file. The current addon does not parse
+custom energy fields from McHeli YAML files, so adding an `energy:` block to a
+plane definition has no effect.
+
+Forge Energy/RF consumers can interact with the Switchblade through the
+standard `CapabilityEnergy.ENERGY` capability. The addon attaches that
+capability only when McHeli reports `FuelType: RF`; fluid, item, and other
+fuel types are rejected. HBM Nuclear Tech can power the Switchblade only when
+the installed HBM/RF compatibility layer exposes its energy network through
+Forge Energy/RF. The addon does not compile against HBM's private API or
+pretend that an HBM-only custom energy port is automatically compatible.
+When stored energy reaches the configured minimum, the addon sets McHeli fuel
+availability to zero and lets McHeli's normal flight simulation handle the
+resulting loss of operation.
+
 ## 3. Mission lifecycle
 
 The mission state machine is defined in `MissionState`. The normal
@@ -146,10 +203,10 @@ states cannot transition again.
 Do not assign the `state` field directly. The transition method enforces legal
 edges, monotonic ticks, and queue status updates.
 
-The current code also contains attack-related enum values because the original
-mission model allowed them. The current execution phase is reconnaissance
-only. Do not invoke autonomous attack, collision, or kamikaze behavior from
-the GUI, runner, or recon adapter.
+Attack-intent missions begin in reconnaissance mode and are automatically
+armed by the server after `TARGET_LOCKED`. `Authorize attack` remains a manual
+operator override. Do not invoke attack, collision, or kamikaze behavior
+before the server has validated the lock and aircraft state.
 
 ## 4. Mission creation and ownership
 
@@ -167,10 +224,9 @@ An `RDPMission` records:
 `AircraftRegistry` and `AircraftRecord` provide domain-level ownership and
 availability checks.
 
-The GUI currently does not create missions. This is intentional: it avoids
-exposing an incomplete aircraft pairing and flight-dispatch path to survival
-players. Any future creation endpoint must validate all of the following on
-the server:
+The GUI can now request reconnaissance, autonomous attack, and point missions.
+Those requests are only intents; the server command path performs the actual
+creation and validates all of the following:
 
 1. sender is a real player;
 2. sender owns or is authorized to use the aircraft;
@@ -179,8 +235,8 @@ the server:
 5. target specification and radii are valid;
 6. requested behavior is allowed for the mission type.
 
-Never trust owner, aircraft, dimension, or permission values supplied by a
-client packet.
+Never trust owner, aircraft, dimension, target, or permission values supplied
+by a client packet.
 
 ## 5. Persistence and restart behavior
 
@@ -218,14 +274,52 @@ The GUI currently provides:
 
 * a list of missions owned by the current player;
 * mission selection;
+* a target registry-ID field for entity missions;
+* `Recon`, which creates a reconnaissance mission;
+* `Auto attack`, which creates reconnaissance-first attack intent;
+* `Point task`, which targets the block/structure under the operator camera;
+* `Authorize attack`, available only after a target is locked;
 * `Refresh`;
 * `Abort selected`;
 * `Close`;
 * an `Operator help` page explaining the AI pilot workflow.
 
-The GUI is a monitor and safe control surface, not the AI pilot itself. The
-AI pilot is represented by server-side mission and flight integration code.
-The operator observes mission state and may request a safe abort.
+The GUI is a setup and safe control surface, not the AI pilot itself. The AI
+pilot is represented by server-side mission and WingMan integration code. The
+operator chooses the task, observes mission state, explicitly authorizes an
+attack, or requests a safe abort.
+
+When the player is piloting a UAV, the client keys provide quick task
+controls. `U` opens Mission Control, `R` creates a registry-ID recon task from
+the GUI field, `K` creates an autonomous registry-ID attack task from the GUI
+field, `P` creates a camera-point task, `F` refreshes missions, `A` authorizes
+the selected attack, and `X` aborts the selected mission. These keys are
+configurable in Minecraft's Controls menu under `RDP UAV`; every action
+remains server-validated. The server-side command remains available as
+`/rdpuav mission gui`.
+
+### Operator workflow
+
+1. Pilot an authorized McHeli UAV and open `/rdpuav mission gui`.
+2. For an entity mission, enter a fully qualified registry ID such as
+   `techguns:zombie`, `srparasites:fumor`, `lycanitesmobs:abaia`, or
+   `scp:...`. Use `Recon` for observation only, or `Auto attack` to create an
+   attack-intent mission that arms after reconnaissance locks the target.
+3. For a block or structure, aim the UAV camera at the point and press
+   `Point task`.
+4. Select the mission and use `Refresh` while WingMan searches and locks the
+   target.
+5. Auto attack arms after `TARGET_LOCKED` through the WingMan adapter.
+   `Authorize attack` can still be
+   pressed as an operator override, and the server re-checks ownership,
+   UAV status, mission state, target data, and aircraft assignment.
+6. Use `Abort selected` to stop a non-terminal mission.
+
+The GUI does not silently select a target when the registry ID is malformed;
+the setup status area reports that the value must use `namespace:id` form.
+The command equivalents remain available for operators who prefer chat:
+`/rdpuav mission create <namespace:id>`, optionally with `attack`, and
+`/rdpuav mission attack-point`.
 
 ### GUI packet flow
 
@@ -250,6 +344,28 @@ Client selects mission
   -> server transitions to ABORTED
   -> server releases assignment and marks saved data dirty
   -> server sends refreshed MissionData
+```
+
+For mission setup:
+
+```text
+Client sends CreateMission(target, attack, point)
+  -> server schedules work on the server thread
+  -> server converts the request to the existing command validation path
+  -> server checks piloting, UAV authorization, target syntax, availability,
+     target resolution, and WingMan dispatch
+  -> server persists the mission and returns it on the next MissionData refresh
+```
+
+For attack authorization:
+
+```text
+Client selects a locked mission
+  -> client sends AuthorizeAttack(mission UUID)
+  -> server checks owner, attack intent, TARGET_LOCKED state, UAV status,
+     live aircraft, and target coordinates
+  -> server calls WingManFlightAdapter.armAttack(...)
+  -> server transitions to ATTACK_TARGET and marks saved data dirty
 ```
 
 The client never performs the abort transition locally. A malformed,
@@ -303,14 +419,29 @@ types:
 * `TaxiRouteRegistry`
 
 `WingManFlightAdapter` is the intended seam. It currently creates a
-recon-only mission plan and registers it through the verified WingMan types.
-It does not yet provide complete takeoff observation, target arrival,
-landing, parking, RTB, or failure translation.
+reconnaissance mission plan and registers it through the verified WingMan
+types. Attack arming changes the existing WingMan entry to `ATK_AUTO`, sets
+the live target coordinates/UUID, adds a strike mission type, and appends an
+attack node. The server still requires explicit operator authorization before
+this path is used.
 
-The installed Switchblade and Shahed-136 definitions are UAVs with
-autopilot disabled and self-destructing `fpvbomb` weapons. Do not treat those
-weapon definitions as normal reconnaissance behavior. The recon path must not
-activate attack or kamikaze behavior.
+WingMan remains authoritative for aircraft movement and rotation. Do not
+teleport the aircraft or force entity `rotationYaw`/`rotationPitch` from the
+addon. The installed McHeli CE API does not expose safe yaw/pitch setters on
+`MissionNode`; direct rotation hacks would fight WingMan's flight controller.
+If realistic turning needs improvement, extend the adapter only through
+verified WingMan/McHeli control APIs and test turn-rate, approach angle,
+overshoot recovery, and target loss in the real instance.
+
+The adapter exposes recovery/terminal observations used by the server
+mission lifecycle, but it does not provide authoritative takeoff arrival,
+landing, or parking telemetry.
+
+Aircraft pack weapon definitions are not interpreted as reconnaissance
+behavior. Attack mode is armed automatically after a validated target lock for
+autonomous attack missions, or manually by the operator override. This addon
+does not claim weapon firing, damage, or self-destruct behavior without a live
+instance test.
 
 Never infer API signatures from online examples when the installed jar is
 available. Verify the exact binary with `javap` or a source-compatible compile.
@@ -380,30 +511,93 @@ A real integration validation must use a matching client and server:
 8. verify a different player cannot abort it;
 9. verify malformed or terminal abort requests do nothing;
 10. verify the mission record survives a save/restart cycle.
+11. create a mission from the GUI using Recon, Auto attack, and Point task;
+12. verify malformed target IDs are rejected without creating a mission;
+13. verify an Auto attack mission arms WingMan only after `TARGET_LOCKED`;
+14. verify manual `Authorize attack` is accepted only at `TARGET_LOCKED`;
+15. verify the UAV turns and approaches through WingMan control rather than
+    teleporting or snapping its rotation;
+16. press `N` or use the `Nose-dive` button while a locked attack mission is
+    selected; verify the server accepts it only for supported Switchblade or
+    Shahed UAVs and rejects ordinary aircraft;
+17. for the Switchblade and Shahed packs, verify only the declared
+    `SelfDestruct: true` weapon configuration enables terminal kamikaze
+    behavior after autonomous attack arming or manual authorization.
+18. spawn a Switchblade and verify it exposes Forge Energy while a Shahed-136
+    does not;
+19. verify the Switchblade energy value decreases on the server while idle and
+    at the configured flight rate while moving;
+20. save and reload the world, then verify the Switchblade energy value is
+    preserved and that an empty battery disables further McHeli operation.
 
 Do not report runtime verification when only `javac`, unit tests, or jar
 inspection have been performed.
 
 ## 11. Known limitations
 
+### McHeli UAV-station explosion guard
+
+The source tree contains an experimental transformer history for
+`MCH_EntityUavStation.attackEntityFrom`, but it is not registered in the
+packaged addon. It previously caused a startup `VerifyError` under the target
+runtime and must not be re-enabled without frame-safe bytecode and runtime
+validation.
+
 The following are intentionally incomplete and should not be mistaken for
 finished gameplay:
 
-* the server tick handler does not yet execute a complete mission lifecycle;
-* target resolution is not fully connected to target-loss recovery;
-* scanners and bounded scan scheduling are not implemented;
-* RDP Core report publication is not implemented;
+* the tick lifecycle uses WingMan's public entry state and cannot verify
+  physical takeoff, arrival, landing, weapon effects, or self-destruct;
+* scan reports persist observation metadata, but no scanner contents or
+  RDP Core report publication is implemented;
 * aircraft discovery and persistent pairing are incomplete;
-* mission creation is not exposed through the GUI;
 * GUI report browsing and detailed mission panels do not exist;
+* the GUI setup flow is source/build validated but has not been live-tested
+  through a matching client/server session;
+* attack steering and any weapon, damage, or self-destruct behavior remain
+  live-instance validation items and are not claimed by this addon;
 * exact ForgeGradle 14.23.5.2864 execution is blocked by the missing legacy
   `userdev.jar` classifier in ForgeGradle 2.3;
 * live GUI and packet behavior remains runtime-unverified unless a matching
   client/server test has been executed.
+* Forge Energy is source/build validated only; a live battery drain, recharge,
+  NBT reload, and capability-consumer test has not been executed in Minecraft.
 
 The authoritative status is `BUILD_VALIDATION_REPORT.md`.
 
-## 12. Safe contribution workflow
+## 12. Truthful feature status
+
+The following table is the authoritative implementation boundary. A feature
+is not considered working merely because its enum, command, packet, or
+adapter method exists.
+
+| Feature | Current status |
+|---|---|
+| Forge 1.12.2 addon loading and McHeli dependency range | Source/build validated; exact runtime startup depends on the reobfuscated JAR and matching instance |
+| UAV authorization and ownership checks | Implemented in command and server packet paths |
+| Mission GUI setup, refresh, abort, and help | Implemented at source level; live client/server behavior not verified |
+| Entity registry-ID and point target creation | Implemented for loaded entities and ray-traced points |
+| WingMan reconnaissance dispatch | Server tick lifecycle now dispatches queued missions through the adapter; physical flight remains runtime-unverified |
+| Target search/lock progression | Server tick lifecycle performs loaded-entity acquisition and UUID-based reacquisition; unloaded-chunk search is not implemented |
+| Autonomous attack missions | Server tick arms WingMan attack mode after a validated target lock; live firing/damage is unverified |
+| Manual attack authorization | Server-side checks and WingMan attack-node arming remain available as an override |
+| Aircraft yaw/pitch/roll movement | Performed by McHeli WingMan handlers; not independently implemented or live-tested by this addon |
+| Switchblade/Shahed pre-dive fallback | Adapter adds a computed 35-degree waypoint; it is not proof of collision, weapon release, damage, or self-destruct success |
+| Native McHeli attack-angle/nose-dive support | Not exposed by the inspected WingMan 1.5.1 API |
+| Target-loss recovery and mission resumption | Target loss now fails recon missions or requests WingMan RTB for active attacks; full mission resumption is not implemented |
+| Scanning and report persistence | Observation metadata is persisted to WorldSavedData; scanner contents and RDP Core publication are not implemented |
+| Return-to-base, landing, parking, and failure translation | Lifecycle requests WingMan RTB and maps public entry states; physical landing and all failure modes remain runtime-unverified |
+| World-save restart/reconciliation | Queued missions are restored on first world tick; active WingMan assignments are not fully reconstructed |
+| Switchblade Forge Energy capability | Implemented in the addon with configurable capacity/drain/minimum values; live capability, drain, recharge, and reload behavior remain unverified |
+| Forge Energy on Shahed-136 and other UAVs | Deliberately disabled by aircraft identity |
+| Production survival readiness | Not established until a matching live instance test passes |
+
+Do not change a row to “implemented” based only on compilation, `javap`
+output, a unit test, or a JAR listing. Runtime claims require a matching
+Minecraft 1.12.2 client/server session and observable evidence in logs and
+world behavior.
+
+## 13. Safe contribution workflow
 
 Before changing code:
 
@@ -425,4 +619,3 @@ Before declaring a feature complete, answer these questions:
 * Does it avoid unbounded entity, block, pathfinding, or packet work?
 * Does it avoid autonomous attack behavior unless explicitly authorized and
   separately implemented?
-

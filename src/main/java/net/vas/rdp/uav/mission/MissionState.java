@@ -39,7 +39,11 @@ public enum MissionState {
             case CRUISE: return next == SEARCHING;
             case SEARCHING: return next == TARGET_ACQUIRED;
             case TARGET_ACQUIRED: return next == TARGET_LOCKED;
-            case TARGET_LOCKED: return next == APPROACHING;
+            case TARGET_LOCKED: return next == APPROACHING || next == ATTACK_TARGET
+                    || next == KAMIKADZE_TARGET;
+            case ATTACK_TARGET: return next == APPROACHING || next == ON_TARGET
+                    || next == RETURNING;
+            case KAMIKADZE_TARGET: return next == ON_TARGET || next == RETURNING;
             case APPROACHING: return next == ON_TARGET;
             case ON_TARGET: return next == ORBITING || next == SCANNING;
             case ORBITING: return next == SCANNING;

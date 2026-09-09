@@ -9,7 +9,7 @@
     "authorList": ["RDP"],
     "credits": "McHeli Community Edition and WingMan",
     "dependencies": [
-      "required-after:mcheli@[1.5.1,)",
+      "required-after:mcheli@[1.5,)",
       "required-after:rdpcore"
     ]
   }

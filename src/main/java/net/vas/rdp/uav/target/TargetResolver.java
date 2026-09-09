@@ -11,6 +11,17 @@ import java.util.List;
 import java.util.UUID;
 
 public final class TargetResolver {
+    public Entity findLoaded(World world, UUID targetId) {
+        if (world == null || targetId == null) return null;
+        for (Entity entity : world.loadedEntityList) {
+            if (entity != null && !entity.isDead && targetId.equals(entity.getUniqueID())
+                    && entity.dimension == world.provider.getDimension()) {
+                return entity;
+            }
+        }
+        return null;
+    }
+
     public List<EntityCandidate> find(World world, double x, double y, double z, double radius,
                                       TargetSpec specification) {
         if (world == null || specification == null || radius <= 0) {

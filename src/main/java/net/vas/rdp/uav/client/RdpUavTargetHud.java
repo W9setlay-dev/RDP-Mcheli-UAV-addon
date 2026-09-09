@@ -1,0 +1,168 @@
+package net.vas.rdp.uav.client;
+
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.FontRenderer;
+import net.minecraft.client.renderer.GlStateManager;
+import net.minecraftforge.client.event.RenderGameOverlayEvent;
+import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
+import net.minecraftforge.fml.relauncher.Side;
+import net.minecraftforge.fml.relauncher.SideOnly;
+import org.lwjgl.opengl.GL11;
+
+@SideOnly(Side.CLIENT)
+public final class RdpUavTargetHud {
+    private static final RdpUavTargetHud INSTANCE = new RdpUavTargetHud();
+    private Telemetry telemetry;
+    private Telemetry previous;
+    private long receivedAt;
+
+    private RdpUavTargetHud() { }
+
+    public static RdpUavTargetHud instance() {
+        return INSTANCE;
+    }
+
+    public void receive(Telemetry value) {
+        previous = telemetry;
+        telemetry = value;
+        receivedAt = System.currentTimeMillis();
+    }
+
+    @SubscribeEvent
+    public void render(RenderGameOverlayEvent.Post event) {
+        if (event.getType() != RenderGameOverlayEvent.ElementType.CROSSHAIRS
+                || !RdpUavHudConfig.enabled || telemetry == null || !telemetry.active) return;
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc.player == null || mc.world == null || System.currentTimeMillis() - receivedAt > 3000L) return;
+        // Eligibility is decided on the server from McHeli's actual pilot/station
+        // relationship. Repeating that lookup on the client breaks station-owned
+        // UAV HUDs because the client does not always expose the controlled craft.
+        if (RdpUavHudConfig.telemetryVisible) drawTelemetry(mc, event.getResolution().getScaledWidth(),
+                event.getResolution().getScaledHeight());
+        if (RdpUavHudConfig.markerVisible && telemetry.hasPosition) drawMarker(mc,
+                event.getResolution().getScaledWidth(), event.getResolution().getScaledHeight());
+    }
+
+    private void drawTelemetry(Minecraft mc, int width, int height) {
+        FontRenderer font = mc.fontRenderer;
+        int x = 8 + RdpUavHudConfig.xOffset;
+        int y = 8 + RdpUavHudConfig.yOffset;
+        int color = telemetry.targetState.equals("TARGET_LOCKED") ? 0xFF66FF66 : 0xFFFFCC66;
+        GlStateManager.pushMatrix();
+        GlStateManager.scale(RdpUavHudConfig.scale, RdpUavHudConfig.scale, 1.0F);
+        x = (int) (x / RdpUavHudConfig.scale);
+        y = (int) (y / RdpUavHudConfig.scale);
+        String target = telemetry.registryId == null ? "NO TARGET" : telemetry.registryId;
+        font.drawStringWithShadow("RDP UAV SYSTEM", x, y, 0xFFFFFFFF);
+        font.drawStringWithShadow("MISSION: " + telemetry.missionId, x, y + 10, 0xFFFFFFFF);
+        font.drawStringWithShadow("UAV: " + telemetry.aircraftType, x, y + 20, 0xFFFFFFFF);
+        font.drawStringWithShadow("STATE: " + telemetry.missionState, x, y + 30, color);
+        font.drawStringWithShadow("TARGET: " + target, x, y + 42, 0xFFFFFFFF);
+        font.drawStringWithShadow("STATUS: " + telemetry.targetState, x, y + 52, color);
+        font.drawStringWithShadow("ENTITY: " + telemetry.entityName, x, y + 62, 0xFFFFFFFF);
+        font.drawStringWithShadow("UUID: " + telemetry.targetUuid, x, y + 72, 0xFFFFFFFF);
+        font.drawStringWithShadow("PRIORITY: " + telemetry.priority, x, y + 82, 0xFFFFFFFF);
+        font.drawStringWithShadow("DISTANCE: " + String.format(java.util.Locale.ROOT, "%.1fm", telemetry.distance)
+                + (telemetry.outOfRange ? "  OUT OF RANGE" : ""), x, y + 92,
+                telemetry.outOfRange ? 0xFFFF5555 : 0xFFFFFFFF);
+        font.drawStringWithShadow("DIMENSION: " + telemetry.dimension, x, y + 102, 0xFFFFFFFF);
+        font.drawStringWithShadow("SCAN: " + telemetry.scanState
+                + "  DEEP: " + telemetry.deepScanState, x, y + 112, 0xFFFFFFFF);
+        GlStateManager.popMatrix();
+    }
+
+    private void drawMarker(Minecraft mc, int width, int height) {
+        double[] screen = project(mc, telemetry.x, telemetry.y, telemetry.z, width, height);
+        if (screen == null) return;
+        GlStateManager.pushMatrix();
+        GlStateManager.disableTexture2D();
+        GlStateManager.color(0.3F, 1.0F, 0.3F, telemetry.targetState.equals("TARGET_LOCKED") ? 1.0F : 0.65F);
+        GL11.glLineWidth(2.0F);
+        double size = 10.0D;
+        GL11.glBegin(GL11.GL_LINE_LOOP);
+        GL11.glVertex2d(screen[0] - size, screen[1] - size);
+        GL11.glVertex2d(screen[0] + size, screen[1] - size);
+        GL11.glVertex2d(screen[0] + size, screen[1] + size);
+        GL11.glVertex2d(screen[0] - size, screen[1] + size);
+        GL11.glEnd();
+        GlStateManager.enableTexture2D();
+        GlStateManager.popMatrix();
+    }
+
+    private double[] project(Minecraft mc, double x, double y, double z, int width, int height) {
+        double px = mc.player.prevPosX + (mc.player.posX - mc.player.prevPosX) * mc.getRenderPartialTicks();
+        double py = mc.player.prevPosY + (mc.player.posY - mc.player.prevPosY) * mc.getRenderPartialTicks()
+                + mc.player.getEyeHeight();
+        double pz = mc.player.prevPosZ + (mc.player.posZ - mc.player.prevPosZ) * mc.getRenderPartialTicks();
+        double dx = x - px;
+        double dy = y - py;
+        double dz = z - pz;
+        double yaw = Math.toRadians(mc.player.prevRotationYaw
+                + (mc.player.rotationYaw - mc.player.prevRotationYaw) * mc.getRenderPartialTicks());
+        double pitch = Math.toRadians(mc.player.prevRotationPitch
+                + (mc.player.rotationPitch - mc.player.prevRotationPitch) * mc.getRenderPartialTicks());
+        double forwardX = -Math.sin(yaw) * Math.cos(pitch);
+        double forwardY = -Math.sin(pitch);
+        double forwardZ = Math.cos(yaw) * Math.cos(pitch);
+        double rightX = Math.cos(yaw);
+        double rightZ = Math.sin(yaw);
+        double upX = Math.sin(yaw) * Math.sin(pitch);
+        double upY = Math.cos(pitch);
+        double upZ = -Math.cos(yaw) * Math.sin(pitch);
+        double depth = dx * forwardX + dy * forwardY + dz * forwardZ;
+        if (depth <= 0.05D) return null;
+        double fov = Math.toRadians(mc.gameSettings.fovSetting);
+        double focalY = height / (2.0D * Math.tan(fov / 2.0D));
+        double focalX = focalY * ((double) width / (double) height);
+        return new double[] {width / 2.0D + (dx * rightX + dz * rightZ) * focalX / depth,
+                height / 2.0D - (dx * upX + dy * upY + dz * upZ) * focalY / depth};
+    }
+
+    public static final class Telemetry {
+        public final boolean active;
+        public final boolean hasPosition;
+        public final String missionId;
+        public final String aircraftType;
+        public final String missionState;
+        public final String targetState;
+        public final String registryId;
+        public final String entityName;
+        public final String targetUuid;
+        public final String priority;
+        public final String scanState;
+        public final String deepScanState;
+        public final int dimension;
+        public final boolean outOfRange;
+        public final double x, y, z, distance;
+
+        public Telemetry(boolean active, boolean hasPosition, String missionId, String aircraftType,
+                         String missionState, String targetState, String registryId, String targetUuid,
+                         String priority, String scanState, String deepScanState, int dimension,
+                         double x, double y, double z, double distance) {
+            this(active, hasPosition, missionId, aircraftType, missionState, targetState, registryId,
+                    "", targetUuid, priority, scanState, deepScanState, dimension, false,
+                    x, y, z, distance);
+        }
+
+        public Telemetry(boolean active, boolean hasPosition, String missionId, String aircraftType,
+                         String missionState, String targetState, String registryId, String entityName,
+                         String targetUuid, String priority, String scanState, String deepScanState,
+                         int dimension, boolean outOfRange, double x, double y, double z, double distance) {
+            this.active = active;
+            this.hasPosition = hasPosition;
+            this.missionId = missionId;
+            this.aircraftType = aircraftType;
+            this.missionState = missionState;
+            this.targetState = targetState;
+            this.registryId = registryId;
+            this.entityName = entityName;
+            this.targetUuid = targetUuid;
+            this.priority = priority;
+            this.scanState = scanState;
+            this.deepScanState = deepScanState;
+            this.dimension = dimension;
+            this.outOfRange = outOfRange;
+            this.x = x; this.y = y; this.z = z; this.distance = distance;
+        }
+    }
+}

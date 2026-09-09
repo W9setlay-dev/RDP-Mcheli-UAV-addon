@@ -26,6 +26,9 @@ public final class MissionNbtCodec {
                 ? "" : mission.getTargetSpec().getRegistryId());
         tag.setString("targetNamespace", mission.getTargetSpec().getNamespace() == null
                 ? "" : mission.getTargetSpec().getNamespace());
+        tag.setDouble("targetX", mission.getTargetSpec().getX());
+        tag.setDouble("targetY", mission.getTargetSpec().getY());
+        tag.setDouble("targetZ", mission.getTargetSpec().getZ());
         tag.setString("priority", mission.getTargetPriority().name());
         tag.setBoolean("attack", mission.isAttack());
         tag.setBoolean("eliminateAllCost", mission.isEliminateAllCost());
@@ -50,7 +53,10 @@ public final class MissionNbtCodec {
         TargetSelectionMode mode = TargetSelectionMode.valueOf(tag.getString("targetMode"));
         TargetSpec spec = mode == TargetSelectionMode.MANUAL
                 ? TargetSpec.manual(registryId, TargetPriority.valueOf(tag.getString("priority")))
-                : TargetSpec.automatic(namespace, TargetPriority.valueOf(tag.getString("priority")));
+                : mode == TargetSelectionMode.AUTO
+                ? TargetSpec.automatic(namespace, TargetPriority.valueOf(tag.getString("priority")))
+                : TargetSpec.point(tag.getDouble("targetX"), tag.getDouble("targetY"),
+                        tag.getDouble("targetZ"), TargetPriority.valueOf(tag.getString("priority")));
         String targetUuid = tag.getString("targetUuid");
         String failure = tag.getString("failureReason");
         String report = tag.getString("reportId");

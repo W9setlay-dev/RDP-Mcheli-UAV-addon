@@ -5,8 +5,10 @@ import com.norwood.mcheli.wingman.mission.MissionNode;
 import com.norwood.mcheli.wingman.mission.MissionOrder;
 import com.norwood.mcheli.wingman.mission.MissionPlan;
 import com.norwood.mcheli.wingman.mission.MissionType;
+import com.norwood.mcheli.wingman.mission.AutonomousState;
 import com.norwood.mcheli.wingman.wingman.WingmanEntry;
 import com.norwood.mcheli.wingman.wingman.WingmanRegistry;
+import com.norwood.mcheli.weapon.MCH_WeaponSet;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -16,8 +18,16 @@ import java.util.UUID;
  * The only RDP-facing boundary for WingMan control.
  */
 public final class WingManFlightAdapter {
+    private static final double KAMIKAZE_ATTACK_ANGLE_DEGREES = 35.0D;
+    private static final double MIN_DIVE_RUN_METERS = 32.0D;
+    private static final double MAX_DIVE_RUN_METERS = 160.0D;
     public boolean dispatch(MCH_EntityAircraft aircraft, double x, double y, double z,
                             double orbitRadius, int orbitTicks) {
+        return dispatch(aircraft, x, y, z, orbitRadius, orbitTicks, false, null);
+    }
+
+    public boolean dispatch(MCH_EntityAircraft aircraft, double x, double y, double z,
+                            double orbitRadius, int orbitTicks, boolean attack, UUID targetId) {
         if (aircraft == null || !aircraft.isUAV()) {
             return false;
         }
@@ -27,12 +37,12 @@ public final class WingManFlightAdapter {
         }
 
         MissionOrder order = new MissionOrder();
-        order.missionTypes.add(MissionType.RECON);
+        order.missionTypes.add(attack ? MissionType.STRIKE : MissionType.RECON);
         order.targetX = x;
         order.targetZ = z;
         order.orbitRadius = orbitRadius;
         order.cruiseAlt = y;
-        order.orbitAttack = false;
+        order.orbitAttack = attack;
 
         List<MissionNode> nodes = new ArrayList<MissionNode>();
         nodes.add(MissionNode.flyTo(x, y, z));
@@ -40,12 +50,125 @@ public final class WingManFlightAdapter {
             nodes.add(MissionNode.loiter(orbitTicks));
         }
 
-        WingmanEntry entry = new WingmanEntry(aircraft, WingmanEntry.ATK_NONE);
+        WingmanEntry entry = new WingmanEntry(aircraft,
+                attack ? WingmanEntry.ATK_AUTO : WingmanEntry.ATK_NONE);
+        entry.currentAutoTarget = targetId;
         entry.order = order;
         entry.mission = nodes;
         entry.missionIndex = 0;
         WingmanRegistry.put(aircraftId, entry);
         return true;
+    }
+
+    public boolean armAttack(MCH_EntityAircraft aircraft, double x, double y, double z,
+                             double attackRadius, UUID targetId) {
+        if (aircraft == null || !aircraft.isUAV()) return false;
+        WingmanEntry entry = WingmanRegistry.get(aircraft.getUniqueID());
+        if (entry == null || entry.mission == null || entry.order == null) return false;
+        entry.attackMode = WingmanEntry.ATK_AUTO;
+        entry.currentAutoTarget = targetId;
+        entry.autoTargetX = x;
+        entry.autoTargetY = y;
+        entry.autoTargetZ = z;
+        entry.order.missionTypes.add(MissionType.STRIKE);
+        entry.order.targetX = x;
+        entry.order.targetZ = z;
+        entry.order.orbitRadius = attackRadius;
+        entry.order.orbitAttack = true;
+        if (supportsKamikaze(aircraft)) {
+            appendDiveApproach(entry, aircraft, x, y, z);
+        }
+        appendAttackNode(entry, attackRadius);
+        return true;
+    }
+
+    public boolean armKamikaze(MCH_EntityAircraft aircraft, double x, double y, double z,
+                               double attackRadius, UUID targetId) {
+        if (!supportsKamikaze(aircraft)) return false;
+        int weaponId = selectSelfDestructWeapon(aircraft);
+        if (weaponId < 0) return false;
+        if (!armAttack(aircraft, x, y, z, attackRadius, targetId)) return false;
+        WingmanEntry entry = WingmanRegistry.get(aircraft.getUniqueID());
+        // WingMan fires the aircraft's selected seat weapon. Select the
+        // destructive loaded set before arming its autonomous attack node.
+        aircraft.updateWeaponID(0, weaponId);
+        entry.weaponSeat = 0;
+        entry.weaponType = aircraft.getWeapon(weaponId).getName();
+        entry.order.orbitAttack = false;
+        entry.order.strikePasses = 1;
+        return true;
+    }
+
+    public boolean supportsKamikaze(MCH_EntityAircraft aircraft) {
+        if (aircraft == null || !aircraft.isUAV()) return false;
+        return hasSelfDestructWeapon(aircraft);
+    }
+
+    public boolean hasSelfDestructWeapon(MCH_EntityAircraft aircraft) {
+        if (aircraft == null || aircraft.getWeapons() == null) return false;
+        for (MCH_WeaponSet weapon : aircraft.getWeapons()) {
+            if (weapon != null && weapon.getInfo() != null && weapon.getInfo().destruct) return true;
+        }
+        return false;
+    }
+
+    public boolean hasSelfDestructWeaponWithAmmo(MCH_EntityAircraft aircraft) {
+        return selectSelfDestructWeapon(aircraft) >= 0;
+    }
+
+    private int selectSelfDestructWeapon(MCH_EntityAircraft aircraft) {
+        if (aircraft == null || aircraft.getWeapons() == null) return -1;
+        MCH_WeaponSet[] weapons = aircraft.getWeapons();
+        for (int i = 0; i < weapons.length; i++) {
+            MCH_WeaponSet weapon = weapons[i];
+            if (weapon != null && weapon.getInfo() != null && weapon.getInfo().destruct
+                    && (weapon.getAmmo() > 0 || weapon.getAmmoReserve() > 0)) return i;
+        }
+        return -1;
+    }
+
+    public boolean hasFuelForMission(MCH_EntityAircraft aircraft) {
+        return aircraft != null && aircraft.getMaxFuel() > 0
+                && aircraft.getFuel() > Math.max(1, aircraft.getMaxFuel() / 5)
+                && aircraft.canUseFuel();
+    }
+
+    public boolean hasAttackAmmunition(MCH_EntityAircraft aircraft) {
+        if (aircraft == null || aircraft.getWeapons() == null) return false;
+        for (MCH_WeaponSet weapon : aircraft.getWeapons()) {
+            if (weapon != null && (weapon.getAmmo() > 0 || weapon.getAmmoReserve() > 0)) return true;
+        }
+        return false;
+    }
+
+    private void appendAttackNode(WingmanEntry entry, double attackRadius) {
+        if (entry.mission.isEmpty()
+                || entry.mission.get(entry.mission.size() - 1).type != MissionNode.Type.ATTACK) {
+            entry.mission.add(MissionNode.attack(attackRadius));
+        }
+    }
+
+    private void appendDiveApproach(WingmanEntry entry, MCH_EntityAircraft aircraft,
+                                    double x, double y, double z) {
+        double dx = aircraft.posX - x;
+        double dz = aircraft.posZ - z;
+        double horizontalDistance = Math.sqrt(dx * dx + dz * dz);
+        if (horizontalDistance < 0.001D) {
+            dx = 0.0D;
+            dz = 1.0D;
+            horizontalDistance = 1.0D;
+        }
+
+        double altitudeDifference = Math.max(0.0D, aircraft.posY - y);
+        double angleRadians = Math.toRadians(KAMIKAZE_ATTACK_ANGLE_DEGREES);
+        double diveRun = altitudeDifference / Math.tan(angleRadians);
+        diveRun = Math.max(MIN_DIVE_RUN_METERS, Math.min(MAX_DIVE_RUN_METERS, diveRun));
+
+        double approachX = x + (dx / horizontalDistance) * diveRun;
+        double approachZ = z + (dz / horizontalDistance) * diveRun;
+        double approachY = y + Math.tan(angleRadians) * diveRun;
+        entry.mission.add(MissionNode.flyTo(approachX, approachY, approachZ));
+        entry.order.cruiseAlt = y;
     }
 
     public void release(MCH_EntityAircraft aircraft) {
@@ -56,6 +179,33 @@ public final class WingManFlightAdapter {
 
     public boolean isDispatched(MCH_EntityAircraft aircraft) {
         return aircraft != null && WingmanRegistry.get(aircraft.getUniqueID()) != null;
+    }
+
+    public WingmanEntry getEntry(MCH_EntityAircraft aircraft) {
+        return aircraft == null ? null : WingmanRegistry.get(aircraft.getUniqueID());
+    }
+
+    /**
+     * Ask WingMan to stop the mission and recover the aircraft.  This is
+     * intentionally a recovery-only operation; it never arms weapons.
+     */
+    public boolean requestReturn(MCH_EntityAircraft aircraft, String reason) {
+        WingmanEntry entry = getEntry(aircraft);
+        if (entry == null) return false;
+        entry.attackMode = WingmanEntry.ATK_NONE;
+        entry.rtbReason = reason == null ? "RDP_MISSION_COMPLETE" : reason;
+        entry.autoState = AutonomousState.RTB;
+        return true;
+    }
+
+    public boolean isReturning(MCH_EntityAircraft aircraft) {
+        WingmanEntry entry = getEntry(aircraft);
+        return entry != null && entry.autoState == AutonomousState.RTB;
+    }
+
+    public boolean isParked(MCH_EntityAircraft aircraft) {
+        WingmanEntry entry = getEntry(aircraft);
+        return entry != null && entry.autoState == AutonomousState.PARKED;
     }
 
     public UUID getAircraftId(MCH_EntityAircraft aircraft) {

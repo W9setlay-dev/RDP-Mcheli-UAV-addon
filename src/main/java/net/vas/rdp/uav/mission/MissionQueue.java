@@ -25,6 +25,10 @@ public final class MissionQueue {
         return queue.remove(mission);
     }
 
+    public synchronized boolean contains(RDPMission mission) {
+        return queue.contains(mission);
+    }
+
     public synchronized int size() {
         return queue.size();
     }

@@ -73,6 +73,24 @@ public final class RDPMission {
         transitionTo(MissionState.TARGET_LOCKED, tick);
     }
 
+    public void lockPoint(long tick) {
+        targetId = null;
+        transitionTo(MissionState.TARGET_LOCKED, tick);
+    }
+
+    /**
+     * Updates a locked entity after it was unloaded and found again.  This
+     * deliberately does not change the mission state: reacquisition is a
+     * recovery operation.
+     */
+    public void reacquireTarget(UUID targetId, long tick) {
+        if (targetId == null || tick < lastUpdateTick) {
+            throw new IllegalArgumentException("Target UUID and tick are required");
+        }
+        this.targetId = targetId;
+        this.lastUpdateTick = tick;
+    }
+
     public void fail(String reason, long tick) {
         if (reason == null || reason.trim().isEmpty()) {
             throw new IllegalArgumentException("Failure reason is required");

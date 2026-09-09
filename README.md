@@ -1,5 +1,15 @@
 # RDP UAV Missions
 
+## Operator-triggered kamikaze run
+
+For a locked attack mission, the pilot can explicitly press `N` or use the
+`Nose-dive [N]` GUI button. The server validates ownership, pilot seat,
+target lock, and supported Switchblade/Shahed aircraft before arming the
+35-degree WingMan dive approach. WingMan remains responsible for steering and
+available-speed control; the addon does not teleport the aircraft or force a
+fake impact. Ordinary aircraft are rejected, and live collision, damage, and
+self-destruct behavior must be verified in the target instance.
+
 This is the Forge 1.12.2 addon project for player-configured reconnaissance
 and target missions. It targets the exact installed runtime:
 
@@ -14,14 +24,43 @@ Place the verified runtime jars at `libs/mcheli-ce-1.5.1.jar` and
 `RDP_CORE_JAR` to the installed instance jar paths. The jars are intentionally
 not copied into source control.
 
-The addon now includes a small mission-control GUI and AI operator help page.
-On a server, use `/rdpuav mission gui`. The screen receives only the current
+The addon includes a small mission-control GUI and player-owned UAV mission
+commands. While piloting a McHeli UAV, authorize it with
+`/rdpuav authorize`, then create a manual-target reconnaissance mission with
+`/rdpuav mission create <namespace:id>` (append `attack` only when an attack
+mission was intentionally configured). Use `/rdpuav mission gui` to monitor
+missions. The screen receives only the current
 player's mission summaries from the server; select a mission and use
 `Abort selected` to safely stop a non-terminal mission, Refresh requests a new
 snapshot, Operator help explains the AI pilot workflow, and Close exits the
 screen. Abort requests are checked server-side against the player's UUID,
-mission ownership, and terminal state. The GUI does not create missions or
-authorize autonomous attacks.
+mission ownership, and terminal state. Authorization requires the player to
+be the McHeli UAV pilot; another player cannot create a mission for that UAV.
+Attack-intent missions begin in reconnaissance mode and automatically arm
+WingMan attack mode after the server reaches `TARGET_LOCKED`. `Authorize
+attack` remains available as a manual operator override. The server still
+checks ownership, UAV status, target coordinates, and mission state before
+arming the attack adapter. Dispatch starts on the server world tick and is
+handed to WingMan through the adapter.
+
+For a survival-safe point attack, look at a block or structure from the
+piloted UAV and run `/rdpuav mission attack-point`. The server ray-traces the
+player camera out to 256 blocks, stores the finite world coordinates, and
+queues a WingMan reconnaissance flight. An attack node is armed automatically
+after a valid target lock, or manually through the GUI override. Entity missions resolve
+registered entity IDs in the same radius, including modded IDs such as
+`srparasites:*`, `lycanitesmobs:*`, `scp:*`, and `techguns:*` when those
+entities are loaded in the world. The addon does not infer a structure's
+identity; structures are safely targeted by their selected world point.
+No live weapon damage or self-destruct result is inferred by this addon;
+ordinary UAV missions are never forced into an attack.
+
+**Implementation boundary:** server ticks now dispatch queued missions, track
+loaded targets with reacquisition, persist scan metadata, and request WingMan
+return/parking. This remains source/API validated only: actual autonomous
+steering, landing, scanner contents, weapon effects, and self-destruct are not
+verified in a live Forge server. Do not treat a successful build or JAR
+deployment as proof that those behaviors work in-game.
 
 Automatic selection ranks valid candidates by target priority and then distance;
 manual selection only returns the explicitly requested registry ID. The
