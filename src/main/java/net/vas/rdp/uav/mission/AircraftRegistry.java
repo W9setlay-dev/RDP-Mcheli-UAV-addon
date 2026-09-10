@@ -3,6 +3,8 @@ package net.vas.rdp.uav.mission;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.ArrayList;
+import java.util.List;
 
 public final class AircraftRegistry {
     private final Map<UUID, AircraftRecord> records = new LinkedHashMap<UUID, AircraftRecord>();
@@ -21,5 +23,8 @@ public final class AircraftRegistry {
     public synchronized void release(UUID aircraftId) {
         AircraftRecord record = records.get(aircraftId);
         if (record != null) record.release();
+    }
+    public synchronized List<AircraftRecord> snapshot() {
+        return new ArrayList<AircraftRecord>(records.values());
     }
 }

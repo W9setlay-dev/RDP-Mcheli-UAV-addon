@@ -220,9 +220,6 @@ public final class RdpUavNetwork {
                             selected = mission;
                             break;
                         }
-                        if (selected == null && !mission.getState().name().equals("COMPLETE")
-                                && !mission.getState().name().equals("ABORTED")
-                                && !mission.getState().name().equals("FAILED")) selected = mission;
                     }
                     if (selected == null) return new TargetTelemetry(false, false, "", "", "NO TARGET", "NO TARGET",
                             null, null, "NORMAL", "READY", "OFF", player.dimension, 0, 0, 0, 0);

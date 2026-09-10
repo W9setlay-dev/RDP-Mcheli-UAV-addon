@@ -93,6 +93,9 @@ public final class MissionLifecycle {
         }
 
         try {
+            if (target.entity != null && mission.getTargetId() == null) {
+                mission.reacquireTarget(target.entity.getUniqueID(), tick);
+            }
             mission.transitionTo(MissionState.DISPATCHED, tick);
             mission.transitionTo(MissionState.TAKEOFF, tick);
             mission.transitionTo(MissionState.CRUISE, tick);

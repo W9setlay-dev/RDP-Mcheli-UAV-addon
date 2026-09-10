@@ -19,6 +19,8 @@ public final class RDPUavMod {
     public static final String MOD_ID = "rdpuav";
     private static final MissionManager MISSIONS = new MissionManager();
     private static final MissionLifecycle LIFECYCLE = new MissionLifecycle(MISSIONS);
+    private static final net.vas.rdp.uav.ai.AiTaskingService AI =
+            new net.vas.rdp.uav.ai.AiTaskingService(MISSIONS);
 
     @Mod.EventHandler
     public void preInit(FMLPreInitializationEvent event) {
@@ -47,6 +49,10 @@ public final class RDPUavMod {
 
     public static MissionManager missions() {
         return MISSIONS;
+    }
+
+    public static net.vas.rdp.uav.ai.AiTaskingService ai() {
+        return AI;
     }
 
     private static final class ServerTickHandler {

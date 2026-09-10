@@ -19,7 +19,7 @@ public final class GuiMissionControl extends GuiScreen {
 
     public static void receiveMissionData(String[] rows, String[] ids) {
         if (active != null) {
-            String selectedId = active.selectedMissionId();
+            String selectedId = selectedMissionId();
             active.missionRows = rows == null ? new String[0] : rows;
             active.missionIds = ids == null ? new String[0] : ids;
             active.selected = -1;
@@ -148,7 +148,7 @@ public final class GuiMissionControl extends GuiScreen {
         if (help) {
             drawHelp();
         } else {
-            drawString(fontRenderer, "Target registry ID (for example techguns:zombie)", width / 2 - 120,
+            drawString(fontRenderer, "Target registry ID (for example srparasites:rupter)", width / 2 - 120,
                     26, 0xB0D8FF);
             if (targetField != null) targetField.drawTextBox();
             if (!status.isEmpty()) drawString(fontRenderer, status, width / 2 - 120, 56, 0xFFCC66);

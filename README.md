@@ -78,6 +78,36 @@ javac -source 8 -target 8 ...
 java net.vas.rdp.uav.CoreMissionTest
 ```
 
+The Gradle test task also runs the JUnit core suite in
+`src/test/java/net/vas/rdp/uav/RdpUavCoreTest.java`. It covers mission
+transition guards, mission NBT persistence, target normalization and
+selection, target-lock ordering, assignment conflicts, RF energy bounds and
+persistence, and square-strike native-node geometry:
+
+```text
+gradlew.bat test --no-daemon
+```
+
+These tests are source/API validation only. They do not prove live McHeli
+steering, weapon release, projectile impact, target damage, self-destruct,
+landing, parking, or HUD rendering. Those behaviors require a controlled
+Minecraft client/server test with the installed McHeli and WingMan runtime.
+
+## AI tasking boundary
+
+The `net.vas.rdp.uav.ai` package is a deterministic tasking layer above the
+existing `MissionManager`. `AiTaskRequest` represents operator intent,
+`AiDecisionEngine` scores registered aircraft by availability, capability,
+priority, and distance, and `AiTaskingService` separates recommendation,
+operator approval, and autonomous execution. Approved or autonomous plans
+are submitted through `MissionManager.create`; the AI does not mutate
+mission state, ownership, weapons, or flight physics directly. The existing
+`MissionLifecycle` and `WingManFlightAdapter` remain the execution authority.
+
+This layer is source/API validated. It does not by itself prove that a live
+operator GUI request reaches an in-game UAV, nor does it certify autonomous
+flight or weapon effects.
+
 ForgeGradle configuration was verified with the local ForgeGradle 2.3
 installation. A full `test`/`build` additionally requires the exact
 `net.minecraftforge:forge:1.12.2-14.23.5.2864` userdev artifact; only

@@ -104,6 +104,10 @@ public final class RdpUavCommand extends CommandBase {
             return;
         }
         UUID aircraftId = aircraft.getUniqueID();
+        if (aircraft.getAcInfo() == null) {
+            player.sendMessage(new TextComponentString("UAV metadata is unavailable; authorization rejected."));
+            return;
+        }
         RDPUavMod.missions().registerAircraft(new AircraftRecord(aircraftId, player.getUniqueID(),
                 aircraft.dimension, aircraft.getAcInfo().name, true, true));
         player.sendMessage(new TextComponentString("UAV authorized: " + aircraft.getAcInfo().name
@@ -132,6 +136,10 @@ public final class RdpUavCommand extends CommandBase {
         }
         boolean attack = args.length >= 4 && "attack".equalsIgnoreCase(args[3]);
         try {
+            if (aircraft.getAcInfo() == null) {
+                player.sendMessage(new TextComponentString("UAV metadata is unavailable; mission rejected."));
+                return;
+            }
             RDPMission mission = new RDPMission(UUID.randomUUID(), player.getUniqueID(), aircraftId,
                     aircraft.getAcInfo().name, attack ? MissionType.STRIKE : MissionType.RECONNAISSANCE,
                     TargetSpec.manual(args[2], TargetPriority.HIGH), attack, false, true,
