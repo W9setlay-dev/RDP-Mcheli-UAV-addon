@@ -205,7 +205,8 @@ public final class RdpUavNetwork {
                 }
 
                 static TargetTelemetry from(EntityPlayerMP player) {
-                    MCH_EntityAircraft ridden = MCH_EntityAircraft.getAircraft_RiddenOrControl(player);
+                    MCH_EntityAircraft ridden = net.vas.rdp.uav.mission.UavControlAccess
+                            .findControlledAircraft(player);
                     if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(ridden, player)) {
                         return new TargetTelemetry(false, false, "", "", "NO TARGET", "NO TARGET",
                                 null, null, "NORMAL", "READY", "OFF", player.dimension, 0, 0, 0, 0);
@@ -472,7 +473,8 @@ public final class RdpUavNetwork {
                             || !message.target.matches("[A-Za-z0-9_.-]+:[A-Za-z0-9_./-]+"))) {
                         return;
                     }
-                    MCH_EntityAircraft aircraft = MCH_EntityAircraft.getAircraft_RiddenOrControl(player);
+                    MCH_EntityAircraft aircraft = net.vas.rdp.uav.mission.UavControlAccess
+                            .findControlledAircraft(player);
                     if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, player)) return;
                     String command = message.point
                             ? "rdpuav mission attack-point"

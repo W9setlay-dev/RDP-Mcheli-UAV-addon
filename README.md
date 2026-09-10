@@ -55,6 +55,13 @@ identity; structures are safely targeted by their selected world point.
 No live weapon damage or self-destruct result is inferred by this addon;
 ordinary UAV missions are never forced into an attack.
 
+The flight adapter also exposes a validated coordinate-square strike pattern.
+It generates alternating native WingMan `flyTo` and `attack` nodes, preserving
+the real McHeli/WingMan movement and weapon boundaries. Node creation is not
+treated as proof of a completed pass, weapon release, impact, or damage; a
+server mission command and live runtime verification are still required before
+this capability can be considered production-ready.
+
 **Implementation boundary:** server ticks now dispatch queued missions, track
 loaded targets with reacquisition, persist scan metadata, and request WingMan
 return/parking. This remains source/API validated only: actual autonomous

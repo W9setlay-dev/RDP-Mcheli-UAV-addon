@@ -36,14 +36,6 @@ public final class WingManFlightAdapter {
             return false;
         }
 
-        MissionOrder order = new MissionOrder();
-        order.missionTypes.add(attack ? MissionType.STRIKE : MissionType.RECON);
-        order.targetX = x;
-        order.targetZ = z;
-        order.orbitRadius = orbitRadius;
-        order.cruiseAlt = y;
-        order.orbitAttack = attack;
-
         List<MissionNode> nodes = new ArrayList<MissionNode>();
         nodes.add(MissionNode.flyTo(x, y, z));
         if (orbitTicks > 0) {
@@ -53,7 +45,9 @@ public final class WingManFlightAdapter {
         WingmanEntry entry = new WingmanEntry(aircraft,
                 attack ? WingmanEntry.ATK_AUTO : WingmanEntry.ATK_NONE);
         entry.currentAutoTarget = targetId;
-        entry.order = order;
+        entry.autoTargetX = x;
+        entry.autoTargetY = y;
+        entry.autoTargetZ = z;
         entry.mission = nodes;
         entry.missionIndex = 0;
         WingmanRegistry.put(aircraftId, entry);
@@ -64,21 +58,28 @@ public final class WingManFlightAdapter {
                              double attackRadius, UUID targetId) {
         if (aircraft == null || !aircraft.isUAV()) return false;
         WingmanEntry entry = WingmanRegistry.get(aircraft.getUniqueID());
-        if (entry == null || entry.mission == null || entry.order == null) return false;
+        if (entry == null || entry.mission == null) return false;
         entry.attackMode = WingmanEntry.ATK_AUTO;
         entry.currentAutoTarget = targetId;
         entry.autoTargetX = x;
         entry.autoTargetY = y;
         entry.autoTargetZ = z;
-        entry.order.missionTypes.add(MissionType.STRIKE);
-        entry.order.targetX = x;
-        entry.order.targetZ = z;
-        entry.order.orbitRadius = attackRadius;
-        entry.order.orbitAttack = true;
         if (supportsKamikaze(aircraft)) {
             appendDiveApproach(entry, aircraft, x, y, z);
         }
         appendAttackNode(entry, attackRadius);
+        return true;
+    }
+
+    public boolean armSquareStrike(MCH_EntityAircraft aircraft, SquareStrikePlan plan,
+                                   UUID targetId) {
+        if (aircraft == null || plan == null || !aircraft.isUAV()) return false;
+        WingmanEntry entry = WingmanRegistry.get(aircraft.getUniqueID());
+        if (entry == null || entry.mission == null) return false;
+        if (!hasAttackAmmunition(aircraft) && !supportsKamikaze(aircraft)) return false;
+        entry.attackMode = WingmanEntry.ATK_AUTO;
+        entry.currentAutoTarget = targetId;
+        entry.mission.addAll(plan.createNodes());
         return true;
     }
 
@@ -94,8 +95,6 @@ public final class WingManFlightAdapter {
         aircraft.updateWeaponID(0, weaponId);
         entry.weaponSeat = 0;
         entry.weaponType = aircraft.getWeapon(weaponId).getName();
-        entry.order.orbitAttack = false;
-        entry.order.strikePasses = 1;
         return true;
     }
 
@@ -168,7 +167,6 @@ public final class WingManFlightAdapter {
         double approachZ = z + (dz / horizontalDistance) * diveRun;
         double approachY = y + Math.tan(angleRadians) * diveRun;
         entry.mission.add(MissionNode.flyTo(approachX, approachY, approachZ));
-        entry.order.cruiseAlt = y;
     }
 
     public void release(MCH_EntityAircraft aircraft) {
@@ -183,6 +181,10 @@ public final class WingManFlightAdapter {
 
     public WingmanEntry getEntry(MCH_EntityAircraft aircraft) {
         return aircraft == null ? null : WingmanRegistry.get(aircraft.getUniqueID());
+    }
+
+    public FlightState readState(MCH_EntityAircraft aircraft) {
+        return FlightState.capture(aircraft, getEntry(aircraft));
     }
 
     /**
@@ -201,6 +203,32 @@ public final class WingManFlightAdapter {
     public boolean isReturning(MCH_EntityAircraft aircraft) {
         WingmanEntry entry = getEntry(aircraft);
         return entry != null && entry.autoState == AutonomousState.RTB;
+    }
+
+    /**
+     * Reports completion of WingMan's real attack pass, not merely arrival at
+     * the target. The attack node must have been consumed or WingMan must
+     * have entered recovery before the mission may advance.
+     */
+    public boolean isAttackComplete(MCH_EntityAircraft aircraft) {
+        WingmanEntry entry = getEntry(aircraft);
+        if (entry == null || entry.mission == null) return false;
+        if (entry.autoState == AutonomousState.RTB
+                || entry.autoState == AutonomousState.LANDING
+                || entry.autoState == AutonomousState.TAXI_IN
+                || entry.autoState == AutonomousState.PARKED) {
+            return true;
+        }
+        int attackIndex = -1;
+        for (int i = 0; i < entry.mission.size(); i++) {
+            if (entry.mission.get(i).type == MissionNode.Type.ATTACK) {
+                attackIndex = i;
+                break;
+            }
+        }
+        if (attackIndex < 0 || entry.missionIndex <= attackIndex) return false;
+        com.norwood.mcheli.wingman.mission.MissionNode current = entry.currentNode();
+        return current == null || current.type != MissionNode.Type.ATTACK;
     }
 
     public boolean isParked(MCH_EntityAircraft aircraft) {

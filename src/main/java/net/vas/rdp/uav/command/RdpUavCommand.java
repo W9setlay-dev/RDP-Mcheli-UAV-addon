@@ -63,7 +63,7 @@ public final class RdpUavCommand extends CommandBase {
                 sender.sendMessage(new TextComponentString("The mission GUI requires a server player."));
                 return;
             }
-            MCH_EntityAircraft aircraft = MCH_EntityAircraft.getAircraft_RiddenOrControl(player);
+            MCH_EntityAircraft aircraft = UavControlAccess.findControlledAircraft(player);
             if (!UavControlAccess.isOperator(aircraft, player)) {
                 sender.sendMessage(new TextComponentString(
                         "Open the mission GUI while seated as the UAV pilot."));
@@ -97,7 +97,7 @@ public final class RdpUavCommand extends CommandBase {
     }
 
     private void authorize(EntityPlayer player) {
-        MCH_EntityAircraft aircraft = MCH_EntityAircraft.getAircraft_RiddenOrControl(player);
+        MCH_EntityAircraft aircraft = UavControlAccess.findControlledAircraft(player);
         if (!UavControlAccess.isOperator(aircraft, player)) {
             player.sendMessage(new TextComponentString(
                     "Authorization requires piloting a McHeli UAV. Mount the UAV and try again."));
@@ -117,7 +117,7 @@ public final class RdpUavCommand extends CommandBase {
             return;
         }
 
-        MCH_EntityAircraft aircraft = MCH_EntityAircraft.getAircraft_RiddenOrControl(player);
+        MCH_EntityAircraft aircraft = UavControlAccess.findControlledAircraft(player);
         if (!UavControlAccess.isOperator(aircraft, player)) {
             player.sendMessage(new TextComponentString(
                     "You must be piloting an authorized McHeli UAV."));
@@ -149,7 +149,7 @@ public final class RdpUavCommand extends CommandBase {
     }
 
     private void createPointAttack(EntityPlayer player) {
-        MCH_EntityAircraft aircraft = MCH_EntityAircraft.getAircraft_RiddenOrControl(player);
+        MCH_EntityAircraft aircraft = UavControlAccess.findControlledAircraft(player);
         if (!UavControlAccess.isOperator(aircraft, player)
                 || !RDPUavMod.missions().ensureAuthorized(aircraft, player)
                 || !RDPUavMod.missions().canAssignAircraft(aircraft.getUniqueID(), player.getUniqueID())) {

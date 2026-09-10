@@ -5,6 +5,7 @@ import com.norwood.mcheli.uav.MCH_EntityUavStation;
 import com.norwood.mcheli.uav.IUavStation;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.world.World;
 
 /**
  * McHeli treats a UAV station operator differently from an aircraft pilot:
@@ -25,6 +26,28 @@ public final class UavControlAccess {
         IUavStation station = aircraft.getUavStation();
         return station != null && aircraft == station.getControlled()
                 && sameEntity(station.getOperator(), player);
+    }
+
+    public static MCH_EntityAircraft findControlledAircraft(EntityPlayer player) {
+        if (player == null) return null;
+        MCH_EntityAircraft aircraft = MCH_EntityAircraft.getAircraft_RiddenOrControl(player);
+        if (aircraft != null && isOperator(aircraft, player)) return aircraft;
+        Entity mount = player.getRidingEntity();
+        if (mount instanceof MCH_EntityUavStation) {
+            Entity controlled = ((MCH_EntityUavStation) mount).getControlled();
+            if (controlled instanceof MCH_EntityAircraft
+                    && isOperator((MCH_EntityAircraft) controlled, player)) {
+                return (MCH_EntityAircraft) controlled;
+            }
+        }
+        World world = player.world;
+        for (Entity entity : world.loadedEntityList) {
+            if (entity instanceof MCH_EntityAircraft
+                    && isOperator((MCH_EntityAircraft) entity, player)) {
+                return (MCH_EntityAircraft) entity;
+            }
+        }
+        return null;
     }
 
     private static boolean sameEntity(Entity first, Entity second) {

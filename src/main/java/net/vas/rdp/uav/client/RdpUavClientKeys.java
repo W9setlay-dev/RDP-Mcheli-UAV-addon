@@ -48,8 +48,9 @@ public final class RdpUavClientKeys {
     public void onKeyInput(InputEvent.KeyInputEvent event) {
         Minecraft minecraft = Minecraft.getMinecraft();
         if (minecraft.player == null) return;
-        MCH_EntityAircraft aircraft = MCH_EntityAircraft.getAircraft_RiddenOrControl(minecraft.player);
-        if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, minecraft.player)) return;
+        MCH_EntityAircraft aircraft = net.vas.rdp.uav.mission.UavControlAccess
+                .findControlledAircraft(minecraft.player);
+        if (aircraft == null) return;
         if (OPEN_MISSION_CONTROL.isPressed()) {
             minecraft.displayGuiScreen(new GuiMissionControl());
             RdpUavNetwork.requestMissionData();

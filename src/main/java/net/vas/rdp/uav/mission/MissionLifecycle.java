@@ -227,12 +227,12 @@ public final class MissionLifecycle {
                 return false;
             case ATTACK_TARGET:
                 // No damage or self-destruct result is inferred.  WingMan's
-                // own RTB transition is the only safe completion signal.
+                // attack node must complete before scan/report/RTB can begin.
                 if (flight.isReturning(aircraft)) {
                     mission.transitionTo(MissionState.RETURNING, tick);
                     return true;
                 }
-                if (atTarget(aircraft, target, mission)) {
+                if (flight.isAttackComplete(aircraft)) {
                     mission.transitionTo(MissionState.APPROACHING, tick);
                     mission.transitionTo(MissionState.ON_TARGET, tick);
                     mission.transitionTo(MissionState.SCANNING, tick);

@@ -11,6 +11,8 @@ import net.vas.rdp.uav.target.TargetSelector;
 import net.vas.rdp.uav.mission.AircraftRecord;
 import net.vas.rdp.uav.mission.AircraftRegistry;
 import net.vas.rdp.uav.mission.MissionQueue;
+import net.vas.rdp.uav.flight.SquareStrikePlan;
+import com.norwood.mcheli.wingman.mission.MissionNode;
 
 import java.util.UUID;
 
@@ -71,6 +73,20 @@ public final class CoreMissionTest {
                 java.util.Arrays.<TargetSelector.Candidate<String>>asList(
                         candidate("srparasites:beckon", 1, TargetPriority.CRITICAL, "wrong")));
         check(selected == null, "manual selection never substitutes a target");
+
+        SquareStrikePlan square = new SquareStrikePlan(100, 140, -50,
+                80, 60, 0, 20, 30, 2);
+        java.util.List<MissionNode> nodes = square.createNodes();
+        check(nodes.size() == 9, "square creates two native nodes and one attack per pass");
+        check(nodes.get(2).type == MissionNode.Type.ATTACK, "square pass ends with attack node");
+        check(nodes.get(3).type == MissionNode.Type.FLY_TO, "square alternates into next pass");
+        boolean rejected = false;
+        try {
+            new SquareStrikePlan(0, 100, 0, 10, 10, 0, 20, 5, 1);
+        } catch (IllegalArgumentException expected) {
+            rejected = true;
+        }
+        check(rejected, "square rejects spacing larger than its length");
     }
 
     private static TargetSelector.Candidate<String> candidate(final String id, final double distance,

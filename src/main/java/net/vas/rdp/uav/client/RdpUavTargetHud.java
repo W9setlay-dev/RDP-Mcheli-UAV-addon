@@ -30,7 +30,7 @@ public final class RdpUavTargetHud {
 
     @SubscribeEvent
     public void render(RenderGameOverlayEvent.Post event) {
-        if (event.getType() != RenderGameOverlayEvent.ElementType.CROSSHAIRS
+        if (event.getType() != RenderGameOverlayEvent.ElementType.ALL
                 || !RdpUavHudConfig.enabled || telemetry == null || !telemetry.active) return;
         Minecraft mc = Minecraft.getMinecraft();
         if (mc.player == null || mc.world == null || System.currentTimeMillis() - receivedAt > 3000L) return;
