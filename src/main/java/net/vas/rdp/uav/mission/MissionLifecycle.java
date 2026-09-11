@@ -139,6 +139,12 @@ public final class MissionLifecycle {
 
             MCH_EntityAircraft aircraft = findAircraft(world, mission.getAircraftId());
             if (aircraft == null) {
+                if (mission.getState() == MissionState.KAMIKADZE_TARGET) {
+                    mission.markKamikazeDetonated(tick);
+                    manager.release(mission);
+                    dirty = true;
+                    continue;
+                }
                 fail(world, mission, "AIRCRAFT_LOST", tick);
                 dirty = true;
                 continue;
@@ -249,6 +255,16 @@ public final class MissionLifecycle {
                     mission.transitionTo(MissionState.APPROACHING, tick);
                     mission.transitionTo(MissionState.ON_TARGET, tick);
                     mission.transitionTo(MissionState.SCANNING, tick);
+                    return true;
+                }
+                return false;
+            case KAMIKADZE_TARGET:
+                if (flight.isReturning(aircraft)) {
+                    mission.transitionTo(MissionState.RETURNING, tick);
+                    return true;
+                }
+                if (flight.isAttackComplete(aircraft)) {
+                    mission.markKamikazeDetonated(tick);
                     return true;
                 }
                 return false;
@@ -400,7 +416,7 @@ public final class MissionLifecycle {
 
     private boolean terminal(MissionState state) {
         return state == MissionState.COMPLETE || state == MissionState.ABORTED
-                || state == MissionState.FAILED;
+                || state == MissionState.FAILED || state == MissionState.KAMIKADZE_DETONATED;
     }
 
     private static final class Target {

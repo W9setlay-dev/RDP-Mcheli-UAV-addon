@@ -14,6 +14,13 @@ import net.vas.rdp.uav.target.TargetLock;
 import net.vas.rdp.uav.target.TargetPriority;
 import net.vas.rdp.uav.target.TargetSelector;
 import net.vas.rdp.uav.target.TargetSpec;
+import net.vas.rdp.uav.flight.SearchPattern;
+import net.vas.rdp.uav.flight.SquareArea;
+import net.vas.rdp.uav.flight.SquareStrikeConstraints;
+import net.vas.rdp.uav.flight.TargetPolicy;
+import net.vas.rdp.uav.flight.WeaponPolicy;
+import net.vas.rdp.uav.flight.SquareStrikeState;
+import net.vas.rdp.uav.flight.SquareStrikeStateMachine;
 import net.vas.rdp.uav.sensor.KnowledgeKind;
 import net.vas.rdp.uav.sensor.SensorFusion;
 import net.vas.rdp.uav.sensor.SensorObservation;
@@ -205,6 +212,40 @@ public class RdpUavCoreTest {
         assertEquals(MissionNode.Type.FLY_TO, nodes.get(4).type);
         assertEquals(MissionNode.Type.ATTACK, nodes.get(5).type);
         assertEquals(MissionNode.Type.ATTACK, nodes.get(8).type);
+    }
+
+    @Test
+    public void squareStrikeConstraintsEnforceAreaAndMissionLimits() {
+        SquareArea area = new SquareArea(100, -50, 200, 120);
+        SquareStrikeConstraints constraints = new SquareStrikeConstraints(area, 80, 140,
+                SearchPattern.BOUSTROPHEDON, TargetPolicy.HOSTILE_ONLY,
+                WeaponPolicy.CONVENTIONAL_ONLY, 5, 2000, 3, 4, true, 0.25D);
+
+        assertTrue(area.contains(0, -100));
+        assertFalse(area.contains(-1, -111));
+        assertTrue(constraints.allowsAltitude(100));
+        assertFalse(constraints.allowsAltitude(150));
+        assertTrue(constraints.allowsEngagement(2, 3));
+        assertFalse(constraints.allowsEngagement(3, 3));
+        assertTrue(constraints.timedOut(10, 2010));
+    }
+
+    @Test
+    public void squareStrikeStateMachineSupportsOperatorInterrupts() {
+        SquareStrikeStateMachine machine = new SquareStrikeStateMachine();
+        machine.transitionTo(SquareStrikeState.VALIDATING);
+        machine.transitionTo(SquareStrikeState.QUEUED);
+        machine.transitionTo(SquareStrikeState.ASSIGNED);
+        machine.override();
+        assertEquals(SquareStrikeState.OPERATOR_OVERRIDE, machine.getState());
+        machine.transitionTo(SquareStrikeState.PAUSED);
+        machine.transitionTo(SquareStrikeState.RESUME_SEARCH);
+        try {
+            machine.transitionTo(SquareStrikeState.ENGAGEMENT_ACTIVE);
+            fail("Override recovery must resume through search");
+        } catch (IllegalStateException expected) {
+            // Expected validation boundary.
+        }
     }
 
     private static RDPMission mission(TargetSpec target) {

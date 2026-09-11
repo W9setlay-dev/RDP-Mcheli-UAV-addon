@@ -53,12 +53,8 @@ public final class UavEnergyConfig {
 
     public static Profile forAircraft(String name) {
         String aircraftName = name == null ? "" : name.toLowerCase(Locale.ROOT);
-        if (!"switchblade".equals(aircraftName)) {
-            return new Profile(false, capacity, idleDrainPerTick,
-                    flightDrainPerTick, minimumOperatingEnergy);
-        }
         Profile profile = profiles.get(aircraftName);
-        return profile == null ? new Profile(true, capacity, idleDrainPerTick,
+        return profile == null ? new Profile(false, capacity, idleDrainPerTick,
                 flightDrainPerTick, minimumOperatingEnergy) : profile;
     }
 

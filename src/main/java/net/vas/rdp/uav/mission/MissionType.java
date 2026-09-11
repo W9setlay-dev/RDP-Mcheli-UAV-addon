@@ -4,5 +4,6 @@ public enum MissionType {
     OBSERVATION,
     RECONNAISSANCE,
     STRIKE,
-    DESTROYING
+    DESTROYING,
+    SQUARE_STRIKE
 }

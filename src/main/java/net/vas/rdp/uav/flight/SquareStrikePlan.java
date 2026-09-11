@@ -13,6 +13,7 @@ import java.util.List;
  * aircraft or treats node creation as evidence that a pass was completed.</p>
  */
 public final class SquareStrikePlan {
+    private final SquareArea area;
     private final double centerX;
     private final double altitude;
     private final double centerZ;
@@ -45,6 +46,7 @@ public final class SquareStrikePlan {
         this.passSpacing = passSpacing;
         this.attackRadius = attackRadius;
         this.strikePasses = strikePasses;
+        this.area = new SquareArea(centerX, centerZ, width, length);
     }
 
     public List<MissionNode> createNodes() {
@@ -74,6 +76,15 @@ public final class SquareStrikePlan {
     }
 
     public int getStrikePasses() { return strikePasses; }
+
+    public boolean contains(double x, double z) {
+        return area.contains(x, z);
+    }
+
+    public double getMinX() { return area.minX(); }
+    public double getMaxX() { return area.maxX(); }
+    public double getMinZ() { return area.minZ(); }
+    public double getMaxZ() { return area.maxZ(); }
 
     private double pointX(double along, double across, double alongX, double acrossX) {
         return centerX + along * alongX + across * acrossX;

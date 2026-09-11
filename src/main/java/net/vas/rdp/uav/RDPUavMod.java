@@ -25,6 +25,7 @@ public final class RDPUavMod {
     @Mod.EventHandler
     public void preInit(FMLPreInitializationEvent event) {
         net.vas.rdp.uav.energy.UavEnergyConfig.load(event.getModConfigurationDirectory());
+        net.vas.rdp.uav.flight.KamikazeConfig.load(event.getModConfigurationDirectory());
     }
 
     @Mod.EventHandler

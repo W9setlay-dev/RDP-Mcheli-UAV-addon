@@ -95,8 +95,13 @@ public final class RDPMission {
         if (reason == null || reason.trim().isEmpty()) {
             throw new IllegalArgumentException("Failure reason is required");
         }
+
         this.failureReason = reason;
         transitionTo(MissionState.FAILED, tick);
+    }
+
+    public void markKamikazeDetonated(long tick) {
+        transitionTo(MissionState.KAMIKADZE_DETONATED, tick);
     }
 
     public void setReportId(String reportId) {

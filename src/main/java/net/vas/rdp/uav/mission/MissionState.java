@@ -11,6 +11,7 @@ public enum MissionState {
     TARGET_LOCKED,
     ATTACK_TARGET,
     KAMIKADZE_TARGET,
+    KAMIKADZE_DETONATED,
     APPROACHING,
     ON_TARGET,
     ORBITING,
@@ -25,7 +26,8 @@ public enum MissionState {
     FAILED;
 
     public boolean canTransitionTo(MissionState next) {
-        if (next == null || this == COMPLETE || this == ABORTED || this == FAILED) {
+        if (next == null || this == COMPLETE || this == ABORTED || this == FAILED
+                || this == KAMIKADZE_DETONATED) {
             return false;
         }
         if (next == FAILED || next == ABORTED) {
@@ -43,7 +45,8 @@ public enum MissionState {
                     || next == KAMIKADZE_TARGET;
             case ATTACK_TARGET: return next == APPROACHING || next == ON_TARGET
                     || next == RETURNING;
-            case KAMIKADZE_TARGET: return next == ON_TARGET || next == RETURNING;
+            case KAMIKADZE_TARGET: return next == ON_TARGET || next == RETURNING
+                    || next == KAMIKADZE_DETONATED;
             case APPROACHING: return next == ON_TARGET;
             case ON_TARGET: return next == ORBITING || next == SCANNING;
             case ORBITING: return next == SCANNING;

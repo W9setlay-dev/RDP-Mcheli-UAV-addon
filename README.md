@@ -121,6 +121,24 @@ callers that have no sensor evidence. These are decision inputs only: WingMan
 and `MissionLifecycle` remain the authority for physical execution and mission
 state transitions.
 
+## Square strike constraint boundary
+
+`SquareArea` is the authoritative bounded geometry for area missions; it
+provides containment and min/max edges instead of deriving boundaries from
+waypoints. `SquareStrikeConstraints` keeps altitude, search pattern, target
+policy, weapon policy, priority, timeout, engagement/target caps, return
+policy, and RTB threshold together with validation helpers. The existing
+`SquareStrikePlan` remains compatible and now exposes its hard area boundary.
+These constraints are intentionally separate from tactical decisions and
+WingMan node execution, so later re-tasking and operator overrides can change
+the plan without weakening the safety boundary.
+
+`SquareStrikeStateMachine` supplies the area mission lifecycle independently of
+the legacy generic mission state: validation, assignment, launch, transit,
+bounded search, target validation, engagement assessment, resume, RTB, and
+completion. Operator override, pause, abort, and emergency transitions are
+explicitly interruptible and invalid shortcuts are rejected.
+
 ForgeGradle configuration was verified with the local ForgeGradle 2.3
 installation. A full `test`/`build` additionally requires the exact
 `net.minecraftforge:forge:1.12.2-14.23.5.2864` userdev artifact; only

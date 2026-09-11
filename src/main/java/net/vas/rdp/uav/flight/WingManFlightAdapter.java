@@ -95,6 +95,9 @@ public final class WingManFlightAdapter {
         aircraft.updateWeaponID(0, weaponId);
         entry.weaponSeat = 0;
         entry.weaponType = aircraft.getWeapon(weaponId).getName();
+        aircraft.getEntityData().setBoolean(KamikazeConfig.ARMED_KEY, true);
+        aircraft.getEntityData().setDouble(KamikazeConfig.MIN_SPEED_KEY,
+                KamikazeConfig.minimumImpactSpeed);
         return true;
     }
 
@@ -171,6 +174,8 @@ public final class WingManFlightAdapter {
 
     public void release(MCH_EntityAircraft aircraft) {
         if (aircraft != null) {
+            aircraft.getEntityData().removeTag(KamikazeConfig.ARMED_KEY);
+            aircraft.getEntityData().removeTag(KamikazeConfig.MIN_SPEED_KEY);
             WingmanRegistry.remove(aircraft.getUniqueID());
         }
     }

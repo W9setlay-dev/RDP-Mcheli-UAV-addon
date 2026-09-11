@@ -448,7 +448,7 @@ public final class RdpUavNetwork {
                                 new net.vas.rdp.uav.flight.WingManFlightAdapter();
                         if (!adapter.armKamikaze(aircraft, x, y, z,
                                 mission.getObservationDistance(), mission.getTargetId())) return;
-                        mission.transitionTo(net.vas.rdp.uav.mission.MissionState.ATTACK_TARGET,
+                        mission.transitionTo(net.vas.rdp.uav.mission.MissionState.KAMIKADZE_TARGET,
                                 player.world.getTotalWorldTime());
                         net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world).markDirty();
                         sendMissionData(player);

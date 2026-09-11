@@ -9,6 +9,5 @@
 /logs/
 
 *.md
-
 !DEVELOPER_GUIDE.md
 !README.md
