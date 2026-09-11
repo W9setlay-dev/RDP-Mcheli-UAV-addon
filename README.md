@@ -108,6 +108,19 @@ This layer is source/API validated. It does not by itself prove that a live
 operator GUI request reaches an in-game UAV, nor does it certify autonomous
 flight or weapon effects.
 
+## Sensor and decision boundary
+
+The `net.vas.rdp.uav.sensor` package keeps world evidence separate from
+operator-reported intent. `SensorObservation` records the source, knowledge
+kind (`KNOWN`, `REPORTED`, or `INFERRED`), identity, position, confidence,
+and observation tick. `SensorFusion` selects the strongest observation while
+explicitly lowering confidence and exposing an explanation when sources
+disagree. `AiDecision` now also carries a bounded confidence value and a
+`FlightIntent`; the existing five-argument constructor remains compatible with
+callers that have no sensor evidence. These are decision inputs only: WingMan
+and `MissionLifecycle` remain the authority for physical execution and mission
+state transitions.
+
 ForgeGradle configuration was verified with the local ForgeGradle 2.3
 installation. A full `test`/`build` additionally requires the exact
 `net.minecraftforge:forge:1.12.2-14.23.5.2864` userdev artifact; only

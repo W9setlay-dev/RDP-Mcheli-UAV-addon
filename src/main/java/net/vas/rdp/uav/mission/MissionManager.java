@@ -55,7 +55,29 @@ public final class MissionManager {
     public void release(RDPMission mission) {
         if (mission != null) {
             assignments.release(mission.getAircraftId(), mission.getMissionId());
-            aircraft.release(mission.getAircraftId());
+            aircraft.release(mission.getAircraftId(), mission.getMissionId());
+        }
+    }
+
+    /**
+     * Rebuilds in-memory assignment state after a world reload. Persisted
+     * missions remain authoritative; terminal records are intentionally not
+     * re-reserved.
+     */
+    public void restoreAssignments(World world) {
+        if (world == null) return;
+        for (RDPMission mission : RDPMissionWorldData.get(world).getRepository().snapshot()) {
+            if (mission.getState() == MissionState.COMPLETE
+                    || mission.getState() == MissionState.ABORTED
+                    || mission.getState() == MissionState.FAILED) {
+                continue;
+            }
+            assignments.reserve(mission.getAircraftId(), mission.getMissionId());
+            AircraftRecord record = aircraft.find(mission.getAircraftId());
+            if (record == null) {
+                aircraft.register(new AircraftRecord(mission.getAircraftId(), mission.getOwnerId(),
+                        mission.getDimension(), mission.getAircraftType(), false, true));
+            }
         }
     }
 

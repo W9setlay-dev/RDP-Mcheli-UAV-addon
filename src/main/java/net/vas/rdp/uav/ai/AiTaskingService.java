@@ -9,6 +9,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import net.vas.rdp.uav.sensor.SensorFusion;
 
 public final class AiTaskingService {
     private final MissionManager missions;
@@ -21,7 +22,12 @@ public final class AiTaskingService {
     }
 
     public AiDecision assess(AiTaskRequest request, List<AiResource> resources) {
-        AiDecision decision = decisions.recommend(request, resources);
+        return assess(request, resources, null);
+    }
+
+    public AiDecision assess(AiTaskRequest request, List<AiResource> resources,
+                             SensorFusion.FusionResult environment) {
+        AiDecision decision = decisions.recommend(request, resources, environment);
         if (decision.getAircraftId() != null
                 && decision.getKind() == AiDecision.Kind.REQUEST_APPROVAL) {
             pending.put(request.getTaskId(), request);

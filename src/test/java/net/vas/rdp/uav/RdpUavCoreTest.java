@@ -14,6 +14,9 @@ import net.vas.rdp.uav.target.TargetLock;
 import net.vas.rdp.uav.target.TargetPriority;
 import net.vas.rdp.uav.target.TargetSelector;
 import net.vas.rdp.uav.target.TargetSpec;
+import net.vas.rdp.uav.sensor.KnowledgeKind;
+import net.vas.rdp.uav.sensor.SensorFusion;
+import net.vas.rdp.uav.sensor.SensorObservation;
 import net.minecraft.nbt.NBTTagCompound;
 import org.junit.Test;
 
@@ -125,6 +128,9 @@ public class RdpUavCoreTest {
         lock.update(4, 5, 6, 12);
         assertEquals(12, lock.getLastSeenTick());
         assertEquals(4, lock.getX(), 0);
+        assertEquals(1.5D, lock.getVelocityX(), 0.0001D);
+        assertEquals(7.0D, lock.predictX(14), 0.0001D);
+        assertEquals(TargetLock.Validation.VALID, lock.getValidation());
 
         try {
             lock.update(7, 8, 9, 11);
@@ -132,6 +138,20 @@ public class RdpUavCoreTest {
         } catch (IllegalArgumentException expected) {
             // Expected validation boundary.
         }
+    }
+
+    @Test
+    public void sensorFusionMakesDisagreementExplicit() {
+        SensorFusion fusion = new SensorFusion();
+        SensorObservation visual = new SensorObservation("visual", KnowledgeKind.KNOWN,
+                "entity", null, "mod:target", 1, 2, 3, 0.9D, 10);
+        SensorObservation rf = new SensorObservation("rf", KnowledgeKind.INFERRED,
+                "anomaly", null, null, 1, 2, 3, 0.8D, 10);
+
+        SensorFusion.FusionResult result = fusion.fuse(Arrays.asList(visual, rf));
+        assertTrue(result.hasDisagreement());
+        assertEquals(0.45D, result.getConfidence(), 0.0001D);
+        assertEquals(visual, result.getObservation());
     }
 
     @Test

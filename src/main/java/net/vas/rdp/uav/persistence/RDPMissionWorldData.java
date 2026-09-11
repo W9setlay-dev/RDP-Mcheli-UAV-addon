@@ -48,6 +48,7 @@ public final class RDPMissionWorldData extends WorldSavedData {
 
     @Override
     public void readFromNBT(NBTTagCompound compound) {
+        repository.clear();
         NBTTagList list = compound.getTagList("missions", 10);
         for (int i = 0; i < list.tagCount(); i++) {
             repository.add(MissionNbtCodec.read(list.getCompoundTagAt(i)));

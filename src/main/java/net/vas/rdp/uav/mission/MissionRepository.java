@@ -33,4 +33,8 @@ public final class MissionRepository {
     public synchronized List<RDPMission> snapshot() {
         return new ArrayList<RDPMission>(missions.values());
     }
+
+    public synchronized void clear() {
+        missions.clear();
+    }
 }

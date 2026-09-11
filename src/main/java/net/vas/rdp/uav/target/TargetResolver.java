@@ -3,6 +3,7 @@ package net.vas.rdp.uav.target;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityList;
 import net.minecraft.util.ResourceLocation;
+import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.world.World;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -29,7 +30,10 @@ public final class TargetResolver {
         }
         List<EntityCandidate> result = new ArrayList<EntityCandidate>();
         double maxDistance = radius * radius;
-        for (Entity entity : world.loadedEntityList) {
+        AxisAlignedBB searchBox = new AxisAlignedBB(
+                x - radius, y - radius, z - radius,
+                x + radius, y + radius, z + radius);
+        for (Entity entity : world.getEntitiesWithinAABB(Entity.class, searchBox)) {
             if (entity == null || entity.isDead || entity.dimension != world.provider.getDimension()) continue;
             double distance = entity.getDistanceSq(x, y, z);
             if (distance > maxDistance) continue;

@@ -13,6 +13,7 @@ import net.vas.rdp.uav.target.TargetResolver;
 import net.vas.rdp.uav.target.TargetSelectionMode;
 
 import java.util.Map;
+import java.util.HashMap;
 import java.util.WeakHashMap;
 import java.util.List;
 import java.util.UUID;
@@ -31,6 +32,7 @@ public final class MissionLifecycle {
     private final WingManFlightAdapter flight = new WingManFlightAdapter();
     private final TargetResolver targets = new TargetResolver();
     private final Map<World, Boolean> restoredWorlds = new WeakHashMap<World, Boolean>();
+    private Map<UUID, MCH_EntityAircraft> aircraftThisTick = new HashMap<UUID, MCH_EntityAircraft>();
 
     public MissionLifecycle(MissionManager manager) {
         if (manager == null) throw new IllegalArgumentException("Mission manager is required");
@@ -39,6 +41,7 @@ public final class MissionLifecycle {
 
     public void tick(World world) {
         if (world == null || world.isRemote) return;
+        aircraftThisTick = indexAircraft(world);
         restoreQueue(world);
         dispatchQueued(world);
         updateActive(world);
@@ -49,6 +52,7 @@ public final class MissionLifecycle {
             if (restoredWorlds.containsKey(world)) return;
             restoredWorlds.put(world, Boolean.TRUE);
         }
+        manager.restoreAssignments(world);
         manager.restoreQueued(world);
     }
 
@@ -72,6 +76,12 @@ public final class MissionLifecycle {
             fail(world, mission, "AIRCRAFT_NOT_FOUND", tick);
             return;
         }
+        if (aircraft.getAcInfo() == null) {
+            fail(world, mission, "AIRCRAFT_METADATA_UNAVAILABLE", tick);
+            return;
+        }
+        manager.registerAircraft(new AircraftRecord(aircraft.getUniqueID(), mission.getOwnerId(),
+                aircraft.dimension, aircraft.getAcInfo().name, true, true));
         if (!flight.hasFuelForMission(aircraft)) {
             fail(world, mission, "INSUFFICIENT_FUEL", tick);
             return;
@@ -254,6 +264,14 @@ public final class MissionLifecycle {
                 mission.transitionTo(MissionState.SCANNING, tick);
                 return true;
             case SCANNING:
+                if (mission.isDeepScan()) {
+                    mission.transitionTo(MissionState.DEEP_SCANNING, tick);
+                } else {
+                    persistReport(world, mission, target, tick);
+                    mission.transitionTo(MissionState.REPORTING, tick);
+                }
+                return true;
+            case DEEP_SCANNING:
                 persistReport(world, mission, target, tick);
                 mission.transitionTo(MissionState.REPORTING, tick);
                 return true;
@@ -344,15 +362,24 @@ public final class MissionLifecycle {
 
     private MCH_EntityAircraft findAircraft(World world, UUID id) {
         if (id == null) return null;
+        MCH_EntityAircraft aircraft = aircraftThisTick.get(id);
+        if (aircraft != null && !aircraft.isDead
+                && aircraft.dimension == world.provider.getDimension()) {
+            return aircraft;
+        }
+        return null;
+    }
+
+    private Map<UUID, MCH_EntityAircraft> indexAircraft(World world) {
+        Map<UUID, MCH_EntityAircraft> result = new HashMap<UUID, MCH_EntityAircraft>();
         for (Entity entity : world.loadedEntityList) {
             if (entity instanceof MCH_EntityAircraft && !entity.isDead
                     && entity.dimension == world.provider.getDimension()
-                    && id.equals(entity.getUniqueID())) {
-                MCH_EntityAircraft aircraft = (MCH_EntityAircraft) entity;
-                return aircraft.isUAV() ? aircraft : null;
+                    && ((MCH_EntityAircraft) entity).isUAV()) {
+                result.put(entity.getUniqueID(), (MCH_EntityAircraft) entity);
             }
         }
-        return null;
+        return result;
     }
 
     private void fail(World world, RDPMission mission, String reason, long tick) {

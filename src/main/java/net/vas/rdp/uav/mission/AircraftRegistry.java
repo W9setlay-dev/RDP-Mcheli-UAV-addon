@@ -24,6 +24,12 @@ public final class AircraftRegistry {
         AircraftRecord record = records.get(aircraftId);
         if (record != null) record.release();
     }
+    public synchronized void release(UUID aircraftId, UUID missionId) {
+        AircraftRecord record = records.get(aircraftId);
+        if (record != null && (missionId == null || missionId.equals(record.getMissionId()))) {
+            record.release();
+        }
+    }
     public synchronized List<AircraftRecord> snapshot() {
         return new ArrayList<AircraftRecord>(records.values());
     }

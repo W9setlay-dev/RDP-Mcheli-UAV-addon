@@ -172,6 +172,10 @@ public final class RdpUavCommand extends CommandBase {
             player.sendMessage(new TextComponentString("No camera point was selected."));
             return;
         }
+        if (aircraft.getAcInfo() == null) {
+            player.sendMessage(new TextComponentString("UAV metadata is unavailable; mission rejected."));
+            return;
+        }
         long tick = player.world.getTotalWorldTime();
         RDPMission mission = new RDPMission(UUID.randomUUID(), player.getUniqueID(),
                 aircraft.getUniqueID(), aircraft.getAcInfo().name, MissionType.STRIKE,

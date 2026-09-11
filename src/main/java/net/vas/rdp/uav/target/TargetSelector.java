@@ -1,8 +1,5 @@
 package net.vas.rdp.uav.target;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
 
 public final class TargetSelector<T> {
@@ -24,24 +21,23 @@ public final class TargetSelector<T> {
             return null;
         }
 
-        List<Candidate<T>> matching = new ArrayList<Candidate<T>>();
+        Candidate<T> best = null;
         for (Candidate<T> candidate : candidates) {
-            if (candidate.isValid() && matchesNamespace(spec, candidate.getRegistryId())) {
-                matching.add(candidate);
+            if (!candidate.isValid() || !matchesNamespace(spec, candidate.getRegistryId())) {
+                continue;
+            }
+            if (best == null || isPreferred(candidate, best)) {
+                best = candidate;
             }
         }
-        Collections.sort(matching, new Comparator<Candidate<T>>() {
-            @Override
-            public int compare(Candidate<T> left, Candidate<T> right) {
-                int priority = Integer.compare(right.getPriority().getWeight(),
-                        left.getPriority().getWeight());
-                if (priority != 0) {
-                    return priority;
-                }
-                return Double.compare(left.getDistanceSquared(), right.getDistanceSquared());
-            }
-        });
-        return matching.isEmpty() ? null : matching.get(0).getValue();
+        return best == null ? null : best.getValue();
+    }
+
+    private boolean isPreferred(Candidate<T> candidate, Candidate<T> current) {
+        int priority = Integer.compare(candidate.getPriority().getWeight(),
+                current.getPriority().getWeight());
+        return priority > 0 || (priority == 0
+                && candidate.getDistanceSquared() < current.getDistanceSquared());
     }
 
     private boolean matchesNamespace(TargetSpec spec, String registryId) {
