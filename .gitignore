@@ -2,3 +2,13 @@
 /build/
 /.gradle/
 /run/
+
+/.vscode/
+/.idea/
+
+/logs/
+
+*.md
+
+!DEVELOPER_GUIDE.md
+!README.md
