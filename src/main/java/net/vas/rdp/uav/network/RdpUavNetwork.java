@@ -32,6 +32,7 @@ public final class RdpUavNetwork {
         CHANNEL.registerMessage(ServerKamikazeHandler.class, KamikazeAttack.class, 6, Side.SERVER);
         CHANNEL.registerMessage(ClientMissionDataHandler.ClientTargetTelemetryHandler.class,
                 TargetTelemetry.class, 7, Side.CLIENT);
+        CHANNEL.registerMessage(ServerSquareStrikeHandler.class, SquareStrike.class, 8, Side.SERVER);
     }
 
     public static void openMissionControl(EntityPlayerMP player) {
@@ -61,6 +62,10 @@ public final class RdpUavNetwork {
 
     public static void createPointMission() {
         CHANNEL.sendToServer(new CreateMission("", false, true));
+    }
+
+    public static void createSquareStrike(String parameters) {
+        CHANNEL.sendToServer(new SquareStrike(parameters));
     }
 
     static void sendMissionData(EntityPlayerMP player) {
@@ -116,17 +121,29 @@ public final class RdpUavNetwork {
             this.attack = attack;
             this.point = point;
         }
+
         public void fromBytes(ByteBuf buffer) {
             target = readString(buffer);
             attack = buffer.readBoolean();
             point = buffer.readBoolean();
         }
+
         public void toBytes(ByteBuf buffer) {
             writeString(buffer, target);
             buffer.writeBoolean(attack);
             buffer.writeBoolean(point);
         }
 
+    }
+
+    public static final class SquareStrike implements IMessage {
+        private String parameters = "";
+        public SquareStrike() { }
+        public SquareStrike(String parameters) {
+            this.parameters = parameters == null ? "" : parameters;
+        }
+        public void fromBytes(ByteBuf buffer) { parameters = readString(buffer); }
+        public void toBytes(ByteBuf buffer) { writeString(buffer, parameters); }
     }
 
     public static final class MissionData implements IMessage {
@@ -470,6 +487,7 @@ public final class RdpUavNetwork {
                             || !message.target.matches("[A-Za-z0-9_.-]+:[A-Za-z0-9_./-]+"))) {
                         return;
                     }
+
                     MCH_EntityAircraft aircraft = net.vas.rdp.uav.mission.UavControlAccess
                             .findControlledAircraft(player);
                     if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, player)) return;
@@ -478,6 +496,27 @@ public final class RdpUavNetwork {
                             : "rdpuav mission create " + message.target
                                     + (message.attack ? " attack" : "");
                     player.getServer().getCommandManager().executeCommand(player, command);
+                }
+            });
+            return null;
+        }
+    }
+
+    public static final class ServerSquareStrikeHandler
+            implements IMessageHandler<SquareStrike, IMessage> {
+        public IMessage onMessage(final SquareStrike message, MessageContext context) {
+            final EntityPlayerMP player = context.getServerHandler().player;
+            player.getServer().addScheduledTask(new Runnable() {
+                public void run() {
+                    MCH_EntityAircraft aircraft =
+                            net.vas.rdp.uav.mission.UavControlAccess.findControlledAircraft(player);
+                    if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, player)
+                            || message.parameters == null
+                            || !message.parameters.matches("-?[0-9.]+\\s+-?[0-9.]+\\s+-?[0-9.]+(\\s+[0-9.]+)?")) {
+                        return;
+                    }
+                    player.getServer().getCommandManager().executeCommand(player,
+                            "rdpuav mission square " + message.parameters);
                 }
             });
             return null;

@@ -67,6 +67,10 @@ public final class GuiMissionControl extends GuiScreen {
         if (active != null) active.createEntityMission(true);
     }
 
+    public static void createSquareFromField() {
+        if (active != null) active.createSquareMission();
+    }
+
     public void initGui() {
         if (targetField == null) {
             targetField = new GuiTextField(10, fontRenderer, width / 2 - 120, 36, 240, 18);
@@ -87,6 +91,7 @@ public final class GuiMissionControl extends GuiScreen {
         buttonList.add(new GuiButton(5, width / 2 - 120, height - 82, 75, 20, "Recon [R]"));
         buttonList.add(new GuiButton(6, width / 2 - 40, height - 82, 75, 20, "Attack [K]"));
         buttonList.add(new GuiButton(7, width / 2 + 40, height - 82, 75, 20, "Point [P]"));
+        buttonList.add(new GuiButton(9, width / 2 - 50, height - 132, 100, 20, "Square strike"));
         for (int i = 0; i < missionRows.length && i < 12; i++) {
             buttonList.add(new GuiButton(100 + i, width / 2 - 120, 76 + i * 16, 240, 14,
                     (i == selected ? "> " : "  ") + missionRows[i]));
@@ -115,6 +120,8 @@ public final class GuiMissionControl extends GuiScreen {
         } else if (button.id == 8) {
             armKamikazeSelected();
             status = "Nose-dive request submitted; only supported UAVs will arm.";
+        } else if (button.id == 9) {
+            createSquareMission();
         } else if (button.id >= 100) {
             selected = button.id - 100;
             initGui();
@@ -127,9 +134,20 @@ public final class GuiMissionControl extends GuiScreen {
             status = "Enter a target as namespace:id.";
             return;
         }
+
         RdpUavNetwork.createMission(target, attack);
         status = attack ? "Autonomous attack submitted; WingMan arms after target lock."
                 : "Recon mission submitted.";
+    }
+
+    private void createSquareMission() {
+        String parameters = targetField == null ? "" : targetField.getText().trim();
+        if (!parameters.matches("-?[0-9.]+\\s+-?[0-9.]+\\s+-?[0-9.]+(\\s+[0-9.]+)?")) {
+            status = "Square format: centerX centerY centerZ [size].";
+            return;
+        }
+        RdpUavNetwork.createSquareStrike(parameters);
+        status = "Autonomous square strike submitted to WingMan.";
     }
 
     protected void keyTyped(char typedChar, int keyCode) throws IOException {
@@ -148,7 +166,7 @@ public final class GuiMissionControl extends GuiScreen {
         if (help) {
             drawHelp();
         } else {
-            drawString(fontRenderer, "Target registry ID (for example srparasites:rupter)", width / 2 - 120,
+            drawString(fontRenderer, "Target ID, point coordinates, or square: x y z [size]", width / 2 - 120,
                     26, 0xB0D8FF);
             if (targetField != null) targetField.drawTextBox();
             if (!status.isEmpty()) drawString(fontRenderer, status, width / 2 - 120, 56, 0xFFCC66);
@@ -158,7 +176,7 @@ public final class GuiMissionControl extends GuiScreen {
     }
 
     private void drawMissions() {
-        drawString(fontRenderer, "Your AI pilot missions:", width / 2 - 120, 62, 0xB0D8FF);
+        drawString(fontRenderer, "Server-owned WingMan missions:", width / 2 - 120, 62, 0xB0D8FF);
         if (missionRows.length == 0) {
             drawString(fontRenderer, "No missions are currently assigned.", width / 2 - 120, 82, 0xAAAAAA);
             return;
@@ -179,8 +197,9 @@ public final class GuiMissionControl extends GuiScreen {
         drawString(fontRenderer, "3. PLANNED missions are queued; active states are server-owned.", x, 90, 0xFFFFFF);
         drawString(fontRenderer, "4. The AI pilot handles flight execution; operators monitor status.", x, 104, 0xFFFFFF);
         drawString(fontRenderer, "5. Auto attack arms after target lock; the button is a manual override.", x, 118, 0xFFCC66);
-        drawString(fontRenderer, "6. Recon and attack plans use the target field; Point task uses your camera.", x, 132, 0xFFFFFF);
-        drawString(fontRenderer, "Command fallback: /rdpuav mission list", x, 150, 0xAAAAAA);
+        drawString(fontRenderer, "6. Recon/attack use a registry ID; Point uses your camera aim.", x, 132, 0xFFFFFF);
+        drawString(fontRenderer, "7. Square strike uses: centerX centerY centerZ [size].", x, 146, 0xFFFFFF);
+        drawString(fontRenderer, "Command fallback: /rdpuav mission list", x, 164, 0xAAAAAA);
     }
 
     public void onGuiClosed() {

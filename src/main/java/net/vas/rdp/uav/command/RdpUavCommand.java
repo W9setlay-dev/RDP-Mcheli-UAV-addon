@@ -32,7 +32,7 @@ public final class RdpUavCommand extends CommandBase {
 
     @Override
     public String getUsage(ICommandSender sender) {
-        return "/rdpuav authorize | mission create <namespace:id> [attack] | mission attack-point | mission gui|list|status <id>";
+        return "/rdpuav authorize | mission create <namespace:id> [attack] | mission attack-point | mission square <x> <y> <z> [size] | mission gui|list|status <id>";
     }
 
     @Override
@@ -52,6 +52,10 @@ public final class RdpUavCommand extends CommandBase {
         EntityPlayer player = (EntityPlayer) sender;
         if ("attack-point".equalsIgnoreCase(args[1])) {
             createPointAttack(player);
+            return;
+        }
+        if ("square".equalsIgnoreCase(args[1])) {
+            createSquareStrike(player, args);
             return;
         }
         if ("create".equalsIgnoreCase(args[1])) {
@@ -165,6 +169,7 @@ public final class RdpUavCommand extends CommandBase {
                     "You must pilot an authorized, available McHeli UAV."));
             return;
         }
+
         Vec3d start = player.getPositionEyes(1.0F);
         Vec3d end = start.add(player.getLookVec().scale(256.0D));
         RayTraceResult hit = player.world.rayTraceBlocks(start, end, false, true, false);
@@ -194,6 +199,41 @@ public final class RdpUavCommand extends CommandBase {
             }
             RDPMissionWorldData.get(player.world).markDirty();
             player.sendMessage(new TextComponentString("Point attack rejected: " + failure.getMessage()));
+        }
+    }
+
+    private void createSquareStrike(EntityPlayer player, String[] args) {
+        if (args.length < 5) {
+            player.sendMessage(new TextComponentString(
+                    "Usage: /rdpuav mission square <x> <y> <z> [size]"));
+            return;
+        }
+        MCH_EntityAircraft aircraft = UavControlAccess.findControlledAircraft(player);
+        if (!UavControlAccess.isOperator(aircraft, player)
+                || !RDPUavMod.missions().ensureAuthorized(aircraft, player)
+                || !RDPUavMod.missions().canAssignAircraft(aircraft.getUniqueID(), player.getUniqueID())) {
+            player.sendMessage(new TextComponentString(
+                    "You must pilot an authorized, available McHeli UAV."));
+            return;
+        }
+        try {
+            double x = Double.parseDouble(args[2]);
+            double y = Double.parseDouble(args[3]);
+            double z = Double.parseDouble(args[4]);
+            double size = args.length >= 6 ? Double.parseDouble(args[5]) : 64.0D;
+            if (size < 16.0D || size > 512.0D) throw new IllegalArgumentException("size must be 16..512");
+            RDPMission mission = new RDPMission(UUID.randomUUID(), player.getUniqueID(),
+                    aircraft.getUniqueID(), aircraft.getAcInfo().name, MissionType.SQUARE_STRIKE,
+                    TargetSpec.point(x, y, z, TargetPriority.HIGH), true, false, false,
+                    Math.max(256.0D, size * 2.0D), size, player.world.getTotalWorldTime());
+            mission.setDimension(player.dimension);
+            RDPUavMod.missions().create(player.world, mission);
+            RDPMissionWorldData.get(player.world).markDirty();
+            player.sendMessage(new TextComponentString("Square strike mission created: "
+                    + mission.getMissionId()));
+        } catch (RuntimeException failure) {
+            player.sendMessage(new TextComponentString("Square strike rejected: "
+                    + (failure.getMessage() == null ? "invalid parameters" : failure.getMessage())));
         }
     }
 

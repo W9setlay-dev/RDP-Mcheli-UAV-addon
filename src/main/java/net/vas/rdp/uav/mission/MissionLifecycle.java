@@ -114,7 +114,7 @@ public final class MissionLifecycle {
             // WingMan must fly the real aircraft to the observation point
             // before the mission reports acquisition or arms an attack.
             if (!flight.dispatch(aircraft, target.x, target.y, target.z,
-                    mission.getObservationDistance(), 200, false, null)) {
+                    mission.getObservationDistance(), 200, mission.isAttack(), mission.getTargetId())) {
                 fail(world, mission, "WINGMAN_DISPATCH_REJECTED", tick);
             }
         } catch (RuntimeException failure) {
@@ -229,6 +229,20 @@ public final class MissionLifecycle {
             return true;
         case TARGET_LOCKED:
                 if (mission.isAttack()) {
+                    if (mission.getMissionType() == MissionType.SQUARE_STRIKE) {
+                        net.vas.rdp.uav.flight.SquareStrikePlan plan =
+                                new net.vas.rdp.uav.flight.SquareStrikePlan(
+                                        target.x, Math.max(target.y + 32.0D, aircraft.posY),
+                                target.z, mission.getSearchRadius(), mission.getSearchRadius(), 0.0D,
+                                Math.max(8.0D, mission.getSearchRadius() / 4.0D),
+                                mission.getObservationDistance(), 1);
+                        if (!flight.armSquareStrike(aircraft, plan, mission.getTargetId())) {
+                            fail(world, mission, "WINGMAN_SQUARE_STRIKE_REJECTED", tick);
+                        } else {
+                            mission.transitionTo(MissionState.ATTACK_TARGET, tick);
+                        }
+                        return true;
+                    }
                     if (!flight.armAttack(aircraft, target.x, target.y, target.z,
                             mission.getObservationDistance(), mission.getTargetId())) {
                         fail(world, mission, "WINGMAN_ATTACK_ARM_REJECTED", tick);
