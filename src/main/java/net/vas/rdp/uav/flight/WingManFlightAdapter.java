@@ -50,6 +50,7 @@ public final class WingManFlightAdapter {
         entry.autoTargetZ = z;
         entry.mission = nodes;
         entry.missionIndex = 0;
+        entry.missionNodeTimer = 0;
         // WingMan's native mission command starts custom node plans in
         // ENROUTE.  A mission list with the default NONE state is registered
         // but is not advanced by the autonomous flight handler.

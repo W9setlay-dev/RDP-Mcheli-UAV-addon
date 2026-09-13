@@ -161,7 +161,9 @@ public final class RdpUavNetwork {
                 net.vas.rdp.uav.mission.RDPMission mission = missions.get(i);
                 ids[i] = mission.getMissionId().toString();
                 rows[i] = mission.getMissionId().toString().substring(0, 8) + "  "
-                        + mission.getState().name() + "  " + mission.getAircraftType();
+                        + mission.getState().name() + "  " + mission.getAircraftType()
+                        + (mission.getFailureReason() == null ? ""
+                        : "  [" + mission.getFailureReason() + "]");
             }
             return new MissionData(rows, ids);
         }
@@ -199,6 +201,9 @@ public final class RdpUavNetwork {
                 private String priority = "NORMAL";
                 private String scanState = "READY";
                 private String deepScanState = "OFF";
+                private String failureReason = "";
+                private String wingmanState = "NONE";
+                private String wingmanNode = "none";
                 private int dimension;
                 private boolean outOfRange;
                 private double x;
@@ -212,12 +217,25 @@ public final class RdpUavNetwork {
                                         String missionState, String targetState, String registryId, String targetUuid,
                                         String priority, String scanState, String deepScanState, int dimension,
                                         double x, double y, double z, double distance) {
+                    this(active, hasPosition, missionId, aircraftType, missionState, targetState,
+                            registryId, targetUuid, priority, scanState, deepScanState,
+                            "", "NONE", "none", dimension, x, y, z, distance);
+                }
+
+                private TargetTelemetry(boolean active, boolean hasPosition, String missionId, String aircraftType,
+                                        String missionState, String targetState, String registryId, String targetUuid,
+                                        String priority, String scanState, String deepScanState,
+                                        String failureReason, String wingmanState, String wingmanNode,
+                                        int dimension, double x, double y, double z, double distance) {
                     this.active = active; this.hasPosition = hasPosition; this.missionId = missionId;
                     this.aircraftType = aircraftType; this.missionState = missionState;
                     this.targetState = targetState; this.registryId = registryId == null ? "" : registryId;
                     this.entityName = "";
                     this.targetUuid = targetUuid == null ? "" : targetUuid; this.priority = priority;
                     this.scanState = scanState; this.deepScanState = deepScanState; this.dimension = dimension;
+                    this.failureReason = failureReason == null ? "" : failureReason;
+                    this.wingmanState = wingmanState == null ? "NONE" : wingmanState;
+                    this.wingmanNode = wingmanNode == null ? "none" : wingmanNode;
                     this.x = x; this.y = y; this.z = z; this.distance = distance;
                 }
 
@@ -274,10 +292,17 @@ public final class RdpUavNetwork {
                             ? "ACTIVE" : selected.getReportId() == null ? "READY" : "COMPLETE";
                     String deep = selected.isDeepScan()
                             ? (selected.getReportId() == null ? "ACTIVE" : "COMPLETE") : "OFF";
+                    com.norwood.mcheli.wingman.wingman.WingmanEntry wingman =
+                            com.norwood.mcheli.wingman.wingman.WingmanRegistry.get(selected.getAircraftId());
+                    String wingmanState = wingman == null ? "MISSING" : String.valueOf(wingman.autoState);
+                    String wingmanNode = wingman == null || wingman.mission == null ? "none"
+                            : wingman.missionIndex + "/" + wingman.mission.size()
+                            + (wingman.currentNode() == null ? "" : " " + wingman.currentNode().type.name());
                     TargetTelemetry telemetry = new TargetTelemetry(true, !lost && (point || target != null), selected.getMissionId().toString(),
                             selected.getAircraftType(), selected.getState().name(), targetState, registry,
                             selected.getTargetId() == null ? null : selected.getTargetId().toString(),
-                            selected.getTargetPriority().name(), scan, deep, selected.getDimension(),
+                            selected.getTargetPriority().name(), scan, deep,
+                            selected.getFailureReason(), wingmanState, wingmanNode, selected.getDimension(),
                             tx, ty, tz, distance);
                     telemetry.entityName = target == null ? (point ? "POINT" : "") : target.getName();
                     // The mission's search radius and the weapon/lock engagement radius are not the same thing.
@@ -299,6 +324,9 @@ public final class RdpUavNetwork {
                     priority = readString(buffer);
                     scanState = readString(buffer);
                     deepScanState = readString(buffer);
+                    failureReason = readString(buffer);
+                    wingmanState = readString(buffer);
+                    wingmanNode = readString(buffer);
                     dimension = buffer.readInt();
                     outOfRange = buffer.readBoolean();
                     x = buffer.readDouble(); y = buffer.readDouble(); z = buffer.readDouble();
@@ -311,7 +339,9 @@ public final class RdpUavNetwork {
                     writeString(buffer, missionState); writeString(buffer, targetState);
                     writeString(buffer, registryId); writeString(buffer, entityName); writeString(buffer, targetUuid);
                     writeString(buffer, priority); writeString(buffer, scanState);
-                    writeString(buffer, deepScanState); buffer.writeInt(dimension); buffer.writeBoolean(outOfRange);
+                    writeString(buffer, deepScanState); writeString(buffer, failureReason);
+                    writeString(buffer, wingmanState); writeString(buffer, wingmanNode);
+                    buffer.writeInt(dimension); buffer.writeBoolean(outOfRange);
                     buffer.writeDouble(x).writeDouble(y).writeDouble(z).writeDouble(distance);
                 }
             }
@@ -560,6 +590,7 @@ public final class RdpUavNetwork {
                                         message.entityName,
                                         message.targetUuid.isEmpty() ? null : message.targetUuid,
                                         message.priority, message.scanState, message.deepScanState,
+                                        message.failureReason, message.wingmanState, message.wingmanNode,
                                         message.dimension, message.outOfRange,
                                         message.x, message.y, message.z, message.distance));
                     }

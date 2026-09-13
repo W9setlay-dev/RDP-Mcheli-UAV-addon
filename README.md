@@ -80,10 +80,13 @@ weapon release, or damage have been verified in a live server.
 
 **Implementation boundary:** server ticks now dispatch queued missions, track
 loaded targets with reacquisition, persist scan metadata, and request WingMan
-return/parking. This remains source/API validated only: actual autonomous
-steering, landing, scanner contents, weapon effects, and self-destruct are not
-verified in a live Forge server. Do not treat a successful build or JAR
-deployment as proof that those behaviors work in-game.
+return/parking. Mission failures are logged with the mission/aircraft IDs,
+state, target, dimension, tick age, and reason; the mission list and target HUD
+also expose the persisted failure reason and current WingMan state/node. This
+remains source/API validated only: actual autonomous steering, landing,
+scanner contents, weapon effects, and self-destruct are not verified in a live
+Forge server. Do not treat a successful build or JAR deployment as proof that
+those behaviors work in-game.
 
 Automatic selection ranks valid candidates by target priority and then distance;
 manual selection only returns the explicitly requested registry ID. The

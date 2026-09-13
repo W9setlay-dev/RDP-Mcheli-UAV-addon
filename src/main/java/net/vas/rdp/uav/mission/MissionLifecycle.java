@@ -17,6 +17,8 @@ import java.util.HashMap;
 import java.util.WeakHashMap;
 import java.util.List;
 import java.util.UUID;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 /**
  * Server-side bridge between persisted RDP missions and WingMan.
@@ -25,6 +27,7 @@ import java.util.UUID;
  * safe recon/recovery orders and observes the public WingMan entry state.</p>
  */
 public final class MissionLifecycle {
+    private static final Logger LOGGER = LogManager.getLogger("RDP-UAV/MissionLifecycle");
     private static final long QUEUE_WAIT_TIMEOUT = 600L;
     private static final long MISSION_TIMEOUT = 12000L;
     private static final long WINGMAN_ENTRY_GRACE_TICKS = 20L;
@@ -81,8 +84,9 @@ public final class MissionLifecycle {
             fail(world, mission, "AIRCRAFT_METADATA_UNAVAILABLE", tick);
             return;
         }
-        manager.registerAircraft(new AircraftRecord(aircraft.getUniqueID(), mission.getOwnerId(),
-                aircraft.dimension, aircraft.getAcInfo().name, true, true));
+        // MissionManager.create already assigned this aircraft. Re-registering
+        // it here would replace the ON_MISSION record with a fresh READY
+        // record and allow a second mission to claim the same entity.
         if (!flight.hasFuelForMission(aircraft)) {
             fail(world, mission, "INSUFFICIENT_FUEL", tick);
             return;
@@ -117,6 +121,10 @@ public final class MissionLifecycle {
             if (!flight.dispatch(aircraft, target.x, target.y, target.z,
                     mission.getObservationDistance(), 200, mission.isAttack(), mission.getTargetId())) {
                 fail(world, mission, "WINGMAN_DISPATCH_REJECTED", tick);
+            } else {
+                LOGGER.info("Mission {} dispatched aircraft {} type={} target={} at tick {}",
+                        mission.getMissionId(), aircraft.getUniqueID(), mission.getAircraftType(),
+                        formatTarget(target), tick);
             }
         } catch (RuntimeException failure) {
             fail(world, mission, failure.getMessage() == null
@@ -181,7 +189,17 @@ public final class MissionLifecycle {
                 continue;
             }
 
+            MissionState before = mission.getState();
             if (updateMission(world, mission, aircraft, target, tick)) dirty = true;
+            if (before != mission.getState()) {
+                LOGGER.info("Mission {} state {} -> {} aircraft={} wingman={}",
+                        mission.getMissionId(), before, mission.getState(),
+                        aircraft.getUniqueID(), describeWingman(flight.getEntry(aircraft)));
+            } else if (tick % 20L == 0L) {
+                LOGGER.debug("Mission {} state={} aircraft={} wingman={}",
+                        mission.getMissionId(), mission.getState(), aircraft.getUniqueID(),
+                        describeWingman(flight.getEntry(aircraft)));
+            }
             if (terminal(mission.getState())) {
                 flight.release(aircraft);
                 manager.release(mission);
@@ -425,11 +443,47 @@ public final class MissionLifecycle {
 
     private void fail(World world, RDPMission mission, String reason, long tick) {
         if (!terminal(mission.getState())) {
+            LOGGER.warn("Mission {} FAILED reason={} state={} aircraft={} dimension={} tick={} age={}",
+                    mission.getMissionId(), reason, mission.getState(), mission.getAircraftId(),
+                    mission.getDimension(), tick, Math.max(0L, tick - mission.getCreatedTick()));
             mission.fail(reason, tick);
             MCH_EntityAircraft aircraft = findAircraft(world, mission.getAircraftId());
             if (aircraft != null) flight.release(aircraft);
             manager.release(mission);
             RDPMissionWorldData.get(world).markDirty();
+        }
+    }
+
+    private String formatTarget(Target target) {
+        return target == null ? "none" : target.entity == null
+                ? String.format(java.util.Locale.ROOT, "point(%.1f,%.1f,%.1f)",
+                target.x, target.y, target.z)
+                : target.entity.getUniqueID() + "/" + EntityList.getKey(target.entity);
+    }
+
+    private String describeWingman(WingmanEntry entry) {
+        if (entry == null) return "missing";
+        MissionNodeView node = MissionNodeView.from(entry);
+        return entry.autoState + " node=" + entry.missionIndex + "/" + node.size
+                + " current=" + node.current;
+    }
+
+    private static final class MissionNodeView {
+        private final int size;
+        private final String current;
+
+        private MissionNodeView(int size, String current) {
+            this.size = size;
+            this.current = current;
+        }
+
+        private static MissionNodeView from(WingmanEntry entry) {
+            if (entry.mission == null) return new MissionNodeView(0, "none");
+            com.norwood.mcheli.wingman.mission.MissionNode node = null;
+            if (entry.missionIndex >= 0 && entry.missionIndex < entry.mission.size()) {
+                node = entry.mission.get(entry.missionIndex);
+            }
+            return new MissionNodeView(entry.mission.size(), node == null ? "none" : node.type.name());
         }
     }
 

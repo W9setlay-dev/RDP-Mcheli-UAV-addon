@@ -62,12 +62,19 @@ public final class RdpUavTargetHud {
         font.drawStringWithShadow("ENTITY: " + telemetry.entityName, x, y + 62, 0xFFFFFFFF);
         font.drawStringWithShadow("UUID: " + telemetry.targetUuid, x, y + 72, 0xFFFFFFFF);
         font.drawStringWithShadow("PRIORITY: " + telemetry.priority, x, y + 82, 0xFFFFFFFF);
+        font.drawStringWithShadow("WINGMAN: " + telemetry.wingmanState
+                + " NODE " + telemetry.wingmanNode, x, y + 92, 0xFFFFFFFF);
         font.drawStringWithShadow("DISTANCE: " + String.format(java.util.Locale.ROOT, "%.1fm", telemetry.distance)
-                + (telemetry.outOfRange ? "  OUT OF RANGE" : ""), x, y + 92,
+                + (telemetry.outOfRange ? "  OUT OF RANGE" : ""), x, y + 102,
                 telemetry.outOfRange ? 0xFFFF5555 : 0xFFFFFFFF);
-        font.drawStringWithShadow("DIMENSION: " + telemetry.dimension, x, y + 102, 0xFFFFFFFF);
+        int detailY = y + 112;
+        if (!telemetry.failureReason.isEmpty()) {
+            font.drawStringWithShadow("FAILURE: " + telemetry.failureReason, x, detailY, 0xFFFF5555);
+            detailY += 10;
+        }
+        font.drawStringWithShadow("DIMENSION: " + telemetry.dimension, x, detailY, 0xFFFFFFFF);
         font.drawStringWithShadow("SCAN: " + telemetry.scanState
-                + "  DEEP: " + telemetry.deepScanState, x, y + 112, 0xFFFFFFFF);
+                + "  DEEP: " + telemetry.deepScanState, x, detailY + 10, 0xFFFFFFFF);
         GlStateManager.popMatrix();
     }
 
@@ -137,6 +144,9 @@ public final class RdpUavTargetHud {
         public final String priority;
         public final String scanState;
         public final String deepScanState;
+        public final String failureReason;
+        public final String wingmanState;
+        public final String wingmanNode;
         public final int dimension;
         public final boolean outOfRange;
         public final double x, y, z, distance;
@@ -154,6 +164,16 @@ public final class RdpUavTargetHud {
                          String missionState, String targetState, String registryId, String entityName,
                          String targetUuid, String priority, String scanState, String deepScanState,
                          int dimension, boolean outOfRange, double x, double y, double z, double distance) {
+            this(active, hasPosition, missionId, aircraftType, missionState, targetState, registryId,
+                    entityName, targetUuid, priority, scanState, deepScanState, "", "NONE", "none",
+                    dimension, outOfRange, x, y, z, distance);
+        }
+
+        public Telemetry(boolean active, boolean hasPosition, String missionId, String aircraftType,
+                         String missionState, String targetState, String registryId, String entityName,
+                         String targetUuid, String priority, String scanState, String deepScanState,
+                         String failureReason, String wingmanState, String wingmanNode,
+                         int dimension, boolean outOfRange, double x, double y, double z, double distance) {
             this.active = active;
             this.hasPosition = hasPosition;
             this.missionId = missionId;
@@ -166,6 +186,9 @@ public final class RdpUavTargetHud {
             this.priority = priority;
             this.scanState = scanState;
             this.deepScanState = deepScanState;
+            this.failureReason = failureReason == null ? "" : failureReason;
+            this.wingmanState = wingmanState == null ? "NONE" : wingmanState;
+            this.wingmanNode = wingmanNode == null ? "none" : wingmanNode;
             this.dimension = dimension;
             this.outOfRange = outOfRange;
             this.x = x; this.y = y; this.z = z; this.distance = distance;
