@@ -11,6 +11,7 @@ import net.vas.rdp.uav.scan.RDPScanReport;
 import net.vas.rdp.uav.scan.RDPScanReportRepository;
 import net.vas.rdp.uav.target.TargetResolver;
 import net.vas.rdp.uav.target.TargetSelectionMode;
+import net.vas.rdp.uav.flight.KamikazeImpactDetector;
 
 import java.util.Map;
 import java.util.HashMap;
@@ -194,6 +195,21 @@ public final class MissionLifecycle {
             if (mission.getTargetSelectionMode() != TargetSelectionMode.POINT && target == null
                     && requiresTarget(mission.getState())) {
                 recoverFromTargetLoss(world, mission, aircraft, tick);
+                dirty = true;
+                continue;
+            }
+            if (mission.getState() == MissionState.KAMIKADZE_TARGET
+                    && KamikazeImpactDetector.hasNoseImpact(aircraft)) {
+                if (flight.fireSelfDestructWeapon(aircraft)) {
+                    LOGGER.info("Mission {} kamikaze impact detonation aircraft={} tick={}",
+                            mission.getMissionId(), aircraft.getUniqueID(), tick);
+                    mission.markKamikazeDetonated(tick);
+                    flight.release(aircraft);
+                    manager.release(mission);
+                    dirty = true;
+                    continue;
+                }
+                fail(world, mission, "KAMIKAZE_IMPACT_FIRE_REJECTED", tick);
                 dirty = true;
                 continue;
             }

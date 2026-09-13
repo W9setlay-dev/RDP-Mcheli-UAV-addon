@@ -140,6 +140,27 @@ dimension context where available. Debug logging is intentionally verbose, so
 leave it off during normal operation and attach the relevant `latest.log`
 after reproducing a failure.
 
+## Kamikaze impact detonation
+
+Kamikaze missions can be armed only when the UAV has a McHeli weapon whose
+definition has `SelfDestruct: true` and available ammunition. While the mission
+is in `KAMIKADZE_TARGET`, the server checks the forward nose sweep each tick.
+If the nose intersects a solid block or collidable entity/vehicle at or above
+the configured speed, the addon fires that native McHeli weapon and records
+`KAMIKADZE_DETONATED`. It does not detonate from a slow scrape, a nearby
+non-collidable entity, or a normal reconnaissance/attack mission.
+
+The generated configuration is:
+
+```text
+<minecraft>/config/rdp-uav-kamikaze.cfg
+```
+
+`minimumImpactSpeed` defaults to `0.35` blocks/tick and
+`impactSweepPadding` defaults to `0.35` blocks. These values can be adjusted
+for the installed aircraft pack; lower values make impact triggering more
+sensitive. The trigger is implemented in `rdp-uav-addon`, not RDPMixins.
+
 ## AI tasking boundary
 
 The `net.vas.rdp.uav.ai` package is a deterministic tasking layer above the

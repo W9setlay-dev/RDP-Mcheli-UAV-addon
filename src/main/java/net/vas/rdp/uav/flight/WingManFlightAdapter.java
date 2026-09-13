@@ -9,6 +9,7 @@ import com.norwood.mcheli.wingman.mission.AutonomousState;
 import com.norwood.mcheli.wingman.wingman.WingmanEntry;
 import com.norwood.mcheli.wingman.wingman.WingmanRegistry;
 import com.norwood.mcheli.weapon.MCH_WeaponSet;
+import com.norwood.mcheli.weapon.MCH_WeaponParam;
 import net.vas.rdp.uav.RdpUavDebug;
 
 import java.util.ArrayList;
@@ -114,6 +115,26 @@ public final class WingManFlightAdapter {
         aircraft.getEntityData().setDouble(KamikazeConfig.MIN_SPEED_KEY,
                 KamikazeConfig.minimumImpactSpeed);
         return true;
+    }
+
+    public boolean fireSelfDestructWeapon(MCH_EntityAircraft aircraft) {
+        int weaponId = selectSelfDestructWeapon(aircraft);
+        if (weaponId < 0 || aircraft == null) return false;
+        MCH_WeaponSet weapon = aircraft.getWeapon(weaponId);
+        if (weapon == null || weapon.getInfo() == null || !weapon.getInfo().destruct
+                || !weapon.canFire()) return false;
+        aircraft.updateWeaponID(0, weaponId);
+        MCH_WeaponParam parameter = new MCH_WeaponParam();
+        parameter.entity = aircraft;
+        parameter.user = aircraft;
+        parameter.setPosAndRot(aircraft.posX, aircraft.posY, aircraft.posZ,
+                aircraft.getYaw(), aircraft.getPitch());
+        parameter.rotRoll = aircraft.getRoll();
+        parameter.isInfinity = false;
+        boolean fired = weapon.use(parameter);
+        RdpUavDebug.debug("Kamikaze", "self-destruct fire aircraft={} weapon={} fired={} ammo={}",
+                aircraft.getUniqueID(), weapon.getName(), fired, weapon.getAmmo());
+        return fired;
     }
 
     public boolean supportsKamikaze(MCH_EntityAircraft aircraft) {

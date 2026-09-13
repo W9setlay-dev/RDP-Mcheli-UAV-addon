@@ -8,6 +8,7 @@ public final class KamikazeConfig {
     public static final String ARMED_KEY = "rdpuav_kamikaze_nosedive_armed";
     public static final String MIN_SPEED_KEY = "rdpuav_kamikaze_min_speed";
     public static double minimumImpactSpeed = 0.35D;
+    public static double impactSweepPadding = 0.35D;
 
     private KamikazeConfig() { }
 
@@ -18,6 +19,10 @@ public final class KamikazeConfig {
                 minimumImpactSpeed,
                 "Minimum McHeli crash speed required to detonate an armed warhead.",
                 0.01D, 10.0D).getDouble();
+        impactSweepPadding = config.get("kamikaze", "impactSweepPadding",
+                impactSweepPadding,
+                "Extra block/entity collision padding around the UAV nose sweep.",
+                0.05D, 2.0D).getDouble();
         if (config.hasChanged()) config.save();
     }
 }

@@ -340,6 +340,22 @@ The commands require operator permission level 2. Output is written to
 reproducing a problem, then disable it after collecting the log because tick
 and telemetry diagnostics are intentionally verbose.
 
+### Kamikaze impact trigger
+
+`KamikazeImpactDetector` runs on the server lifecycle for armed
+`KAMIKADZE_TARGET` missions. It computes the aircraft nose from McHeli's
+current and previous position/orientation, sweeps that point between ticks,
+and checks both world collision boxes and collidable entities. The speed gate
+uses the aircraft motion vector and `KamikazeConfig.minimumImpactSpeed`.
+
+When an impact is detected, `WingManFlightAdapter.fireSelfDestructWeapon`
+selects the loaded McHeli weapon with `destruct=true`, builds the public
+`MCH_WeaponParam`, and calls the native `MCH_WeaponSet.use` path. A successful
+shot transitions the mission to `KAMIKADZE_DETONATED` and releases the WingMan
+entry. A rejected shot is persisted as
+`KAMIKAZE_IMPACT_FIRE_REJECTED`. RDPMixins does not own or duplicate this
+behavior; its station collision mixin is unrelated.
+
 ### GUI packet flow
 
 ```text
