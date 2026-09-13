@@ -321,6 +321,25 @@ The command equivalents remain available for operators who prefer chat:
 `/rdpuav mission create <namespace:id>`, optionally with `attack`, and
 `/rdpuav mission attack-point`.
 
+### Debug logging
+
+Debug logging is disabled by default and is controlled by the server operator.
+The setting is stored in `<minecraft>/config/rdp-uav-debug.cfg` and can be
+changed without restarting:
+
+```text
+/rdpuav debug on
+/rdpuav debug off
+/rdpuav debug status
+/rdpuav debug reload
+```
+
+The commands require operator permission level 2. Output is written to
+`logs/latest.log` with the prefix `[RDP-UAV/Debug]`; subsystem tags include
+`Lifecycle`, `WingMan`, `Network`, and `Command`. Enable it immediately before
+reproducing a problem, then disable it after collecting the log because tick
+and telemetry diagnostics are intentionally verbose.
+
 ### GUI packet flow
 
 ```text

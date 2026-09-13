@@ -12,6 +12,7 @@ import net.minecraftforge.fml.relauncher.Side;
 import net.vas.rdp.uav.RDPUavMod;
 import com.norwood.mcheli.aircraft.MCH_EntityAircraft;
 import com.norwood.mcheli.wingman.wingman.WingmanRegistry;
+import net.vas.rdp.uav.RdpUavDebug;
 
 public final class RdpUavNetwork {
     private static final SimpleNetworkWrapper CHANNEL = NetworkRegistry.INSTANCE.newSimpleChannel(
@@ -73,6 +74,8 @@ public final class RdpUavNetwork {
     }
 
     public static void syncTargetTelemetry(EntityPlayerMP player) {
+        RdpUavDebug.debug("Network", "sending telemetry player={} dimension={}",
+                player.getUniqueID(), player.dimension);
         CHANNEL.sendTo(TargetTelemetry.from(player), player);
     }
 
@@ -380,7 +383,9 @@ public final class RdpUavNetwork {
                                     || mission.getState() == net.vas.rdp.uav.mission.MissionState.COMPLETE
                                     || mission.getState() == net.vas.rdp.uav.mission.MissionState.ABORTED
                                     || mission.getState() == net.vas.rdp.uav.mission.MissionState.FAILED) {
-                                return;
+                                    RdpUavDebug.debug("Network", "abort rejected player={} mission={}",
+                                            player.getUniqueID(), message.missionId);
+                                    return;
                             }
 
                             mission.transitionTo(net.vas.rdp.uav.mission.MissionState.ABORTED,
@@ -396,8 +401,12 @@ public final class RdpUavNetwork {
                             net.vas.rdp.uav.RDPUavMod.missions().release(mission);
                             net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world).markDirty();
                             sendMissionData(player);
+                            RdpUavDebug.debug("Network", "abort accepted player={} mission={}",
+                                    player.getUniqueID(), message.missionId);
                         } catch (IllegalArgumentException ignored) {
                             // Invalid client input is rejected without touching mission state.
+                            RdpUavDebug.debug("Network", "abort rejected invalid UUID player={} value={}",
+                                    player.getUniqueID(), message.missionId);
                     }
                 }
             });

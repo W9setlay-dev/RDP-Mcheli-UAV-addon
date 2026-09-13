@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.UUID;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import net.vas.rdp.uav.RdpUavDebug;
 
 /**
  * Server-side bridge between persisted RDP missions and WingMan.
@@ -45,6 +46,8 @@ public final class MissionLifecycle {
 
     public void tick(World world) {
         if (world == null || world.isRemote) return;
+        RdpUavDebug.debug("Lifecycle", "tick dimension={} time={} queued={}",
+                world.provider.getDimension(), world.getTotalWorldTime(), manager.queuedMissionCount());
         aircraftThisTick = indexAircraft(world);
         restoreQueue(world);
         dispatchQueued(world);
@@ -66,6 +69,8 @@ public final class MissionLifecycle {
             RDPMission mission = manager.pollQueuedMission();
             if (mission == null) return;
             if (mission.getDimension() != world.provider.getDimension()) {
+                RdpUavDebug.debug("Lifecycle", "mission {} deferred for dimension {} (current {})",
+                        mission.getMissionId(), mission.getDimension(), world.provider.getDimension());
                 manager.enqueueQueuedMission(mission);
                 continue;
             }
@@ -77,6 +82,8 @@ public final class MissionLifecycle {
         long tick = world.getTotalWorldTime();
         MCH_EntityAircraft aircraft = findAircraft(world, mission.getAircraftId());
         if (aircraft == null) {
+            RdpUavDebug.debug("Lifecycle", "mission {} failed: aircraft not found {}",
+                    mission.getMissionId(), mission.getAircraftId());
             fail(world, mission, "AIRCRAFT_NOT_FOUND", tick);
             return;
         }
@@ -98,6 +105,8 @@ public final class MissionLifecycle {
         }
 
         Target target = locateTarget(world, aircraft, mission, true);
+        RdpUavDebug.debug("Lifecycle", "mission {} target lookup result={} state={}",
+                mission.getMissionId(), formatTarget(target), mission.getState());
         if (target == null) {
             if (tick - mission.getCreatedTick() > QUEUE_WAIT_TIMEOUT) {
                 fail(world, mission, "TARGET_NOT_FOUND", tick);
@@ -213,6 +222,8 @@ public final class MissionLifecycle {
                                   Target target, long tick) {
         WingmanEntry entry = flight.getEntry(aircraft);
         if (entry == null) {
+            RdpUavDebug.debug("Lifecycle", "mission {} WingMan entry missing age={}",
+                    mission.getMissionId(), tick - mission.getCreatedTick());
             if (tick - mission.getCreatedTick() <= WINGMAN_ENTRY_GRACE_TICKS) {
                 return false;
             }

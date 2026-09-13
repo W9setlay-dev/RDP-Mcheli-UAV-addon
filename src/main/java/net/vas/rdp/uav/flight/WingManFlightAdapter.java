@@ -9,6 +9,7 @@ import com.norwood.mcheli.wingman.mission.AutonomousState;
 import com.norwood.mcheli.wingman.wingman.WingmanEntry;
 import com.norwood.mcheli.wingman.wingman.WingmanRegistry;
 import com.norwood.mcheli.weapon.MCH_WeaponSet;
+import net.vas.rdp.uav.RdpUavDebug;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -29,10 +30,12 @@ public final class WingManFlightAdapter {
     public boolean dispatch(MCH_EntityAircraft aircraft, double x, double y, double z,
                             double orbitRadius, int orbitTicks, boolean attack, UUID targetId) {
         if (aircraft == null || !aircraft.isUAV()) {
+            RdpUavDebug.debug("WingMan", "dispatch rejected: aircraft missing or not UAV");
             return false;
         }
         UUID aircraftId = aircraft.getUniqueID();
         if (WingmanRegistry.get(aircraftId) != null) {
+            RdpUavDebug.debug("WingMan", "dispatch rejected: existing entry aircraft={}", aircraftId);
             return false;
         }
 
@@ -56,6 +59,9 @@ public final class WingManFlightAdapter {
         // but is not advanced by the autonomous flight handler.
         entry.autoState = AutonomousState.ENROUTE;
         WingmanRegistry.put(aircraftId, entry);
+        RdpUavDebug.debug("WingMan",
+                "dispatch accepted aircraft={} target=({}, {}, {}) nodes={} attack={} targetId={}",
+                aircraftId, x, y, z, nodes.size(), attack, targetId);
         return true;
     }
 
@@ -208,10 +214,16 @@ public final class WingManFlightAdapter {
      */
     public boolean requestReturn(MCH_EntityAircraft aircraft, String reason) {
         WingmanEntry entry = getEntry(aircraft);
-        if (entry == null) return false;
+        if (entry == null) {
+            RdpUavDebug.debug("WingMan", "return rejected: missing entry aircraft={}",
+                    aircraft == null ? null : aircraft.getUniqueID());
+            return false;
+        }
         entry.attackMode = WingmanEntry.ATK_NONE;
         entry.rtbReason = reason == null ? "RDP_MISSION_COMPLETE" : reason;
         entry.autoState = AutonomousState.RTB;
+        RdpUavDebug.debug("WingMan", "return requested aircraft={} reason={}",
+                aircraft.getUniqueID(), entry.rtbReason);
         return true;
     }
 

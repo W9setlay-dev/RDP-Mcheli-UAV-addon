@@ -8,6 +8,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.text.TextComponentString;
 import net.minecraft.util.math.RayTraceResult;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.util.math.BlockPos;
 import com.norwood.mcheli.aircraft.MCH_EntityAircraft;
 import net.vas.rdp.uav.RDPUavMod;
 import net.vas.rdp.uav.mission.AircraftRecord;
@@ -25,6 +26,7 @@ import net.vas.rdp.uav.target.TargetPriority;
 import net.vas.rdp.uav.target.TargetResolver;
 import net.vas.rdp.uav.target.TargetSpec;
 import net.vas.rdp.uav.flight.WingManFlightAdapter;
+import net.vas.rdp.uav.RdpUavDebug;
 
 import java.util.List;
 import java.util.UUID;
@@ -37,11 +39,35 @@ public final class RdpUavCommand extends CommandBase {
 
     @Override
     public String getUsage(ICommandSender sender) {
-        return "/rdpuav authorize | mission create <namespace:id> [attack] | mission ai <namespace:id> [attack] | mission attack-point | mission square <x> <y> <z> [size] | mission gui|list|status <id>";
+        return "/rdpuav authorize | debug on|off|status|reload | mission create <namespace:id> [attack] | mission ai <namespace:id> [attack] | mission attack-point | mission square <x> <y> <z> [size] | mission gui|list|status <id>";
+    }
+
+    @Override
+    public List<String> getTabCompletions(MinecraftServer server, ICommandSender sender,
+                                           String[] args, BlockPos targetPos) {
+        if (args.length == 1) {
+            return getListOfStringsMatchingLastWord(args, "authorize", "debug", "mission");
+        }
+        if (args.length == 2 && "debug".equalsIgnoreCase(args[0])) {
+            return getListOfStringsMatchingLastWord(args, "on", "off", "status", "reload");
+        }
+        if (args.length == 2 && "mission".equalsIgnoreCase(args[0])) {
+            return getListOfStringsMatchingLastWord(args, "create", "ai", "attack-point",
+                    "square", "gui", "list", "status");
+        }
+        return java.util.Collections.emptyList();
     }
 
     @Override
     public void execute(MinecraftServer server, ICommandSender sender, String[] args) {
+        if (args.length >= 2 && "debug".equalsIgnoreCase(args[0])) {
+            if (!sender.canUseCommand(2, getName())) {
+                sender.sendMessage(new TextComponentString("Debug logging requires operator permission."));
+                return;
+            }
+            handleDebug(sender, args[1]);
+            return;
+        }
         if (!(sender instanceof EntityPlayer)) {
             sender.sendMessage(new TextComponentString("RDP UAV commands require a player sender."));
             return;
@@ -109,6 +135,21 @@ public final class RdpUavCommand extends CommandBase {
         sender.sendMessage(new TextComponentString(getUsage(sender)));
     }
 
+    private void handleDebug(ICommandSender sender, String action) {
+        if ("on".equalsIgnoreCase(action)) {
+            RdpUavDebug.setEnabled(true);
+        } else if ("off".equalsIgnoreCase(action)) {
+            RdpUavDebug.setEnabled(false);
+        } else if ("reload".equalsIgnoreCase(action)) {
+            RdpUavDebug.reload();
+        } else if (!"status".equalsIgnoreCase(action)) {
+            sender.sendMessage(new TextComponentString(
+                    "Usage: /rdpuav debug on|off|status|reload"));
+            return;
+        }
+        sender.sendMessage(new TextComponentString("RDP UAV " + RdpUavDebug.status()));
+    }
+
     private void authorize(EntityPlayer player) {
         MCH_EntityAircraft aircraft = UavControlAccess.findControlledAircraft(player);
         if (!UavControlAccess.isOperator(aircraft, player)) {
@@ -160,6 +201,8 @@ public final class RdpUavCommand extends CommandBase {
             mission.setDimension(player.dimension);
             RDPUavMod.missions().create(player.world, mission);
             RDPMissionWorldData.get(player.world).markDirty();
+            RdpUavDebug.debug("Command", "mission created id={} owner={} aircraft={} target={} attack={}",
+                    mission.getMissionId(), player.getUniqueID(), aircraft.getUniqueID(), args[2], attack);
             player.sendMessage(new TextComponentString("Mission created: "
                     + mission.getMissionId() + " (" + mission.getMissionType().name() + ")"));
         } catch (IllegalArgumentException failure) {
@@ -242,6 +285,9 @@ public final class RdpUavCommand extends CommandBase {
         try {
             RDPUavMod.missions().create(player.world, mission);
             RDPMissionWorldData.get(player.world).markDirty();
+            RdpUavDebug.debug("Command", "point mission created id={} owner={} aircraft={} target=({}, {}, {})",
+                    mission.getMissionId(), player.getUniqueID(), aircraft.getUniqueID(),
+                    hit.hitVec.x, hit.hitVec.y, hit.hitVec.z);
             player.sendMessage(new TextComponentString("Point attack mission created: "
                     + mission.getMissionId()));
         } catch (RuntimeException failure) {

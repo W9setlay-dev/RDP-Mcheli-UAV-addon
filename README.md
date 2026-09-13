@@ -112,6 +112,34 @@ steering, weapon release, projectile impact, target damage, self-destruct,
 landing, parking, or HUD rendering. Those behaviors require a controlled
 Minecraft client/server test with the installed McHeli and WingMan runtime.
 
+## Live debug logging
+
+The addon includes a server-side diagnostic logger that is disabled by default.
+It writes tagged entries to the normal Forge/Minecraft log (`logs/latest.log`)
+so it works on dedicated servers and clients without an additional logging
+installation. The generated configuration is:
+
+```text
+<minecraft>/config/rdp-uav-debug.cfg
+```
+
+Use the operator command while the server is running:
+
+```text
+/rdpuav debug on
+/rdpuav debug off
+/rdpuav debug status
+/rdpuav debug reload
+```
+
+`on` and `off` persist immediately; `reload` rereads the configuration file.
+Debug entries use the searchable format
+`[RDP-UAV/Debug] [DEBUG][Subsystem]`. Lifecycle, WingMan dispatch/return,
+commands, and network telemetry include mission, aircraft, target, state, and
+dimension context where available. Debug logging is intentionally verbose, so
+leave it off during normal operation and attach the relevant `latest.log`
+after reproducing a failure.
+
 ## AI tasking boundary
 
 The `net.vas.rdp.uav.ai` package is a deterministic tasking layer above the
