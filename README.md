@@ -161,6 +161,23 @@ The generated configuration is:
 for the installed aircraft pack; lower values make impact triggering more
 sensitive. The trigger is implemented in `rdp-uav-addon`, not RDPMixins.
 
+## Operator AI target-lock override
+
+When piloting or operating a kamikaze-capable UAV, aim the normal Minecraft
+crosshair at an exact entity and press the configurable `RDP UAV AI target
+lock` key (default `L`). The client sends only that entity UUID; the server
+revalidates that the entity is loaded, collidable, lockable by McHeli, and that
+the operator controls a UAV with a loaded self-destruct weapon. The server then
+creates a high-priority exact-target strike mission and WingMan flies the
+aircraft toward that locked entity.
+
+Press the key twice within the configured double-tap window to clear the lock
+and abort the generated AI mission safely. The key is configurable through
+Minecraft's Controls menu. The generated `rdp-uav-kamikaze.cfg` setting
+`doubleTapWindowMillis` defaults to 350 ms. This feature never accepts a
+registry ID or nearby candidate as a substitute for the entity selected on
+screen, and it is unavailable to non-kamikaze UAVs.
+
 ## AI tasking boundary
 
 The `net.vas.rdp.uav.ai` package is a deterministic tasking layer above the

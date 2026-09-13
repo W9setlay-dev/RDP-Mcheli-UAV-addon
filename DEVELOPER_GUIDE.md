@@ -356,6 +356,28 @@ entry. A rejected shot is persisted as
 `KAMIKAZE_IMPACT_FIRE_REJECTED`. RDPMixins does not own or duplicate this
 behavior; its station collision mixin is unrelated.
 
+### Operator AI target lock
+
+`RdpUavClientKeys` uses Minecraft's `objectMouseOver.entityHit`, so the input
+refers to the exact entity under the operator's crosshair rather than a
+registry search result. `AiTargetLock` carries only the UUID and a clear flag.
+`ServerAiTargetLockHandler` performs the authoritative checks:
+
+* the sender controls the McHeli UAV;
+* the target is loaded, collidable, and not the aircraft itself;
+* McHeli's `canLockEntity` accepts the target;
+* the aircraft has an available weapon with `destruct=true`;
+* no other mission already owns the aircraft.
+
+After validation, the server creates a strike mission with an exact manual
+target specification. `MissionLifecycle` recognizes the active operator lock,
+refreshes WingMan's target coordinates, arms the native kamikaze node after
+`TARGET_LOCKED`, and fires the self-destruct weapon at
+`KamikazeConfig.closeFireDistance`. A second lock-key press inside
+`doubleTapWindowMillis` clears the runtime lock, requests recovery, aborts the
+generated mission, and releases its assignment. Locks are runtime-only and
+must be re-established after restart.
+
 ### GUI packet flow
 
 ```text

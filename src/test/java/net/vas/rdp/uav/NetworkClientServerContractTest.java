@@ -7,6 +7,7 @@ import net.vas.rdp.uav.network.RdpUavNetwork;
 import org.junit.Test;
 
 import java.nio.charset.StandardCharsets;
+import java.util.UUID;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
@@ -88,6 +89,15 @@ public class NetworkClientServerContractTest {
                 new RdpUavNetwork.RequestMissionData());
         assertSameWirePayload(new RdpUavNetwork.OpenMissionControl(),
                 new RdpUavNetwork.OpenMissionControl());
+    }
+
+    @Test
+    public void aiTargetLockRequestPreservesExactTargetAndClearFlag() {
+        assertSameWirePayload(
+                new RdpUavNetwork.AiTargetLock(UUID.fromString("00000000-0000-0000-0000-000000000042"), false),
+                new RdpUavNetwork.AiTargetLock());
+        assertSameWirePayload(new RdpUavNetwork.AiTargetLock(null, true),
+                new RdpUavNetwork.AiTargetLock());
     }
 
     private static <T extends net.minecraftforge.fml.common.network.simpleimpl.IMessage>

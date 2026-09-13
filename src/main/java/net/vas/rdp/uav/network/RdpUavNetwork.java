@@ -13,6 +13,7 @@ import net.vas.rdp.uav.RDPUavMod;
 import com.norwood.mcheli.aircraft.MCH_EntityAircraft;
 import com.norwood.mcheli.wingman.wingman.WingmanRegistry;
 import net.vas.rdp.uav.RdpUavDebug;
+import net.vas.rdp.uav.flight.KamikazePilotOverride;
 
 public final class RdpUavNetwork {
     private static final SimpleNetworkWrapper CHANNEL = NetworkRegistry.INSTANCE.newSimpleChannel(
@@ -34,6 +35,7 @@ public final class RdpUavNetwork {
         CHANNEL.registerMessage(ClientMissionDataHandler.ClientTargetTelemetryHandler.class,
                 TargetTelemetry.class, 7, Side.CLIENT);
         CHANNEL.registerMessage(ServerSquareStrikeHandler.class, SquareStrike.class, 8, Side.SERVER);
+        CHANNEL.registerMessage(ServerAiTargetLockHandler.class, AiTargetLock.class, 9, Side.SERVER);
     }
 
     public static void openMissionControl(EntityPlayerMP player) {
@@ -67,6 +69,14 @@ public final class RdpUavNetwork {
 
     public static void createSquareStrike(String parameters) {
         CHANNEL.sendToServer(new SquareStrike(parameters));
+    }
+
+    public static void lockAiTarget(java.util.UUID targetId) {
+        if (targetId != null) CHANNEL.sendToServer(new AiTargetLock(targetId, false));
+    }
+
+    public static void clearAiTargetLock() {
+        CHANNEL.sendToServer(new AiTargetLock(null, true));
     }
 
     static void sendMissionData(EntityPlayerMP player) {
@@ -145,8 +155,27 @@ public final class RdpUavNetwork {
         public SquareStrike(String parameters) {
             this.parameters = parameters == null ? "" : parameters;
         }
+
         public void fromBytes(ByteBuf buffer) { parameters = readString(buffer); }
         public void toBytes(ByteBuf buffer) { writeString(buffer, parameters); }
+    }
+
+    public static final class AiTargetLock implements IMessage {
+        private String targetId = "";
+        private boolean clear;
+        public AiTargetLock() { }
+        public AiTargetLock(java.util.UUID targetId, boolean clear) {
+            this.targetId = targetId == null ? "" : targetId.toString();
+            this.clear = clear;
+        }
+        public void fromBytes(ByteBuf buffer) {
+            targetId = readString(buffer);
+            clear = buffer.readBoolean();
+        }
+        public void toBytes(ByteBuf buffer) {
+            writeString(buffer, targetId);
+            buffer.writeBoolean(clear);
+        }
     }
 
     public static final class MissionData implements IMessage {
@@ -556,8 +585,92 @@ public final class RdpUavNetwork {
                             || !message.parameters.matches("-?[0-9.]+\\s+-?[0-9.]+\\s+-?[0-9.]+(\\s+[0-9.]+)?")) {
                         return;
                     }
+
                     player.getServer().getCommandManager().executeCommand(player,
                             "rdpuav mission square " + message.parameters);
+                }
+            });
+            return null;
+        }
+    }
+
+    public static final class ServerAiTargetLockHandler
+            implements IMessageHandler<AiTargetLock, IMessage> {
+        public IMessage onMessage(final AiTargetLock message, MessageContext context) {
+            final EntityPlayerMP player = context.getServerHandler().player;
+            player.getServer().addScheduledTask(new Runnable() {
+                public void run() {
+                    MCH_EntityAircraft aircraft =
+                            net.vas.rdp.uav.mission.UavControlAccess.findControlledAircraft(player);
+                    if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, player)
+                            || aircraft == null) return;
+                    if (message.clear) {
+                        KamikazePilotOverride.clear(aircraft.getUniqueID());
+                        java.util.List<net.vas.rdp.uav.mission.RDPMission> missions =
+                                net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
+                                        .getRepository().byOwner(player.getUniqueID());
+                        for (net.vas.rdp.uav.mission.RDPMission mission : missions) {
+                            if (!aircraft.getUniqueID().equals(mission.getAircraftId())
+                                    || mission.getState() == net.vas.rdp.uav.mission.MissionState.COMPLETE
+                                    || mission.getState() == net.vas.rdp.uav.mission.MissionState.ABORTED
+                                    || mission.getState() == net.vas.rdp.uav.mission.MissionState.FAILED
+                                    || mission.getState() == net.vas.rdp.uav.mission.MissionState.KAMIKADZE_DETONATED) {
+                                continue;
+                            }
+                            net.vas.rdp.uav.flight.WingManFlightAdapter adapter =
+                                    new net.vas.rdp.uav.flight.WingManFlightAdapter();
+                            if (mission.getState()
+                                    == net.vas.rdp.uav.mission.MissionState.KAMIKADZE_TARGET) {
+                                adapter.requestReturn(aircraft, "RDP_AI_TARGET_LOCK_CLEARED");
+                                mission.transitionTo(net.vas.rdp.uav.mission.MissionState.RETURNING,
+                                        player.world.getTotalWorldTime());
+                            } else {
+                                mission.transitionTo(net.vas.rdp.uav.mission.MissionState.ABORTED,
+                                        player.world.getTotalWorldTime());
+                                adapter.release(aircraft);
+                                RDPUavMod.missions().release(mission);
+                            }
+                            net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world).markDirty();
+                            break;
+                        }
+                        RdpUavDebug.debug("Network", "AI target lock cleared player={} aircraft={}",
+                                player.getUniqueID(), aircraft.getUniqueID());
+                        return;
+                    }
+                    try {
+                        java.util.UUID targetId = java.util.UUID.fromString(message.targetId);
+                        net.minecraft.entity.Entity target = new net.vas.rdp.uav.target.TargetResolver()
+                                .findLoaded(player.world, targetId);
+                        net.vas.rdp.uav.flight.WingManFlightAdapter adapter =
+                                new net.vas.rdp.uav.flight.WingManFlightAdapter();
+                        if (target == null || target == aircraft || !target.canBeCollidedWith()
+                                || aircraft.getAcInfo() == null
+                                || !adapter.hasSelfDestructWeaponWithAmmo(aircraft)
+                                || !aircraft.canLockEntity(target)) return;
+                        if (RDPUavMod.missions().assignedMission(aircraft.getUniqueID()) != null) return;
+                        net.minecraft.util.ResourceLocation key =
+                                net.minecraft.entity.EntityList.getKey(target);
+                        if (key == null) return;
+                        net.vas.rdp.uav.mission.RDPMission mission =
+                                new net.vas.rdp.uav.mission.RDPMission(
+                                        java.util.UUID.randomUUID(), player.getUniqueID(),
+                                        aircraft.getUniqueID(), aircraft.getAcInfo().name,
+                                        net.vas.rdp.uav.mission.MissionType.STRIKE,
+                                        net.vas.rdp.uav.target.TargetSpec.manual(
+                                                key.toString(),
+                                                net.vas.rdp.uav.target.TargetPriority.HIGH),
+                                        true, true, false, 5000.0D, 8.0D,
+                                        player.world.getTotalWorldTime());
+                        mission.setDimension(player.dimension);
+                        RDPUavMod.missions().create(player.world, mission);
+                        net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world).markDirty();
+                        KamikazePilotOverride.lock(aircraft.getUniqueID(), targetId);
+                        RdpUavDebug.debug("Network", "AI target lock accepted player={} aircraft={} target={}",
+                                player.getUniqueID(), aircraft.getUniqueID(), targetId);
+                    } catch (IllegalArgumentException ignored) {
+                        RdpUavDebug.debug("Network", "AI target lock rejected invalid target={}",
+                                message.targetId);
+                    }
                 }
             });
             return null;

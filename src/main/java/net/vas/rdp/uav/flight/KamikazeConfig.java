@@ -9,6 +9,8 @@ public final class KamikazeConfig {
     public static final String MIN_SPEED_KEY = "rdpuav_kamikaze_min_speed";
     public static double minimumImpactSpeed = 0.35D;
     public static double impactSweepPadding = 0.35D;
+    public static double closeFireDistance = 8.0D;
+    public static long doubleTapWindowMillis = 350L;
 
     private KamikazeConfig() { }
 
@@ -23,6 +25,14 @@ public final class KamikazeConfig {
                 impactSweepPadding,
                 "Extra block/entity collision padding around the UAV nose sweep.",
                 0.05D, 2.0D).getDouble();
+        closeFireDistance = config.get("kamikaze", "closeFireDistance",
+                closeFireDistance,
+                "Distance at which an AI-locked kamikaze UAV fires its self-destruct weapon.",
+                1.0D, 64.0D).getDouble();
+        doubleTapWindowMillis = config.get("kamikaze", "doubleTapWindowMillis",
+                doubleTapWindowMillis,
+                "Maximum interval between target-lock key presses that clears the lock.",
+                150L, 1000L).getInt();
         if (config.hasChanged()) config.save();
     }
 }

@@ -12,6 +12,7 @@ import net.vas.rdp.uav.scan.RDPScanReportRepository;
 import net.vas.rdp.uav.target.TargetResolver;
 import net.vas.rdp.uav.target.TargetSelectionMode;
 import net.vas.rdp.uav.flight.KamikazeImpactDetector;
+import net.vas.rdp.uav.flight.KamikazePilotOverride;
 
 import java.util.Map;
 import java.util.HashMap;
@@ -209,6 +210,25 @@ public final class MissionLifecycle {
                     dirty = true;
                     continue;
                 }
+                if (mission.getState() == MissionState.KAMIKADZE_TARGET
+                        && target != null && target.entity != null
+                        && target.entity.getDistance(aircraft) <= net.vas.rdp.uav.flight.KamikazeConfig.closeFireDistance
+                        && KamikazePilotOverride.targetFor(aircraft.getUniqueID()) != null
+                        && KamikazePilotOverride.targetFor(aircraft.getUniqueID()).equals(target.entity.getUniqueID())) {
+                    if (flight.fireSelfDestructWeapon(aircraft)) {
+                        LOGGER.info("Mission {} AI close-range kamikaze fire aircraft={} target={} tick={}",
+                                mission.getMissionId(), aircraft.getUniqueID(), target.entity.getUniqueID(), tick);
+                        mission.markKamikazeDetonated(tick);
+                        KamikazePilotOverride.clear(aircraft.getUniqueID());
+                        flight.release(aircraft);
+                        manager.release(mission);
+                        dirty = true;
+                        continue;
+                    }
+                    fail(world, mission, "KAMIKAZE_CLOSE_FIRE_REJECTED", tick);
+                    dirty = true;
+                    continue;
+                }
                 fail(world, mission, "KAMIKAZE_IMPACT_FIRE_REJECTED", tick);
                 dirty = true;
                 continue;
@@ -277,6 +297,17 @@ public final class MissionLifecycle {
             else mission.lockTarget(target.entity.getUniqueID(), tick);
             return true;
         case TARGET_LOCKED:
+                UUID pilotTarget = KamikazePilotOverride.targetFor(aircraft.getUniqueID());
+                if (mission.isAttack() && pilotTarget != null && target != null
+                        && pilotTarget.equals(target.entity == null ? null : target.entity.getUniqueID())) {
+                    if (!flight.armKamikaze(aircraft, target.x, target.y, target.z,
+                            mission.getObservationDistance(), target.entity.getUniqueID())) {
+                        fail(world, mission, "AI_KAMIKAZE_ARM_REJECTED", tick);
+                    } else {
+                        mission.transitionTo(MissionState.KAMIKADZE_TARGET, tick);
+                    }
+                    return true;
+                }
                 if (mission.isAttack()) {
                     if (mission.getMissionType() == MissionType.SQUARE_STRIKE) {
                         net.vas.rdp.uav.flight.SquareStrikePlan plan =
