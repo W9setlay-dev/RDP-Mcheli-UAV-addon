@@ -23,6 +23,17 @@ public final class TargetResolver {
         return null;
     }
 
+    public Entity findLoadedByRegistryId(World world, String registryId) {
+        if (world == null || registryId == null || registryId.trim().isEmpty()) return null;
+        for (Entity entity : world.loadedEntityList) {
+            if (entity == null || entity.isDead
+                    || entity.dimension != world.provider.getDimension()) continue;
+            ResourceLocation key = EntityList.getKey(entity);
+            if (key != null && registryId.equals(key.toString())) return entity;
+        }
+        return null;
+    }
+
     public List<EntityCandidate> find(World world, double x, double y, double z, double radius,
                                       TargetSpec specification) {
         if (world == null || specification == null || radius <= 0) {

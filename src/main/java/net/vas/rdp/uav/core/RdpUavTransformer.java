@@ -14,7 +14,10 @@ public final class RdpUavTransformer implements net.minecraft.launchwrapper.ICla
     public byte[] transform(String name, String transformedName, byte[] basicClass) {
         if (basicClass == null || !TARGET.equals(transformedName)) return basicClass;
         ClassReader reader = new ClassReader(basicClass);
-        ClassWriter writer = new ClassWriter(reader, 0);
+        // The injected branch changes the control-flow graph; recompute all
+        // stack map frames instead of retaining the frames from the source
+        // class.
+        ClassWriter writer = new ClassWriter(reader, ClassWriter.COMPUTE_FRAMES);
         reader.accept(new ClassVisitor(Opcodes.ASM5, writer) {
             @Override
             public MethodVisitor visitMethod(int access, String methodName, String descriptor,

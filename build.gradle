@@ -42,3 +42,12 @@ processResources {
         expand 'version': project.version
     }
 }
+
+jar {
+    manifest {
+        attributes(
+                'FMLCorePlugin': 'net.vas.rdp.uav.core.RdpUavCorePlugin',
+                'FMLCorePluginContainsFMLMod': 'true'
+        )
+    }
+}

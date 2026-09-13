@@ -156,6 +156,10 @@ public final class RDPMission {
      * active mission envelope.
      */
     public double getMissionRangeLimit() {
+        if (missionType == MissionType.SQUARE_STRIKE) {
+            return Math.max(MissionLimits.MAX_SQUARE_STRIKE_DISTANCE,
+                    Math.max(searchRadius, observationDistance));
+        }
         return Math.max(searchRadius, observationDistance);
     }
     public long getCreatedTick() { return createdTick; }

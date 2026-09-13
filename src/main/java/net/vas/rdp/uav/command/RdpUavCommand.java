@@ -14,6 +14,11 @@ import net.vas.rdp.uav.mission.AircraftRecord;
 import net.vas.rdp.uav.mission.MissionType;
 import net.vas.rdp.uav.mission.RDPMission;
 import net.vas.rdp.uav.mission.UavControlAccess;
+import net.vas.rdp.uav.mission.MissionLimits;
+import net.vas.rdp.uav.ai.AiDecision;
+import net.vas.rdp.uav.ai.AiResource;
+import net.vas.rdp.uav.ai.AiTaskRequest;
+import net.vas.rdp.uav.ai.AutonomyLevel;
 import net.vas.rdp.uav.persistence.RDPMissionWorldData;
 import net.vas.rdp.uav.network.RdpUavNetwork;
 import net.vas.rdp.uav.target.TargetPriority;
@@ -32,7 +37,7 @@ public final class RdpUavCommand extends CommandBase {
 
     @Override
     public String getUsage(ICommandSender sender) {
-        return "/rdpuav authorize | mission create <namespace:id> [attack] | mission attack-point | mission square <x> <y> <z> [size] | mission gui|list|status <id>";
+        return "/rdpuav authorize | mission create <namespace:id> [attack] | mission ai <namespace:id> [attack] | mission attack-point | mission square <x> <y> <z> [size] | mission gui|list|status <id>";
     }
 
     @Override
@@ -60,6 +65,10 @@ public final class RdpUavCommand extends CommandBase {
         }
         if ("create".equalsIgnoreCase(args[1])) {
             createMission(player, args);
+            return;
+        }
+        if ("ai".equalsIgnoreCase(args[1])) {
+            createAiMission(player, args);
             return;
         }
         if ("gui".equalsIgnoreCase(args[1])) {
@@ -160,6 +169,49 @@ public final class RdpUavCommand extends CommandBase {
         }
     }
 
+    private void createAiMission(EntityPlayer player, String[] args) {
+        if (args.length < 3) {
+            player.sendMessage(new TextComponentString(
+                    "Usage: /rdpuav mission ai <namespace:id> [attack]"));
+            return;
+        }
+        MCH_EntityAircraft aircraft = UavControlAccess.findControlledAircraft(player);
+        if (!UavControlAccess.isOperator(aircraft, player)
+                || !RDPUavMod.missions().ensureAuthorized(aircraft, player)
+                || !RDPUavMod.missions().canAssignAircraft(aircraft.getUniqueID(), player.getUniqueID())) {
+            player.sendMessage(new TextComponentString(
+                    "AI requires an authorized, available McHeli UAV under your control."));
+            return;
+        }
+        boolean attack = args.length >= 4 && "attack".equalsIgnoreCase(args[3]);
+        try {
+            TargetSpec target = TargetSpec.manual(args[2],
+                    attack ? TargetPriority.HIGH : TargetPriority.NORMAL);
+            AiTaskRequest request = new AiTaskRequest(UUID.randomUUID(), player.getUniqueID(),
+                    attack ? MissionType.STRIKE : MissionType.RECONNAISSANCE, target,
+                    target.getPriority(), attack, AutonomyLevel.AUTONOMOUS);
+            AircraftRecord record = RDPUavMod.missions().findAircraft(aircraft.getUniqueID());
+            WingManFlightAdapter adapter = new WingManFlightAdapter();
+            AiDecision decision = RDPUavMod.ai().assess(request,
+                    java.util.Collections.singletonList(new AiResource(record, 0.0D,
+                            adapter.hasAttackAmmunition(aircraft)
+                                    || adapter.hasSelfDestructWeaponWithAmmo(aircraft))));
+            if (decision.getKind() != AiDecision.Kind.RECOMMEND) {
+                player.sendMessage(new TextComponentString("AI mission rejected: "
+                        + decision.getReason()));
+                return;
+            }
+            RDPMission mission = RDPUavMod.ai().executeAutonomous(player.world, request,
+                    decision, player.world.getTotalWorldTime());
+            RDPMissionWorldData.get(player.world).markDirty();
+            player.sendMessage(new TextComponentString("AI mission accepted: "
+                    + mission.getMissionId() + " (" + decision.getIntent().name() + ")"));
+        } catch (RuntimeException failure) {
+            player.sendMessage(new TextComponentString("AI mission rejected: "
+                    + (failure.getMessage() == null ? "invalid request" : failure.getMessage())));
+        }
+    }
+
     private void createPointAttack(EntityPlayer player) {
         MCH_EntityAircraft aircraft = UavControlAccess.findControlledAircraft(player);
         if (!UavControlAccess.isOperator(aircraft, player)
@@ -221,11 +273,26 @@ public final class RdpUavCommand extends CommandBase {
             double y = Double.parseDouble(args[3]);
             double z = Double.parseDouble(args[4]);
             double size = args.length >= 6 ? Double.parseDouble(args[5]) : 64.0D;
-            if (size < 16.0D || size > 512.0D) throw new IllegalArgumentException("size must be 16..512");
+            if (aircraft.getAcInfo() == null) {
+                throw new IllegalArgumentException("UAV metadata is unavailable");
+            }
+            double dx = aircraft.posX - x;
+            double dy = aircraft.posY - y;
+            double dz = aircraft.posZ - z;
+            if (dx * dx + dy * dy + dz * dz
+                    > MissionLimits.MAX_SQUARE_STRIKE_DISTANCE
+                    * MissionLimits.MAX_SQUARE_STRIKE_DISTANCE) {
+                throw new IllegalArgumentException("target must be within 5000 blocks of the UAV");
+            }
+            if (size < MissionLimits.MIN_SQUARE_SIZE || size > MissionLimits.MAX_SQUARE_SIZE) {
+                throw new IllegalArgumentException("size must be 16..512");
+            }
             RDPMission mission = new RDPMission(UUID.randomUUID(), player.getUniqueID(),
                     aircraft.getUniqueID(), aircraft.getAcInfo().name, MissionType.SQUARE_STRIKE,
                     TargetSpec.point(x, y, z, TargetPriority.HIGH), true, false, false,
-                    Math.max(256.0D, size * 2.0D), size, player.world.getTotalWorldTime());
+                    Math.max(256.0D, size * 2.0D),
+                    Math.min(64.0D, Math.max(16.0D, size / 4.0D)),
+                    player.world.getTotalWorldTime());
             mission.setDimension(player.dimension);
             RDPUavMod.missions().create(player.world, mission);
             RDPMissionWorldData.get(player.world).markDirty();

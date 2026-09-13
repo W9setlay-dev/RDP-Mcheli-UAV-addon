@@ -4,6 +4,7 @@ import net.minecraft.world.World;
 import net.vas.rdp.uav.mission.AircraftRecord;
 import net.vas.rdp.uav.mission.MissionManager;
 import net.vas.rdp.uav.mission.RDPMission;
+import net.vas.rdp.uav.mission.MissionLimits;
 
 import java.util.HashMap;
 import java.util.List;
@@ -64,7 +65,7 @@ public final class AiTaskingService {
         RDPMission mission = new RDPMission(UUID.randomUUID(), request.getOperatorId(), aircraftId,
                 aircraftType(aircraftId), request.getMissionType(), request.getTarget(),
                 request.isAttack(), false, request.getMissionType().name().equals("RECONNAISSANCE"),
-                256, 64, tick);
+                MissionLimits.MAX_SQUARE_STRIKE_DISTANCE, 64, tick);
         mission.setDimension(world.provider.getDimension());
         missions.create(world, mission);
         return mission;

@@ -43,6 +43,16 @@ checks ownership, UAV status, target coordinates, and mission state before
 arming the attack adapter. Dispatch starts on the server world tick and is
 handed to WingMan through the adapter.
 
+For an autonomous AI task, use `/rdpuav mission ai <namespace:id> [attack]`.
+The command evaluates the controlled, authorized UAV through the deterministic
+AI tasking service and submits a mission only when the aircraft is available
+and attack capability is present for an attack request.
+Normal AI attacks use WingMan's regular attack node; a destructive weapon does
+not cause an automatic kamikaze dive. Kamikaze remains an explicit operator
+action through the mission controls. Manual AI targets are resolved from
+loaded entities at any distance inside the mission's 5000-block envelope, so
+they are not incorrectly rejected by the old 256-block acquisition search.
+
 For a survival-safe point attack, look at a block or structure from the
 piloted UAV and run `/rdpuav mission attack-point`. The server ray-traces the
 player camera out to 256 blocks, stores the finite world coordinates, and
@@ -61,6 +71,12 @@ the real McHeli/WingMan movement and weapon boundaries. Node creation is not
 treated as proof of a completed pass, weapon release, impact, or damage; a
 server mission command and live runtime verification are still required before
 this capability can be considered production-ready.
+
+Square strikes accept a target center at most 5000 blocks from the controlled
+UAV. The area remains bounded to 16-512 blocks, and the mission envelope uses
+the 5000-block dispatch limit so a valid square target is not shown as out of
+range by the HUD. This limit does not claim that chunk loading, steering,
+weapon release, or damage have been verified in a live server.
 
 **Implementation boundary:** server ticks now dispatch queued missions, track
 loaded targets with reacquisition, persist scan metadata, and request WingMan

@@ -25,8 +25,9 @@ import java.util.UUID;
  * safe recon/recovery orders and observes the public WingMan entry state.</p>
  */
 public final class MissionLifecycle {
-    private static final long QUEUE_WAIT_TIMEOUT = 200L;
-    private static final long MISSION_TIMEOUT = 2400L;
+    private static final long QUEUE_WAIT_TIMEOUT = 600L;
+    private static final long MISSION_TIMEOUT = 12000L;
+    private static final long WINGMAN_ENTRY_GRACE_TICKS = 20L;
 
     private final MissionManager manager;
     private final WingManFlightAdapter flight = new WingManFlightAdapter();
@@ -87,7 +88,7 @@ public final class MissionLifecycle {
             return;
         }
         if (mission.isAttack() && !flight.hasAttackAmmunition(aircraft)
-                && !flight.supportsKamikaze(aircraft)) {
+                && !flight.hasSelfDestructWeaponWithAmmo(aircraft)) {
             fail(world, mission, "NO_ATTACK_AMMUNITION", tick);
             return;
         }
@@ -163,7 +164,7 @@ public final class MissionLifecycle {
             }
             if (mission.isAttack() && mission.getState() == MissionState.TARGET_LOCKED
                     && !flight.hasAttackAmmunition(aircraft)
-                    && !flight.supportsKamikaze(aircraft)) {
+                    && !flight.hasSelfDestructWeaponWithAmmo(aircraft)) {
                 fail(world, mission, "AMMUNITION_DEPLETED", tick);
                 dirty = true;
                 continue;
@@ -194,6 +195,9 @@ public final class MissionLifecycle {
                                   Target target, long tick) {
         WingmanEntry entry = flight.getEntry(aircraft);
         if (entry == null) {
+            if (tick - mission.getCreatedTick() <= WINGMAN_ENTRY_GRACE_TICKS) {
+                return false;
+            }
             fail(world, mission, "WINGMAN_ENTRY_LOST", tick);
             return true;
         }
@@ -365,7 +369,14 @@ public final class MissionLifecycle {
         }
         if (!allowAcquire) return null;
         Entity current = targets.findLoaded(world, mission.getTargetId());
-        if (current != null) return Target.entity(current);
+        if (current == null && mission.getTargetSelectionMode() == TargetSelectionMode.MANUAL) {
+            current = targets.findLoadedByRegistryId(world, mission.getTargetSpec().getRegistryId());
+        }
+        if (current != null && aircraft.getDistanceSq(current) <=
+                mission.getSearchRadius() * mission.getSearchRadius()) {
+            return Target.entity(current);
+        }
+        if (current != null) return null;
         List<TargetResolver.EntityCandidate> candidates = targets.find(world, aircraft.posX,
                 aircraft.posY, aircraft.posZ, mission.getSearchRadius(), mission.getTargetSpec());
         return candidates.isEmpty() ? null : Target.entity(candidates.get(0).getEntity());

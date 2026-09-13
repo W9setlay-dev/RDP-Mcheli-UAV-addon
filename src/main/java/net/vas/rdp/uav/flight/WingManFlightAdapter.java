@@ -50,6 +50,10 @@ public final class WingManFlightAdapter {
         entry.autoTargetZ = z;
         entry.mission = nodes;
         entry.missionIndex = 0;
+        // WingMan's native mission command starts custom node plans in
+        // ENROUTE.  A mission list with the default NONE state is registered
+        // but is not advanced by the autonomous flight handler.
+        entry.autoState = AutonomousState.ENROUTE;
         WingmanRegistry.put(aircraftId, entry);
         return true;
     }
@@ -64,9 +68,6 @@ public final class WingManFlightAdapter {
         entry.autoTargetX = x;
         entry.autoTargetY = y;
         entry.autoTargetZ = z;
-        if (supportsKamikaze(aircraft)) {
-            appendDiveApproach(entry, aircraft, x, y, z);
-        }
         appendAttackNode(entry, attackRadius);
         return true;
     }
@@ -76,7 +77,7 @@ public final class WingManFlightAdapter {
         if (aircraft == null || plan == null || !aircraft.isUAV()) return false;
         WingmanEntry entry = WingmanRegistry.get(aircraft.getUniqueID());
         if (entry == null || entry.mission == null) return false;
-        if (!hasAttackAmmunition(aircraft) && !supportsKamikaze(aircraft)) return false;
+        if (!hasAttackAmmunition(aircraft) && !hasSelfDestructWeaponWithAmmo(aircraft)) return false;
         entry.attackMode = WingmanEntry.ATK_AUTO;
         entry.currentAutoTarget = targetId;
         entry.mission.addAll(plan.createNodes());
@@ -88,8 +89,15 @@ public final class WingManFlightAdapter {
         if (!supportsKamikaze(aircraft)) return false;
         int weaponId = selectSelfDestructWeapon(aircraft);
         if (weaponId < 0) return false;
-        if (!armAttack(aircraft, x, y, z, attackRadius, targetId)) return false;
         WingmanEntry entry = WingmanRegistry.get(aircraft.getUniqueID());
+        if (entry == null || entry.mission == null) return false;
+        entry.attackMode = WingmanEntry.ATK_AUTO;
+        entry.currentAutoTarget = targetId;
+        entry.autoTargetX = x;
+        entry.autoTargetY = y;
+        entry.autoTargetZ = z;
+        appendDiveApproach(entry, aircraft, x, y, z);
+        appendAttackNode(entry, attackRadius);
         // WingMan fires the aircraft's selected seat weapon. Select the
         // destructive loaded set before arming its autonomous attack node.
         aircraft.updateWeaponID(0, weaponId);
@@ -130,9 +138,10 @@ public final class WingManFlightAdapter {
     }
 
     public boolean hasFuelForMission(MCH_EntityAircraft aircraft) {
-        return aircraft != null && aircraft.getMaxFuel() > 0
-                && aircraft.getFuel() > Math.max(1, aircraft.getMaxFuel() / 5)
-                && aircraft.canUseFuel();
+        if (aircraft == null) return false;
+        if (!aircraft.canUseFuel()) return true;
+        return aircraft.getMaxFuel() > 0
+                && aircraft.getFuel() > Math.max(1, aircraft.getMaxFuel() / 5);
     }
 
     public boolean hasAttackAmmunition(MCH_EntityAircraft aircraft) {
