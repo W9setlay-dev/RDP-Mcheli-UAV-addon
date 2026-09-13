@@ -27,6 +27,7 @@ public final class CoreMissionTest {
                 true, false, true, 256, 64, 10);
 
         check(mission.getState() == MissionState.PLANNED, "mission starts planned");
+        check(mission.getMissionRangeLimit() == 256.0D, "mission envelope uses the broader target range");
         AircraftAssignmentRegistry assignments = new AircraftAssignmentRegistry();
         check(assignments.reserve(aircraft, mission.getMissionId()), "first assignment succeeds");
         check(!assignments.reserve(aircraft, UUID.randomUUID()), "duplicate assignment rejected");

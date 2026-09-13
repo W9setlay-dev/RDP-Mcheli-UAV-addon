@@ -90,17 +90,23 @@ public final class RdpUavTargetHud {
     }
 
     private double[] project(Minecraft mc, double x, double y, double z, int width, int height) {
-        double px = mc.player.prevPosX + (mc.player.posX - mc.player.prevPosX) * mc.getRenderPartialTicks();
-        double py = mc.player.prevPosY + (mc.player.posY - mc.player.prevPosY) * mc.getRenderPartialTicks()
-                + mc.player.getEyeHeight();
-        double pz = mc.player.prevPosZ + (mc.player.posZ - mc.player.prevPosZ) * mc.getRenderPartialTicks();
+        net.minecraft.entity.Entity origin = mc.player;
+        net.minecraft.entity.Entity controlled = net.vas.rdp.uav.mission.UavControlAccess
+                .findControlledAircraft(mc.player);
+        if (controlled != null && !controlled.isDead) {
+            origin = controlled;
+        }
+        double px = origin.prevPosX + (origin.posX - origin.prevPosX) * mc.getRenderPartialTicks();
+        double py = origin.prevPosY + (origin.posY - origin.prevPosY) * mc.getRenderPartialTicks()
+                + origin.getEyeHeight();
+        double pz = origin.prevPosZ + (origin.posZ - origin.prevPosZ) * mc.getRenderPartialTicks();
         double dx = x - px;
         double dy = y - py;
         double dz = z - pz;
-        double yaw = Math.toRadians(mc.player.prevRotationYaw
-                + (mc.player.rotationYaw - mc.player.prevRotationYaw) * mc.getRenderPartialTicks());
-        double pitch = Math.toRadians(mc.player.prevRotationPitch
-                + (mc.player.rotationPitch - mc.player.prevRotationPitch) * mc.getRenderPartialTicks());
+        double yaw = Math.toRadians(origin.prevRotationYaw
+                + (origin.rotationYaw - origin.prevRotationYaw) * mc.getRenderPartialTicks());
+        double pitch = Math.toRadians(origin.prevRotationPitch
+                + (origin.rotationPitch - origin.prevRotationPitch) * mc.getRenderPartialTicks());
         double forwardX = -Math.sin(yaw) * Math.cos(pitch);
         double forwardY = -Math.sin(pitch);
         double forwardZ = Math.cos(yaw) * Math.cos(pitch);

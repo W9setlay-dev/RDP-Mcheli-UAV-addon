@@ -280,7 +280,9 @@ public final class RdpUavNetwork {
                             selected.getTargetPriority().name(), scan, deep, selected.getDimension(),
                             tx, ty, tz, distance);
                     telemetry.entityName = target == null ? (point ? "POINT" : "") : target.getName();
-                    telemetry.outOfRange = distance > selected.getSearchRadius();
+                    // The mission's search radius and the weapon/lock engagement radius are not the same thing.
+                    // Do not let a smaller attack radius falsely mark a valid target as out of range.
+                    telemetry.outOfRange = distance > selected.getMissionRangeLimit();
                     return telemetry;
                 }
 

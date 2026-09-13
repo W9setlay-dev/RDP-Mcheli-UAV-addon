@@ -149,6 +149,15 @@ public final class RDPMission {
     public boolean isDeepScan() { return deepScan; }
     public double getSearchRadius() { return searchRadius; }
     public double getObservationDistance() { return observationDistance; }
+    /**
+     * Mission telemetry and validation should not confuse target acquisition
+     * radius with the smaller engagement/attack radius.  Use the broader of the
+     * two when reporting whether the current target remains within the UAV's
+     * active mission envelope.
+     */
+    public double getMissionRangeLimit() {
+        return Math.max(searchRadius, observationDistance);
+    }
     public long getCreatedTick() { return createdTick; }
     public long getLastUpdateTick() { return lastUpdateTick; }
     public MissionState getState() { return state; }
