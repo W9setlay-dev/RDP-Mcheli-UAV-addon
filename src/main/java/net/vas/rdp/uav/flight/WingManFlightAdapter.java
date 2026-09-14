@@ -35,9 +35,23 @@ public final class WingManFlightAdapter {
             return false;
         }
         UUID aircraftId = aircraft.getUniqueID();
-        if (WingmanRegistry.get(aircraftId) != null) {
-            RdpUavDebug.debug("WingMan", "dispatch rejected: existing entry aircraft={}", aircraftId);
-            return false;
+        WingmanEntry existing = WingmanRegistry.get(aircraftId);
+        if (existing != null) {
+            // A previous RDP mission can leave an inert PARKED/NONE entry
+            // behind when the native handler finishes between ticks. Do not
+            // turn that stale bookkeeping record into a permanent rejection,
+            // but never take over an active native controller.
+            boolean inert = existing.mission == null && !existing.hasOrder()
+                    && (existing.autoState == AutonomousState.NONE
+                    || existing.autoState == AutonomousState.PARKED);
+            if (!inert) {
+                RdpUavDebug.debug("WingMan",
+                        "dispatch rejected: active entry aircraft={} state={} node={}",
+                        aircraftId, existing.autoState, existing.currentNode());
+                return false;
+            }
+            WingmanRegistry.remove(aircraftId);
+            RdpUavDebug.debug("WingMan", "removed stale entry before dispatch aircraft={}", aircraftId);
         }
 
         List<MissionNode> nodes = new ArrayList<MissionNode>();

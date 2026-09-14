@@ -48,8 +48,11 @@ public final class MissionLifecycle {
 
     public void tick(World world) {
         if (world == null || world.isRemote) return;
-        RdpUavDebug.debug("Lifecycle", "tick dimension={} time={} queued={}",
-                world.provider.getDimension(), world.getTotalWorldTime(), manager.queuedMissionCount());
+        if (world.getTotalWorldTime() % 20L == 0L || manager.queuedMissionCount() > 0) {
+            RdpUavDebug.debug("Lifecycle", "tick dimension={} time={} queued={}",
+                    world.provider.getDimension(), world.getTotalWorldTime(),
+                    manager.queuedMissionCount());
+        }
         aircraftThisTick = indexAircraft(world);
         restoreQueue(world);
         dispatchQueued(world);
@@ -111,10 +114,15 @@ public final class MissionLifecycle {
                 mission.getMissionId(), formatTarget(target), mission.getState());
         if (target == null) {
             if (tick - mission.getCreatedTick() > QUEUE_WAIT_TIMEOUT) {
-                fail(world, mission, "TARGET_NOT_FOUND", tick);
+                fail(world, mission, "INVALID_TARGET", tick);
             } else {
                 manager.enqueueQueuedMission(mission);
             }
+            return;
+        }
+        double dispatchRange = mission.getMissionRangeLimit();
+        if (aircraft.getDistance(target.x, target.y, target.z) > dispatchRange) {
+            fail(world, mission, "OUT_OF_RANGE", tick);
             return;
         }
 
@@ -448,8 +456,9 @@ public final class MissionLifecycle {
         if (current == null && mission.getTargetSelectionMode() == TargetSelectionMode.MANUAL) {
             current = targets.findLoadedByRegistryId(world, mission.getTargetSpec().getRegistryId());
         }
-        if (current != null && aircraft.getDistanceSq(current) <=
-                mission.getSearchRadius() * mission.getSearchRadius()) {
+        if (current != null && (mission.getTargetSelectionMode() == TargetSelectionMode.MANUAL
+                || aircraft.getDistanceSq(current) <=
+                mission.getSearchRadius() * mission.getSearchRadius())) {
             return Target.entity(current);
         }
         if (current != null) return null;

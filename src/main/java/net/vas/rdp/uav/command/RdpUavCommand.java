@@ -197,7 +197,8 @@ public final class RdpUavCommand extends CommandBase {
             RDPMission mission = new RDPMission(UUID.randomUUID(), player.getUniqueID(), aircraftId,
                     aircraft.getAcInfo().name, attack ? MissionType.STRIKE : MissionType.RECONNAISSANCE,
                     TargetSpec.manual(args[2], TargetPriority.HIGH), attack, false, true,
-                    256.0D, 64.0D, player.world.getTotalWorldTime());
+                    MissionLimits.MAX_SQUARE_STRIKE_DISTANCE, 64.0D,
+                    player.world.getTotalWorldTime());
             mission.setDimension(player.dimension);
             RDPUavMod.missions().create(player.world, mission);
             RDPMissionWorldData.get(player.world).markDirty();
