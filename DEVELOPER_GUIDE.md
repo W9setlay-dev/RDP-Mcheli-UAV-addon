@@ -125,9 +125,9 @@ McHeli flight physics, fuel, weapons, or WingMan steering.
 
 ### Per-aircraft energy configuration
 
-The addon currently enables Forge Energy only for the McHeli aircraft whose
-internal name is `switchblade`. The internal name is the aircraft definition
-name, not its display name; therefore `switchblade.yml` maps to the
+The addon enables Forge Energy for any McHeli UAV listed in an enabled
+`aircraft.<internal-name>` category. The internal name is the aircraft
+definition name, not its display name; therefore `switchblade.yml` maps to the
 `aircraft.switchblade` category.
 
 After the first launch, edit:
@@ -153,16 +153,18 @@ The global defaults and Switchblade override can be configured as follows:
     minimumOperatingEnergy=1
 ```
 
-`aircraft.switchblade` overrides the global values. Other UAVs, including
-`shahed136`, are deliberately excluded and do not receive the capability.
-Restart the game after changing the file. The current addon does not parse
-custom energy fields from McHeli YAML files, so adding an `energy:` block to a
-plane definition has no effect.
+`aircraft.switchblade` overrides the global values. Any enabled UAV profile,
+including non-RF/non-fluid-fuel aircraft, receives the capability. Restart the
+game after changing the file. The current addon does not parse custom energy
+fields from McHeli YAML files, so adding an `energy:` block to a plane
+definition has no effect.
 
-Forge Energy/RF consumers can interact with the Switchblade through the
-standard `CapabilityEnergy.ENERGY` capability. The addon attaches that
-capability only when McHeli reports `FuelType: RF`; fluid, item, and other
-fuel types are rejected. HBM Nuclear Tech can power the Switchblade only when
+Forge Energy/RF consumers can interact with an enabled UAV through the
+standard `CapabilityEnergy.ENERGY` capability. Energy-powered UAVs are eligible
+for missions and all existing addon features when their stored energy meets
+`minimumOperatingEnergy`; they do not need McHeli fluid fuel. RF aircraft also
+continue to mirror their Forge Energy storage to McHeli fuel. HBM Nuclear Tech
+can power the Switchblade only when
 the installed HBM/RF compatibility layer exposes its energy network through
 Forge Energy/RF. The addon does not compile against HBM's private API or
 pretend that an HBM-only custom energy port is automatically compatible.

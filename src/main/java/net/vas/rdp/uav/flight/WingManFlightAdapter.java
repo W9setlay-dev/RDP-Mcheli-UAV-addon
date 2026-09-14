@@ -1,6 +1,8 @@
 package net.vas.rdp.uav.flight;
 
 import com.norwood.mcheli.aircraft.MCH_EntityAircraft;
+import com.norwood.mcheli.helicopter.MCH_EntityHeli;
+import com.norwood.mcheli.MCH_Explosion;
 import com.norwood.mcheli.wingman.mission.MissionNode;
 import com.norwood.mcheli.wingman.mission.MissionOrder;
 import com.norwood.mcheli.wingman.mission.MissionPlan;
@@ -11,6 +13,7 @@ import com.norwood.mcheli.wingman.wingman.WingmanRegistry;
 import com.norwood.mcheli.weapon.MCH_WeaponSet;
 import com.norwood.mcheli.weapon.MCH_WeaponParam;
 import net.vas.rdp.uav.RdpUavDebug;
+import net.vas.rdp.uav.energy.UavEnergyHandler;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -146,6 +149,26 @@ public final class WingManFlightAdapter {
         parameter.rotRoll = aircraft.getRoll();
         parameter.isInfinity = false;
         boolean fired = weapon.use(parameter);
+        if (fired && !aircraft.world.isRemote && !(aircraft instanceof MCH_EntityHeli)) {
+            // McHeliCE's native SelfDestruct branch only handles helicopters.
+            // Mirror that branch for planes and other aircraft so their
+            // payload is not consumed without producing a warhead explosion.
+            MCH_Explosion.newExplosion(
+                    aircraft.world,
+                    null,
+                    aircraft,
+                    aircraft.posX,
+                    aircraft.posY,
+                    aircraft.posZ,
+                    weapon.getInfo().explosion,
+                    weapon.getInfo().explosionBlock,
+                    true,
+                    true,
+                    weapon.getInfo().flaming,
+                    true,
+                    0);
+            aircraft.destruct();
+        }
         RdpUavDebug.debug("Kamikaze", "self-destruct fire aircraft={} weapon={} fired={} ammo={}",
                 aircraft.getUniqueID(), weapon.getName(), fired, weapon.getAmmo());
         return fired;
@@ -181,6 +204,7 @@ public final class WingManFlightAdapter {
 
     public boolean hasFuelForMission(MCH_EntityAircraft aircraft) {
         if (aircraft == null) return false;
+        if (UavEnergyHandler.hasOperatingEnergy(aircraft)) return true;
         if (!aircraft.canUseFuel()) return true;
         return aircraft.getMaxFuel() > 0
                 && aircraft.getFuel() > Math.max(1, aircraft.getMaxFuel() / 5);

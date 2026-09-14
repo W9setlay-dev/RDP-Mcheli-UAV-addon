@@ -150,6 +150,11 @@ the configured speed, the addon fires that native McHeli weapon and records
 `KAMIKADZE_DETONATED`. It does not detonate from a slow scrape, a nearby
 non-collidable entity, or a normal reconnaissance/attack mission.
 
+McHeliCE 1.5.1 currently applies the native `SelfDestruct` weapon branch only
+to helicopter entities. For plane and other aircraft UAVs, the addon mirrors
+the same server-side explosion and aircraft destruction after the loaded
+self-destruct weapon fires, so the payload is not silently consumed.
+
 The generated configuration is:
 
 ```text

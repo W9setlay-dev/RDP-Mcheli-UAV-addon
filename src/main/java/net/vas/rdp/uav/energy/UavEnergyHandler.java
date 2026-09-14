@@ -17,8 +17,7 @@ public final class UavEnergyHandler {
     @SubscribeEvent
     public void attach(AttachCapabilitiesEvent<Entity> event) {
         if (event.getObject() instanceof MCH_EntityAircraft
-                && ((MCH_EntityAircraft) event.getObject()).isUAV()
-                && isRfFuel((MCH_EntityAircraft) event.getObject())) {
+                && ((MCH_EntityAircraft) event.getObject()).isUAV()) {
             UavEnergyConfig.Profile profile = profile((MCH_EntityAircraft) event.getObject());
             if (!profile.enabled) return;
             event.addCapability(new net.minecraft.util.ResourceLocation("rdpuav", "energy"),
@@ -32,7 +31,7 @@ public final class UavEnergyHandler {
         for (Entity entity : event.world.loadedEntityList) {
             if (!(entity instanceof MCH_EntityAircraft)) continue;
             MCH_EntityAircraft aircraft = (MCH_EntityAircraft) entity;
-            if (!aircraft.isUAV() || !isRfFuel(aircraft)) continue;
+            if (!aircraft.isUAV()) continue;
             UavEnergyConfig.Profile profile = profile(aircraft);
             if (!profile.enabled) continue;
             IEnergyStorage energy = storage(aircraft);
@@ -41,10 +40,19 @@ public final class UavEnergyHandler {
             int drain = movementDrain(aircraft);
             if (drain > 0) energy.extractEnergy(drain, false);
             writeMcHeliRfFuel(aircraft, energy);
-            if (energy.getEnergyStored() < profile.minimumOperatingEnergy) {
+            if (isRfFuel(aircraft)
+                    && energy.getEnergyStored() < profile.minimumOperatingEnergy) {
                 aircraft.setFuel(0);
             }
         }
+    }
+
+    public static boolean hasOperatingEnergy(MCH_EntityAircraft aircraft) {
+        if (aircraft == null || !aircraft.isUAV()) return false;
+        UavEnergyConfig.Profile profile = profile(aircraft);
+        IEnergyStorage energy = storage(aircraft);
+        return profile.enabled && energy != null
+                && energy.getEnergyStored() >= profile.minimumOperatingEnergy;
     }
 
     public static IEnergyStorage storage(MCH_EntityAircraft aircraft) {
