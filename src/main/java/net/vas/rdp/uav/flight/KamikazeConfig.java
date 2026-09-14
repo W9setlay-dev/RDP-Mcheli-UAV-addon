@@ -29,10 +29,12 @@ public final class KamikazeConfig {
                 closeFireDistance,
                 "Distance at which an AI-locked kamikaze UAV fires its self-destruct weapon.",
                 1.0D, 64.0D).getDouble();
-        doubleTapWindowMillis = config.get("kamikaze", "doubleTapWindowMillis",
-                doubleTapWindowMillis,
+        // Older Forge config writers can serialize this integer as "350.0".
+        // Read it as a double so an existing config cannot crash preInit.
+        doubleTapWindowMillis = Math.round(config.get("kamikaze", "doubleTapWindowMillis",
+                (double) doubleTapWindowMillis,
                 "Maximum interval between target-lock key presses that clears the lock.",
-                150L, 1000L).getInt();
+                150.0D, 1000.0D).getDouble());
         if (config.hasChanged()) config.save();
     }
 }
