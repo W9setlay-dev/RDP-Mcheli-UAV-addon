@@ -32,6 +32,7 @@ public final class RdpUavNetwork {
         CHANNEL.registerMessage(ServerAuthorizeAttackHandler.class, AuthorizeAttack.class, 4, Side.SERVER);
         CHANNEL.registerMessage(ServerCreateMissionHandler.class, CreateMission.class, 5, Side.SERVER);
         CHANNEL.registerMessage(ServerKamikazeHandler.class, KamikazeAttack.class, 6, Side.SERVER);
+        CHANNEL.registerMessage(ServerSelfDestructHandler.class, FireSelfDestruct.class, 10, Side.SERVER);
         CHANNEL.registerMessage(ClientMissionDataHandler.ClientTargetTelemetryHandler.class,
                 TargetTelemetry.class, 7, Side.CLIENT);
         CHANNEL.registerMessage(ServerSquareStrikeHandler.class, SquareStrike.class, 8, Side.SERVER);
@@ -56,6 +57,10 @@ public final class RdpUavNetwork {
 
     public static void armKamikaze(String missionId) {
         CHANNEL.sendToServer(new KamikazeAttack(missionId));
+    }
+
+    public static void fireSelfDestruct() {
+        CHANNEL.sendToServer(new FireSelfDestruct());
     }
 
     public static void createMission(String target, boolean attack) {
@@ -121,6 +126,12 @@ public final class RdpUavNetwork {
         public KamikazeAttack(String missionId) { this.missionId = missionId == null ? "" : missionId; }
         public void fromBytes(ByteBuf buffer) { missionId = readString(buffer); }
         public void toBytes(ByteBuf buffer) { writeString(buffer, missionId); }
+    }
+
+    public static final class FireSelfDestruct implements IMessage {
+        public FireSelfDestruct() { }
+        public void fromBytes(ByteBuf buf) { }
+        public void toBytes(ByteBuf buf) { }
     }
 
     public static final class CreateMission implements IMessage {
@@ -540,6 +551,29 @@ public final class RdpUavNetwork {
                         net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world).markDirty();
                         sendMissionData(player);
                     } catch (IllegalArgumentException ignored) {
+                    }
+                }
+            });
+            return null;
+        }
+    }
+
+    public static final class ServerSelfDestructHandler
+            implements IMessageHandler<FireSelfDestruct, IMessage> {
+        public IMessage onMessage(final FireSelfDestruct message, MessageContext context) {
+            final EntityPlayerMP player = context.getServerHandler().player;
+            player.getServer().addScheduledTask(new Runnable() {
+                public void run() {
+                    MCH_EntityAircraft aircraft =
+                            net.vas.rdp.uav.mission.UavControlAccess.findControlledAircraft(player);
+                    if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, player)) return;
+                    net.vas.rdp.uav.flight.WingManFlightAdapter adapter =
+                            new net.vas.rdp.uav.flight.WingManFlightAdapter();
+                    if (!adapter.supportsKamikaze(aircraft)
+                            || !adapter.hasSelfDestructWeaponWithAmmo(aircraft)) return;
+                    if (adapter.fireSelfDestructWeapon(aircraft)) {
+                        RdpUavDebug.debug("Network", "player fired SelfDestruct aircraft={} player={}",
+                                aircraft.getUniqueID(), player.getUniqueID());
                     }
                 }
             });

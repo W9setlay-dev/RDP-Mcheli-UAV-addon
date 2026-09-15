@@ -16,12 +16,12 @@ public final class UavEnergyHandler {
 
     @SubscribeEvent
     public void attach(AttachCapabilitiesEvent<Entity> event) {
-        if (event.getObject() instanceof MCH_EntityAircraft
-                && ((MCH_EntityAircraft) event.getObject()).isUAV()) {
-            UavEnergyConfig.Profile profile = profile((MCH_EntityAircraft) event.getObject());
-            if (!profile.enabled) return;
+        if (event.getObject() instanceof MCH_EntityAircraft) {
+            MCH_EntityAircraft aircraft = (MCH_EntityAircraft) event.getObject();
+            UavEnergyConfig.Profile profile = profile(aircraft);
             event.addCapability(new net.minecraft.util.ResourceLocation("rdpuav", "energy"),
-                    new UavEnergyProvider(profile.capacity));
+                    new UavEnergyProvider(profile.enabled
+                            ? profile.capacity : UavEnergyConfig.capacity));
         }
     }
 
@@ -69,7 +69,8 @@ public final class UavEnergyHandler {
     }
 
     private static UavEnergyConfig.Profile profile(MCH_EntityAircraft aircraft) {
-        return UavEnergyConfig.forAircraft(aircraft.getAcInfo().name);
+        return UavEnergyConfig.forAircraft(aircraft.getAcInfo() == null
+                ? "" : aircraft.getAcInfo().name);
     }
 
     private void synchronizeMcHeliRfFuel(MCH_EntityAircraft aircraft, IEnergyStorage energy) {

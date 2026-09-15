@@ -122,9 +122,8 @@ public final class WingManFlightAdapter {
         entry.autoTargetY = y;
         entry.autoTargetZ = z;
         appendDiveApproach(entry, aircraft, x, y, z);
-        appendAttackNode(entry, attackRadius);
         // WingMan fires the aircraft's selected seat weapon. Select the
-        // destructive loaded set before arming its autonomous attack node.
+        // destructive loaded set, but the addon owns detonation timing.
         aircraft.updateWeaponID(0, weaponId);
         entry.weaponSeat = 0;
         entry.weaponType = aircraft.getWeapon(weaponId).getName();
@@ -139,20 +138,23 @@ public final class WingManFlightAdapter {
         if (weaponId < 0 || aircraft == null) return false;
         MCH_WeaponSet weapon = aircraft.getWeapon(weaponId);
         if (weapon == null || weapon.getInfo() == null || !weapon.getInfo().destruct
-                || !weapon.canFire()) return false;
+                || weapon.getInfo().explosion <= 0.0F) return false;
         aircraft.updateWeaponID(0, weaponId);
-        MCH_WeaponParam parameter = new MCH_WeaponParam();
-        parameter.entity = aircraft;
-        parameter.user = aircraft;
-        parameter.setPosAndRot(aircraft.posX, aircraft.posY, aircraft.posZ,
-                aircraft.getYaw(), aircraft.getPitch());
-        parameter.rotRoll = aircraft.getRoll();
-        parameter.isInfinity = false;
-        boolean fired = weapon.use(parameter);
-        if (fired && !aircraft.world.isRemote && !(aircraft instanceof MCH_EntityHeli)) {
-            // McHeliCE's native SelfDestruct branch only handles helicopters.
-            // Mirror that branch for planes and other aircraft so their
-            // payload is not consumed without producing a warhead explosion.
+        if (weapon.getAmmo() <= 0 && weapon.getAmmoReserve() > 0) {
+            weapon.manualReload();
+        }
+        if (weapon.getAmmo() <= 0) {
+            RdpUavDebug.debug("Kamikaze",
+                    "self-destruct rejected: weapon has no loaded ammo aircraft={} weapon={} reserve={}",
+                    aircraft.getUniqueID(), weapon.getName(), weapon.getAmmoReserve());
+            return false;
+        }
+        if (!weapon.canFire()) return false;
+        if (!(aircraft instanceof MCH_EntityHeli)) {
+            int ammoBefore = weapon.getAmmo();
+            // McHeliCE's bomb SelfDestruct branch is helicopter-only and its
+            // plane path returns success without spawning a bomb or explosion.
+            // Detonate directly from the parsed weapon info for other aircraft.
             MCH_Explosion.newExplosion(
                     aircraft.world,
                     null,
@@ -167,11 +169,33 @@ public final class WingManFlightAdapter {
                     weapon.getInfo().flaming,
                     true,
                     0);
+            weapon.setAmmo(ammoBefore - 1);
             aircraft.destruct();
+            RdpUavDebug.debug("Kamikaze",
+                    "self-destruct detonated directly aircraft={} weapon={} ammo={}",
+                    aircraft.getUniqueID(), weapon.getName(), weapon.getAmmo());
+            return true;
         }
+        MCH_WeaponParam parameter = new MCH_WeaponParam();
+        parameter.entity = aircraft;
+        parameter.user = aircraft;
+        parameter.setPosAndRot(aircraft.posX, aircraft.posY, aircraft.posZ,
+                aircraft.getYaw(), aircraft.getPitch());
+        parameter.rotRoll = aircraft.getRoll();
+        parameter.isInfinity = false;
+        boolean fired = weapon.use(parameter);
         RdpUavDebug.debug("Kamikaze", "self-destruct fire aircraft={} weapon={} fired={} ammo={}",
                 aircraft.getUniqueID(), weapon.getName(), fired, weapon.getAmmo());
         return fired;
+    }
+
+    public boolean isKamikazeSpeedReached(MCH_EntityAircraft aircraft) {
+        if (aircraft == null) return false;
+        double speedSquared = aircraft.motionX * aircraft.motionX
+                + aircraft.motionY * aircraft.motionY
+                + aircraft.motionZ * aircraft.motionZ;
+        return speedSquared >= KamikazeConfig.minimumImpactSpeed
+                * KamikazeConfig.minimumImpactSpeed;
     }
 
     public boolean supportsKamikaze(MCH_EntityAircraft aircraft) {

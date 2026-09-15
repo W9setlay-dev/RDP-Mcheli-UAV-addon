@@ -30,6 +30,8 @@ public final class RdpUavClientKeys {
             "key.rdpuav.abort", Keyboard.KEY_X, "key.categories.rdpuav");
     private static final KeyBinding KAMIKAZE_SELECTED = new KeyBinding(
             "key.rdpuav.kamikaze", Keyboard.KEY_N, "key.categories.rdpuav");
+    private static final KeyBinding FIRE_SELF_DESTRUCT = new KeyBinding(
+            "key.rdpuav.fire_self_destruct", Keyboard.KEY_H, "key.categories.rdpuav");
     private static final KeyBinding AI_TARGET_LOCK = new KeyBinding(
             "key.rdpuav.ai_target_lock", Keyboard.KEY_L, "key.categories.rdpuav");
     private static long lastTargetLockPress;
@@ -45,6 +47,7 @@ public final class RdpUavClientKeys {
         ClientRegistry.registerKeyBinding(AUTHORIZE_SELECTED);
         ClientRegistry.registerKeyBinding(ABORT_SELECTED);
         ClientRegistry.registerKeyBinding(KAMIKAZE_SELECTED);
+        ClientRegistry.registerKeyBinding(FIRE_SELF_DESTRUCT);
         ClientRegistry.registerKeyBinding(AI_TARGET_LOCK);
         net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(new RdpUavClientKeys());
     }
@@ -67,6 +70,7 @@ public final class RdpUavClientKeys {
         if (AUTHORIZE_SELECTED.isPressed()) GuiMissionControl.authorizeSelected();
         if (ABORT_SELECTED.isPressed()) GuiMissionControl.abortSelected();
         if (KAMIKAZE_SELECTED.isPressed()) GuiMissionControl.armKamikazeSelected();
+        if (FIRE_SELF_DESTRUCT.isPressed()) RdpUavNetwork.fireSelfDestruct();
         if (AI_TARGET_LOCK.isPressed()) toggleAiTargetLock(minecraft);
     }
 

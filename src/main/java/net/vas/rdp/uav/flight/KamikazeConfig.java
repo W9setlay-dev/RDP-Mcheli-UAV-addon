@@ -10,6 +10,7 @@ public final class KamikazeConfig {
     public static double minimumImpactSpeed = 0.35D;
     public static double impactSweepPadding = 0.35D;
     public static double closeFireDistance = 8.0D;
+    public static double detonationRadius = 8.0D;
     public static long doubleTapWindowMillis = 350L;
 
     private KamikazeConfig() { }
@@ -28,6 +29,10 @@ public final class KamikazeConfig {
         closeFireDistance = config.get("kamikaze", "closeFireDistance",
                 closeFireDistance,
                 "Distance at which an AI-locked kamikaze UAV fires its self-destruct weapon.",
+                1.0D, 64.0D).getDouble();
+        detonationRadius = config.get("kamikaze", "detonationRadius",
+                detonationRadius,
+                "Distance from a point, entity, or vehicle target at which an armed warhead detonates.",
                 1.0D, 64.0D).getDouble();
         // Older Forge config writers can serialize this integer as "350.0".
         // Read it as a double so an existing config cannot crash preInit.

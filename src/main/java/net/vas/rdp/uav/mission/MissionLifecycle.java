@@ -207,38 +207,45 @@ public final class MissionLifecycle {
                 dirty = true;
                 continue;
             }
-            if (mission.getState() == MissionState.KAMIKADZE_TARGET
-                    && KamikazeImpactDetector.hasNoseImpact(aircraft)) {
+            if (mission.getState() == MissionState.KAMIKADZE_TARGET) {
+                boolean noseImpact = KamikazeImpactDetector.hasNoseImpact(aircraft);
+                boolean speedReached = flight.isKamikazeSpeedReached(aircraft);
+                boolean targetInRadius = target != null
+                        && targetDistance(aircraft, target)
+                        <= net.vas.rdp.uav.flight.KamikazeConfig.detonationRadius;
+                if (!speedReached || (!noseImpact && !targetInRadius)) {
+                    if (tick % 20L == 0L) {
+                        RdpUavDebug.debug("Lifecycle",
+                                "mission {} kamikaze approaching aircraft={} speedReached={} targetDistance={} target={}",
+                                mission.getMissionId(), aircraft.getUniqueID(),
+                                speedReached,
+                                target == null ? null : targetDistance(aircraft, target),
+                                formatTarget(target));
+                    }
+                    continue;
+                }
                 if (flight.fireSelfDestructWeapon(aircraft)) {
-                    LOGGER.info("Mission {} kamikaze impact detonation aircraft={} tick={}",
-                            mission.getMissionId(), aircraft.getUniqueID(), tick);
+                    LOGGER.info("Mission {} kamikaze detonation aircraft={} impact={} inRadius={} target={} tick={}",
+                            mission.getMissionId(), aircraft.getUniqueID(), noseImpact,
+                            targetInRadius, formatTarget(target), tick);
                     mission.markKamikazeDetonated(tick);
                     flight.release(aircraft);
                     manager.release(mission);
                     dirty = true;
                     continue;
                 }
-                if (mission.getState() == MissionState.KAMIKADZE_TARGET
-                        && target != null && target.entity != null
-                        && target.entity.getDistance(aircraft) <= net.vas.rdp.uav.flight.KamikazeConfig.closeFireDistance
-                        && KamikazePilotOverride.targetFor(aircraft.getUniqueID()) != null
-                        && KamikazePilotOverride.targetFor(aircraft.getUniqueID()).equals(target.entity.getUniqueID())) {
-                    if (flight.fireSelfDestructWeapon(aircraft)) {
-                        LOGGER.info("Mission {} AI close-range kamikaze fire aircraft={} target={} tick={}",
-                                mission.getMissionId(), aircraft.getUniqueID(), target.entity.getUniqueID(), tick);
-                        mission.markKamikazeDetonated(tick);
-                        KamikazePilotOverride.clear(aircraft.getUniqueID());
-                        flight.release(aircraft);
-                        manager.release(mission);
-                        dirty = true;
-                        continue;
-                    }
-                    fail(world, mission, "KAMIKAZE_CLOSE_FIRE_REJECTED", tick);
-                    dirty = true;
-                    continue;
+                LOGGER.debug("Mission {} kamikaze trigger reached but weapon not ready aircraft={} impact={} inRadius={}",
+                        mission.getMissionId(), aircraft.getUniqueID(), noseImpact, targetInRadius);
+                // A collision can be detected while the weapon is still on
+                // cooldown, or before the target is inside the detonation
+                // radius. Keep the armed mission alive and retry next tick.
+                if (tick % 20L == 0L) {
+                    RdpUavDebug.debug("Lifecycle",
+                            "mission {} kamikaze waiting aircraft={} targetDistance={} target={}",
+                            mission.getMissionId(), aircraft.getUniqueID(),
+                            target == null ? null : targetDistance(aircraft, target),
+                            formatTarget(target));
                 }
-                fail(world, mission, "KAMIKAZE_IMPACT_FIRE_REJECTED", tick);
-                dirty = true;
                 continue;
             }
 
@@ -260,6 +267,14 @@ public final class MissionLifecycle {
             }
         }
         if (dirty) RDPMissionWorldData.get(world).markDirty();
+    }
+
+    private double targetDistance(MCH_EntityAircraft aircraft, Target target) {
+        if (target.entity != null) return target.entity.getDistance(aircraft);
+        double dx = aircraft.posX - target.x;
+        double dy = aircraft.posY - target.y;
+        double dz = aircraft.posZ - target.z;
+        return Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
 
     private boolean updateMission(World world, RDPMission mission, MCH_EntityAircraft aircraft,
@@ -306,10 +321,13 @@ public final class MissionLifecycle {
             return true;
         case TARGET_LOCKED:
                 UUID pilotTarget = KamikazePilotOverride.targetFor(aircraft.getUniqueID());
-                if (mission.isAttack() && pilotTarget != null && target != null
-                        && pilotTarget.equals(target.entity == null ? null : target.entity.getUniqueID())) {
+                if (mission.isAttack() && target != null
+                        && flight.hasSelfDestructWeaponWithAmmo(aircraft)
+                        && (pilotTarget == null || pilotTarget.equals(
+                        target.entity == null ? null : target.entity.getUniqueID()))) {
                     if (!flight.armKamikaze(aircraft, target.x, target.y, target.z,
-                            mission.getObservationDistance(), target.entity.getUniqueID())) {
+                            mission.getObservationDistance(),
+                            target.entity == null ? null : target.entity.getUniqueID())) {
                         fail(world, mission, "AI_KAMIKAZE_ARM_REJECTED", tick);
                     } else {
                         mission.transitionTo(MissionState.KAMIKADZE_TARGET, tick);

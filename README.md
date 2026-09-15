@@ -154,6 +154,20 @@ McHeliCE 1.5.1 currently applies the native `SelfDestruct` weapon branch only
 to helicopter entities. For plane and other aircraft UAVs, the addon mirrors
 the same server-side explosion and aircraft destruction after the loaded
 self-destruct weapon fires, so the payload is not silently consumed.
+Attack missions with a loaded self-destruct weapon are promoted to an armed
+kamikaze run instead of allowing WingMan to fire the payload when the target
+is merely acquired. The addon detonates when the target point, entity, or
+vehicle enters `detonationRadius` (8 blocks by default), or on a qualifying
+high-speed nose impact. Both paths require the aircraft motion speed to reach
+`minimumImpactSpeed`; the armed UAV therefore continues its approach instead
+of detonating immediately when a point target is acquired.
+
+The operator can also fire the selected UAV's SelfDestruct payload directly
+with the `RDP UAV fire SelfDestruct` key (default `H`), just as with a
+helicopter SelfDestruct weapon. This is an explicit manual override and does
+not require a mission target or kamikaze approach. The server still validates
+that the player operates the aircraft, the payload is configured with
+`SelfDestruct: true`, and ammunition is available.
 
 The generated configuration is:
 
@@ -164,7 +178,9 @@ The generated configuration is:
 `minimumImpactSpeed` defaults to `0.35` blocks/tick and
 `impactSweepPadding` defaults to `0.35` blocks. These values can be adjusted
 for the installed aircraft pack; lower values make impact triggering more
-sensitive. The trigger is implemented in `rdp-uav-addon`, not RDPMixins.
+sensitive. `detonationRadius` defaults to `8` blocks and controls the AI
+proximity detonation distance. The trigger is implemented in `rdp-uav-addon`,
+not RDPMixins.
 
 ## Operator AI target-lock override
 

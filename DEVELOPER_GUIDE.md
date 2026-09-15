@@ -128,7 +128,9 @@ McHeli flight physics, fuel, weapons, or WingMan steering.
 The addon enables Forge Energy for any McHeli UAV listed in an enabled
 `aircraft.<internal-name>` category. The internal name is the aircraft
 definition name, not its display name; therefore `switchblade.yml` maps to the
-`aircraft.switchblade` category.
+`aircraft.switchblade` category. Capability attachment is intentionally not
+gated on `isUAV()` or loaded aircraft metadata because Forge fires the
+capability event while McHeli is still constructing the entity.
 
 After the first launch, edit:
 
@@ -136,7 +138,7 @@ After the first launch, edit:
 <minecraft>/config/rdp-uav-energy.cfg
 ```
 
-The global defaults and Switchblade override can be configured as follows:
+The global defaults and plane UAV overrides can be configured as follows:
 
 ```properties
 [energy]
@@ -151,9 +153,16 @@ The global defaults and Switchblade override can be configured as follows:
     idleDrainPerTick=2
     flightDrainPerTick=10
     minimumOperatingEnergy=1
+
+[aircraft.shahed136]
+    enabled=true
+    capacity=150000
+    idleDrainPerTick=2
+    flightDrainPerTick=10
+    minimumOperatingEnergy=1
 ```
 
-`aircraft.switchblade` overrides the global values. Any enabled UAV profile,
+`aircraft.switchblade` and `aircraft.shahed136` override the global values. Any enabled UAV profile,
 including non-RF/non-fluid-fuel aircraft, receives the capability. Restart the
 game after changing the file. The current addon does not parse custom energy
 fields from McHeli YAML files, so adding an `energy:` block to a plane
@@ -347,16 +356,27 @@ and telemetry diagnostics are intentionally verbose.
 `KamikazeImpactDetector` runs on the server lifecycle for armed
 `KAMIKADZE_TARGET` missions. It computes the aircraft nose from McHeli's
 current and previous position/orientation, sweeps that point between ticks,
-and checks both world collision boxes and collidable entities. The speed gate
-uses the aircraft motion vector and `KamikazeConfig.minimumImpactSpeed`.
+and checks both world collision boxes and collidable entities. The speed gate uses the aircraft motion vector and
+`KamikazeConfig.minimumImpactSpeed`; the same gate applies to proximity
+detonation, so acquiring a point target cannot fire the payload immediately.
+Point-target and entity-target attack missions with a loaded
+self-destruct weapon are promoted to `KAMIKADZE_TARGET`; WingMan is not given
+an attack node that could fire the destructive payload on target acquisition.
+The lifecycle detonates when the target point/entity/vehicle is within
+`KamikazeConfig.detonationRadius`.
 
-When an impact is detected, `WingManFlightAdapter.fireSelfDestructWeapon`
-selects the loaded McHeli weapon with `destruct=true`, builds the public
-`MCH_WeaponParam`, and calls the native `MCH_WeaponSet.use` path. A successful
-shot transitions the mission to `KAMIKADZE_DETONATED` and releases the WingMan
-entry. A rejected shot is persisted as
-`KAMIKAZE_IMPACT_FIRE_REJECTED`. RDPMixins does not own or duplicate this
-behavior; its station collision mixin is unrelated.
+When an impact or proximity trigger is reached,
+`WingManFlightAdapter.fireSelfDestructWeapon` selects the parsed
+`destruct=true` weapon and reloads reserve ammunition when needed. Helicopters
+use McHeliCE's native path; planes and other aircraft use the parsed explosion
+configuration directly before aircraft destruction. A successful shot
+transitions the mission to `KAMIKADZE_DETONATED` and releases the WingMan
+entry. A transient fire rejection leaves the armed mission active for a retry.
+
+Operators can manually fire a SelfDestruct payload with the
+`RDP UAV fire SelfDestruct` binding (default `H`). The server validates
+operator ownership, the destructive weapon flag, and ammunition, then calls
+the same adapter without requiring a mission target or autonomous approach.
 
 ### Operator AI target lock
 
@@ -373,9 +393,9 @@ registry search result. `AiTargetLock` carries only the UUID and a clear flag.
 
 After validation, the server creates a strike mission with an exact manual
 target specification. `MissionLifecycle` recognizes the active operator lock,
-refreshes WingMan's target coordinates, arms the native kamikaze node after
+refreshes WingMan's target coordinates, arms the addon kamikaze path after
 `TARGET_LOCKED`, and fires the self-destruct weapon at
-`KamikazeConfig.closeFireDistance`. A second lock-key press inside
+`KamikazeConfig.detonationRadius`. A second lock-key press inside
 `doubleTapWindowMillis` clears the runtime lock, requests recovery, aborts the
 generated mission, and releases its assignment. Locks are runtime-only and
 must be re-established after restart.
