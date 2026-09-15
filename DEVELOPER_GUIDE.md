@@ -716,3 +716,26 @@ Before declaring a feature complete, answer these questions:
 * Does it avoid unbounded entity, block, pathfinding, or packet work?
 * Does it avoid autonomous attack behavior unless explicitly authorized and
   separately implemented?
+## Target-selection safety contract
+
+`WAITING_FOR_TARGET` is the explicit no-candidate state. Lifecycle code clears
+the authoritative target UUID and native WingMan guidance target while retaining
+last-target history for diagnostics. `LOST` is reserved for a previously
+acquired target that became unavailable; it is not mission failure. Both player
+and AI operators retain an operational UAV and continue scheduled scanning.
+Payload, V4, and guidance decisions require a current resolved target.
+
+## Vehicle profile contract
+
+`UavVehicleProfiles` resolves the exact `MCH_EntityAircraft.getAcInfo().name`
+through the generated `rdp-uav-vehicles.cfg`. `UavExecutionProfile.ONE_WAY`
+and `REUSABLE_UAV` are policy choices independent of McHeliCE's technical
+aircraft type. The reusable policy supplies a bounded execution altitude and
+uses target X/Z for route guidance; the one-way policy preserves the configured
+McHeliCE payload path. The addon never fabricates a payload or infers terminal
+behavior solely because a weapon happens to expose SelfDestruct metadata.
+
+Long-range reusable profiles add independent detection, lock, and mission
+execution ranges. Detection uses the shared target resolver; lock validation
+uses the authoritative UUID and 3D distance; reusable execution uses the
+configured horizontal mission range while preserving execution altitude.

@@ -16,6 +16,9 @@ import net.vas.rdp.uav.target.TargetAcquisition;
 import net.vas.rdp.uav.target.TargetPriority;
 import net.vas.rdp.uav.target.TargetSelector;
 import net.vas.rdp.uav.target.TargetSpec;
+import net.vas.rdp.uav.profile.UavExecutionProfile;
+import net.vas.rdp.uav.profile.UavVehicleProfile;
+import net.vas.rdp.uav.profile.UavVehicleProfiles;
 import org.junit.Test;
 
 import java.util.Arrays;
@@ -59,6 +62,40 @@ public class RdpUavContractMatrixTest {
     }
 
     @Test
+    public void noCandidateWaitsWithoutFailingOrRetainingCurrentTarget() {
+            RDPMission mission = mission();
+            UUID target = UUID.randomUUID();
+            mission.transitionTo(MissionState.DISPATCHED, 1);
+            mission.transitionTo(MissionState.TAKEOFF, 2);
+            mission.transitionTo(MissionState.CRUISE, 3);
+            mission.transitionTo(MissionState.SEARCHING, 4);
+            mission.transitionTo(MissionState.TARGET_ACQUIRED, 5);
+            mission.lockTarget(target, 5);
+            mission.clearTarget("NO_CANDIDATE", 6);
+            mission.transitionTo(MissionState.LOST, 6);
+            mission.transitionTo(MissionState.WAITING_FOR_TARGET, 7);
+
+            assertNull(mission.getTargetId());
+            assertEquals(target, mission.getLastTargetId());
+            assertEquals("NO_CANDIDATE", mission.getLastTargetReason());
+            assertEquals(MissionState.WAITING_FOR_TARGET, mission.getState());
+            assertFalse(mission.getState() == MissionState.FAILED);
+        }
+
+    @Test
+    public void noCandidateCanReenterSearchWithoutInventingTarget() {
+            RDPMission mission = mission();
+            mission.transitionTo(MissionState.DISPATCHED, 1);
+            mission.transitionTo(MissionState.TAKEOFF, 2);
+            mission.transitionTo(MissionState.CRUISE, 3);
+            mission.transitionTo(MissionState.SEARCHING, 4);
+            mission.transitionTo(MissionState.WAITING_FOR_TARGET, 5);
+            mission.transitionTo(MissionState.SEARCHING, 6);
+            assertNull(mission.getTargetId());
+            assertEquals(MissionState.SEARCHING, mission.getState());
+        }
+
+    @Test
     public void assignmentReleaseCannotBeHijackedByAnotherMission() {
         UUID aircraft = UUID.randomUUID();
         UUID first = UUID.randomUUID();
@@ -87,6 +124,32 @@ public class RdpUavContractMatrixTest {
         } catch (IllegalArgumentException expected) {
             // Expected validation boundary.
         }
+    }
+
+    @Test
+    public void vehicleProfilesKeepReusableAltitudeSeparateFromOneWayPayloads() {
+        UavVehicleProfile reusable = new UavVehicleProfile(
+                UavExecutionProfile.REUSABLE_UAV, 250, 200, 320, 15, true, "NONE");
+        UavVehicleProfile oneWay = new UavVehicleProfile(
+                UavExecutionProfile.ONE_WAY, 0, 0, 4096, 0, false, "SELF_DESTRUCT");
+        assertTrue(reusable.isReusable());
+        assertEquals(250D, reusable.getExecutionAltitude(), 0D);
+        assertEquals("NONE", reusable.getTerminalPayloadBehavior());
+        assertFalse(oneWay.isReusable());
+        assertEquals("SELF_DESTRUCT", oneWay.getTerminalPayloadBehavior());
+        assertEquals(UavExecutionProfile.UNKNOWN,
+                UavVehicleProfiles.forAircraft("unconfigured-definition").getExecutionProfile());
+    }
+
+    @Test
+    public void longRangeProfileSeparatesDetectionLockAndExecutionRanges() {
+        UavVehicleProfile profile = new UavVehicleProfile(
+                UavExecutionProfile.LONG_RANGE_REUSABLE_UAV, 250, 200, 320,
+                15, true, "NONE", 2048, 1536, 64);
+        assertTrue(profile.isReusable());
+        assertTrue(profile.supportsLongRangeLock());
+        assertTrue(profile.getDetectionRange() > profile.getLockRange());
+        assertTrue(profile.getLockRange() > profile.getMissionExecutionRange());
     }
 
     @Test
@@ -183,17 +246,25 @@ public class RdpUavContractMatrixTest {
             case TAXI: return next == MissionState.TAKEOFF;
             case TAKEOFF: return next == MissionState.CRUISE;
             case CRUISE: return next == MissionState.SEARCHING;
-            case SEARCHING: return next == MissionState.TARGET_ACQUIRED;
-            case TARGET_ACQUIRED: return next == MissionState.TARGET_LOCKED;
+            case SEARCHING: return next == MissionState.TARGET_ACQUIRED
+                    || next == MissionState.WAITING_FOR_TARGET;
+            case WAITING_FOR_TARGET: return next == MissionState.SEARCHING
+                    || next == MissionState.TARGET_ACQUIRED;
+            case LOST: return next == MissionState.SEARCHING
+                    || next == MissionState.WAITING_FOR_TARGET;
+            case TARGET_ACQUIRED: return next == MissionState.TARGET_LOCKED
+                    || next == MissionState.LOST;
             case TARGET_LOCKED: return next == MissionState.APPROACHING
                     || next == MissionState.ATTACK_TARGET
-                    || next == MissionState.KAMIKADZE_TARGET;
+                    || next == MissionState.KAMIKADZE_TARGET
+                    || next == MissionState.LOST;
             case ATTACK_TARGET: return next == MissionState.APPROACHING
                     || next == MissionState.ON_TARGET || next == MissionState.RETURNING;
             case KAMIKADZE_TARGET: return next == MissionState.ON_TARGET
                     || next == MissionState.RETURNING
                     || next == MissionState.KAMIKADZE_DETONATED;
-            case APPROACHING: return next == MissionState.ON_TARGET;
+            case APPROACHING: return next == MissionState.ON_TARGET
+                    || next == MissionState.LOST;
             case ON_TARGET: return next == MissionState.ORBITING
                     || next == MissionState.SCANNING;
             case ORBITING: return next == MissionState.SCANNING;

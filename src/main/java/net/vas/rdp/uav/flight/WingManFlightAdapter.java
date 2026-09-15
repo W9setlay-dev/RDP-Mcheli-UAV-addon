@@ -57,7 +57,7 @@ public final class WingManFlightAdapter {
             RdpUavDebug.debug("WingMan", "removed stale entry before dispatch aircraft={}", aircraftId);
         }
 
-        List<MissionNode> nodes = new ArrayList<MissionNode>();
+        List<MissionNode> nodes = new ArrayList<>();
         nodes.add(MissionNode.flyTo(x, y, z));
         if (orbitTicks > 0) {
             nodes.add(MissionNode.loiter(orbitTicks));
@@ -95,7 +95,7 @@ public final class WingManFlightAdapter {
                 || entry.autoState == AutonomousState.LANDING
                 || entry.autoState == AutonomousState.PARKED) return false;
 
-        List<MissionNode> route = new ArrayList<MissionNode>();
+        List<MissionNode> route = new ArrayList<>();
         if (!orbit) {
             route.add(MissionNode.flyTo(x, y, z));
             route.add(MissionNode.loiter(40));
@@ -129,6 +129,16 @@ public final class WingManFlightAdapter {
                 || entry.autoState == AutonomousState.ENROUTE
                 || entry.autoState == AutonomousState.ON_STATION
                 || entry.autoState == AutonomousState.STRIKE_PASS);
+    }
+
+    public void clearGuidance(MCH_EntityAircraft aircraft) {
+        if (aircraft == null) return;
+        WingmanEntry entry = WingmanRegistry.get(aircraft.getUniqueID());
+        if (entry == null) return;
+        entry.currentAutoTarget = null;
+        entry.autoTargetX = aircraft.posX;
+        entry.autoTargetY = aircraft.posY;
+        entry.autoTargetZ = aircraft.posZ;
     }
 
     public boolean armAttack(MCH_EntityAircraft aircraft, double x, double y, double z,

@@ -21,6 +21,9 @@ public final class RDPMission {
     private final long createdTick;
     private MissionState state;
     private UUID targetId;
+    private UUID lastTargetId;
+    private String lastTargetReason;
+    private long lastTargetTick = -1L;
     private long lastUpdateTick;
     private String failureReason;
     private String reportId;
@@ -70,6 +73,7 @@ public final class RDPMission {
             throw new IllegalArgumentException("Target UUID is required");
         }
         this.targetId = targetId;
+        this.lastTargetId = targetId;
         transitionTo(MissionState.TARGET_LOCKED, tick);
     }
 
@@ -88,7 +92,20 @@ public final class RDPMission {
             throw new IllegalArgumentException("Target UUID and tick are required");
         }
         this.targetId = targetId;
+        this.lastTargetId = targetId;
+        this.lastTargetTick = tick;
         this.lastUpdateTick = tick;
+    }
+
+    public void clearTarget(String reason, long tick) {
+        if (reason == null || reason.trim().isEmpty() || tick < lastUpdateTick) {
+            throw new IllegalArgumentException("Target clear reason and tick are required");
+        }
+        if (targetId != null) lastTargetId = targetId;
+        targetId = null;
+        lastTargetReason = reason;
+        lastTargetTick = tick;
+        lastUpdateTick = tick;
     }
 
     public void fail(String reason, long tick) {
@@ -166,6 +183,9 @@ public final class RDPMission {
     public long getLastUpdateTick() { return lastUpdateTick; }
     public MissionState getState() { return state; }
     public UUID getTargetId() { return targetId; }
+    public UUID getLastTargetId() { return lastTargetId; }
+    public String getLastTargetReason() { return lastTargetReason; }
+    public long getLastTargetTick() { return lastTargetTick; }
     public String getFailureReason() { return failureReason; }
     public String getReportId() { return reportId; }
     public int getDimension() { return dimension; }

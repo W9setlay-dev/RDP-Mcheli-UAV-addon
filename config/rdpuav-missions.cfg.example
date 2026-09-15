@@ -14,3 +14,29 @@ allow_player_abort=true
 # The addon recognizes these aircraft as kamikaze-capable only when the
 # installed McHeli aircraft definition also has a self-destructing weapon.
 kamikaze_aircraft=switchblade,shahed136
+
+# Explicit McHeli definition/profile mapping. Names are definition names, not
+# display-name matching. Add aliases for the exact names used by your pack.
+# Reusable UAVs navigate horizontally at executionAltitude and hold altitude.
+[vehicle.switchblade]
+profile=ONE_WAY
+aliases=switchblade
+terminalPayloadBehavior=SELF_DESTRUCT
+
+[vehicle.shahed136]
+profile=ONE_WAY
+aliases=shahed136,shahed-136
+terminalPayloadBehavior=SELF_DESTRUCT
+
+[vehicle.mq9]
+profile=LONG_RANGE_REUSABLE_UAV
+aliases=mq-9,mq_9,reaper,predator
+executionAltitude=250
+minimumExecutionAltitude=200
+maximumExecutionAltitude=320
+altitudeTolerance=15
+holdingEnabled=true
+terminalPayloadBehavior=NONE
+detectionRange=2048
+lockRange=1536
+missionExecutionRange=64

@@ -328,7 +328,10 @@ public final class RdpUavNetwork {
                     boolean locked = selected.getState() == net.vas.rdp.uav.mission.MissionState.TARGET_LOCKED
                             || selected.getState() == net.vas.rdp.uav.mission.MissionState.ATTACK_TARGET
                             || selected.getState() == net.vas.rdp.uav.mission.MissionState.KAMIKADZE_TARGET;
-                    String targetState = lost ? "TARGET_LOST"
+                    boolean noCandidate = selected.getState()
+                            == net.vas.rdp.uav.mission.MissionState.WAITING_FOR_TARGET;
+                    String targetState = noCandidate ? "NO_CANDIDATE"
+                            : lost ? "TARGET_LOST"
                             : locked ? "TARGET_LOCKED"
                             : selected.getState() == net.vas.rdp.uav.mission.MissionState.SEARCHING
                             ? "SEARCHING" : target == null && !point ? "NO TARGET"
@@ -338,7 +341,7 @@ public final class RdpUavNetwork {
                     double ty = point ? selected.getTargetSpec().getY() : target == null ? 0 : target.posY;
                     double tz = point ? selected.getTargetSpec().getZ() : target == null ? 0 : target.posZ;
                     double distance = aircraftEntity == null ? 0 : aircraftEntity.getDistance(tx, ty, tz);
-                    String registry = point ? "rdpuav:point" : target == null ? selected.getTargetSpec().getRegistryId()
+                    String registry = point ? "rdpuav:point" : target == null ? ""
                             : String.valueOf(net.minecraft.entity.EntityList.getKey(target));
                     String scan = selected.getState() == net.vas.rdp.uav.mission.MissionState.SCANNING
                             || selected.getState() == net.vas.rdp.uav.mission.MissionState.DEEP_SCANNING

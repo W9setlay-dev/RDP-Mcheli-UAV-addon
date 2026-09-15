@@ -7,6 +7,8 @@ public enum MissionState {
     TAKEOFF,
     CRUISE,
     SEARCHING,
+    WAITING_FOR_TARGET,
+    LOST,
     TARGET_ACQUIRED,
     TARGET_LOCKED,
     ATTACK_TARGET,
@@ -39,15 +41,17 @@ public enum MissionState {
             case TAXI: return next == TAKEOFF;
             case TAKEOFF: return next == CRUISE;
             case CRUISE: return next == SEARCHING;
-            case SEARCHING: return next == TARGET_ACQUIRED;
-            case TARGET_ACQUIRED: return next == TARGET_LOCKED;
+            case SEARCHING: return next == TARGET_ACQUIRED || next == WAITING_FOR_TARGET;
+            case WAITING_FOR_TARGET: return next == SEARCHING || next == TARGET_ACQUIRED;
+            case LOST: return next == SEARCHING || next == WAITING_FOR_TARGET;
+            case TARGET_ACQUIRED: return next == TARGET_LOCKED || next == LOST;
             case TARGET_LOCKED: return next == APPROACHING || next == ATTACK_TARGET
-                    || next == KAMIKADZE_TARGET;
+                    || next == KAMIKADZE_TARGET || next == LOST;
             case ATTACK_TARGET: return next == APPROACHING || next == ON_TARGET
                     || next == RETURNING;
             case KAMIKADZE_TARGET: return next == ON_TARGET || next == RETURNING
                     || next == KAMIKADZE_DETONATED;
-            case APPROACHING: return next == ON_TARGET;
+            case APPROACHING: return next == ON_TARGET || next == LOST;
             case ON_TARGET: return next == ORBITING || next == SCANNING;
             case ORBITING: return next == SCANNING;
             case SCANNING: return next == DEEP_SCANNING || next == REPORTING;

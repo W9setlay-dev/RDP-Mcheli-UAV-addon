@@ -340,3 +340,31 @@ Then:
 Do not copy the source project into `mods`, and do not mix McHeli versions.
 The GUI was source-compiled against cached 1.12.2 APIs, but no Minecraft
 client/server runtime test was run in this session.
+## Explicit no-candidate behavior
+
+Target search is operational when no configured entity is currently eligible. The
+mission enters `WAITING_FOR_TARGET` (and telemetry reports `NO_CANDIDATE`) rather
+than failing, selecting an arbitrary entity, using stale coordinates, or firing a
+payload. A previously acquired target is recorded as `LOST` before entering the
+waiting state. Searching resumes on the normal mission tick when a candidate
+passes the complete target filters. `TARGET_LOCKED` is never reported without a
+currently resolved target.
+
+## Vehicle execution profiles
+
+The addon does not derive mission behavior from McHeliCE's technical
+`Type: helicopter` value or from display names. On startup it creates
+`config/rdp-uav-vehicles.cfg`, where each exact McHeli aircraft definition can
+be mapped to `ONE_WAY` or `REUSABLE_UAV` and aliases can be listed. The default
+mapping covers Switchblade/Shahed-style one-way payload vehicles and an MQ-9
+profile. Reusable profiles use the configured execution altitude, altitude
+tolerance, and horizontal target guidance; they do not dive toward target Y or
+automatically self-destruct. SelfDestruct remains a McHeliCE weapon capability,
+not a universal mission classification.
+
+`LONG_RANGE_REUSABLE_UAV` adds separate `detectionRange`, `lockRange`, and
+`missionExecutionRange` settings. Detection selects eligible candidates,
+locking uses authoritative 3D distance and UUID continuity, and mission
+execution remains gated by the smaller execution range. The reference MQ-9
+configuration can therefore establish a lock before reaching the target area
+while holding its configured altitude.
