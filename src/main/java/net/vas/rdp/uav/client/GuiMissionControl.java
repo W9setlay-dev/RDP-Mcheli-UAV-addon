@@ -25,8 +25,6 @@ public final class GuiMissionControl extends GuiScreen {
     private GuiTextField filterField;
     private String status = "";
     private String pendingDangerAction;
-    private String pendingLockTargetId;
-    private boolean pendingLockClear;
 
     public GuiMissionControl() { active = this; }
 
@@ -108,6 +106,7 @@ public final class GuiMissionControl extends GuiScreen {
         buttonList.add(new GuiButton(7, left + 146, height - 80, 59, 20, "Point [P]"));
         buttonList.add(new GuiButton(9, right, height - 80, 100, 20, "Square strike"));
         buttonList.add(new GuiButton(10, right + 105, height - 80, 115, 20, "Lock crosshair [L]"));
+        buttonList.add(new GuiButton(13, right, height - 54, 100, 20, "Clear lock [J]"));
         buttonList.add(new GuiButton(12, right, 66, 220, 20, filterLabel()));
         for (int i = 0, shown = 0; i < missionRows.length && shown < 11; i++) {
             if (!matchesFilter(missionRows[i])) continue;
@@ -161,6 +160,10 @@ public final class GuiMissionControl extends GuiScreen {
         }, "Arm the kamikaze dive for the selected aircraft?");
         else if (button.id == 9) createSquareMission();
         else if (button.id == 10) lockCrosshairTarget();
+        else if (button.id == 13) {
+            RdpUavNetwork.clearAiTargetLock();
+            status = "Target lock clear requested; recovery will be attempted.";
+        }
         else if (button.id == 12) {
             filterMode = (filterMode + 1) % 3;
             rebuildButtons();
@@ -183,29 +186,11 @@ public final class GuiMissionControl extends GuiScreen {
     private void lockCrosshairTarget() {
         RayTraceResult hit = mc.objectMouseOver;
         if (hit != null && hit.entityHit != null) {
-            String targetId = hit.entityHit.getUniqueID().toString();
-            if (pendingLockTargetId != null && pendingLockTargetId.equals(targetId) && !pendingLockClear) {
-                pendingLockTargetId = null;
-                pendingLockClear = false;
-                RdpUavNetwork.lockAiTarget(hit.entityHit.getUniqueID());
-                status = "Target lock confirmed for " + hit.entityHit.getName() + ".";
-                return;
-            }
-            pendingLockTargetId = targetId;
-            pendingLockClear = false;
-            status = "Locking target " + hit.entityHit.getName() + " requires confirmation. Press again to confirm.";
+            RdpUavNetwork.lockAiTarget(hit.entityHit.getUniqueID());
+            status = "Target lock requested for " + hit.entityHit.getName() + ".";
             return;
         }
-        if (pendingLockClear) {
-            pendingLockTargetId = null;
-            pendingLockClear = false;
-            RdpUavNetwork.clearAiTargetLock();
-            status = "AI target lock cleared.";
-            return;
-        }
-        pendingLockTargetId = null;
-        pendingLockClear = true;
-        status = "No entity under crosshair. Press again to clear the current AI target lock.";
+        status = "No entity under crosshair. Use Clear lock [J] to request recovery.";
     }
 
     private void createEntityMission(boolean attack) {
@@ -257,9 +242,6 @@ public final class GuiMissionControl extends GuiScreen {
             drawString(fontRenderer, "MISSION FILTER", right, 30, 0xB0D8FF);
             if (filterField != null) filterField.drawTextBox();
             if (!status.isEmpty()) drawString(fontRenderer, status, left, 61, 0xFFCC66);
-            if (pendingLockTargetId != null || pendingLockClear) {
-                drawString(fontRenderer, "LOCK FLOW: awaiting confirmation", left + 225, 61, 0xFF8888);
-            }
             drawMissions(left, right);
         }
         super.drawScreen(mouseX, mouseY, partialTicks);

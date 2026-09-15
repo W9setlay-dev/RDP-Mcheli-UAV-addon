@@ -83,6 +83,54 @@ public final class WingManFlightAdapter {
         return true;
     }
 
+    /**
+     * Rebuilds only the native WingMan route.  The aircraft remains under
+     * WingMan control; this never writes position, yaw, pitch, or motion.
+     */
+    public boolean refreshObservationRoute(MCH_EntityAircraft aircraft, double x, double y, double z,
+                                           double orbitRadius, boolean orbit, UUID targetId) {
+        if (aircraft == null || !aircraft.isUAV()) return false;
+        WingmanEntry entry = WingmanRegistry.get(aircraft.getUniqueID());
+        if (entry == null || entry.mission == null || entry.autoState == AutonomousState.RTB
+                || entry.autoState == AutonomousState.LANDING
+                || entry.autoState == AutonomousState.PARKED) return false;
+
+        List<MissionNode> route = new ArrayList<MissionNode>();
+        if (!orbit) {
+            route.add(MissionNode.flyTo(x, y, z));
+            route.add(MissionNode.loiter(40));
+        } else {
+            double radius = Math.max(4.0D, orbitRadius);
+            double angle = Math.atan2(aircraft.posZ - z, aircraft.posX - x);
+            for (int i = 0; i < 4; i++) {
+                double waypointAngle = angle + (Math.PI * 2.0D * i / 4.0D);
+                route.add(MissionNode.flyTo(
+                        x + Math.cos(waypointAngle) * radius,
+                        y,
+                        z + Math.sin(waypointAngle) * radius));
+                route.add(MissionNode.loiter(30));
+            }
+        }
+        entry.mission = route;
+        entry.missionIndex = 0;
+        entry.missionNodeTimer = 0;
+        entry.currentAutoTarget = targetId;
+        entry.autoTargetX = x;
+        entry.autoTargetY = y;
+        entry.autoTargetZ = z;
+        entry.autoState = AutonomousState.ENROUTE;
+        return true;
+    }
+
+    public boolean hasReachedRoutePoint(MCH_EntityAircraft aircraft) {
+        WingmanEntry entry = getEntry(aircraft);
+        return entry != null && entry.mission != null && entry.missionIndex > 0
+                && (entry.autoState == AutonomousState.LOITER
+                || entry.autoState == AutonomousState.ENROUTE
+                || entry.autoState == AutonomousState.ON_STATION
+                || entry.autoState == AutonomousState.STRIKE_PASS);
+    }
+
     public boolean armAttack(MCH_EntityAircraft aircraft, double x, double y, double z,
                              double attackRadius, UUID targetId) {
         if (aircraft == null || !aircraft.isUAV()) return false;

@@ -41,6 +41,7 @@ public final class MissionLifecycle {
     private final WingManFlightAdapter flight = new WingManFlightAdapter();
     private final TargetResolver targets = new TargetResolver();
     private final Map<World, Boolean> restoredWorlds = new WeakHashMap<World, Boolean>();
+    private final Map<UUID, RouteRefresh> routeRefreshes = new HashMap<UUID, RouteRefresh>();
     private Map<UUID, MCH_EntityAircraft> aircraftThisTick = new HashMap<UUID, MCH_EntityAircraft>();
 
     public MissionLifecycle(MissionManager manager) {
@@ -50,11 +51,6 @@ public final class MissionLifecycle {
 
     public void tick(World world) {
         if (world == null || world.isRemote) return;
-        if (world.getTotalWorldTime() % 20L == 0L || manager.queuedMissionCount() > 0) {
-            RdpUavDebug.debug("Lifecycle", "tick dimension={} time={} queued={}",
-                    world.provider.getDimension(), world.getTotalWorldTime(),
-                    manager.queuedMissionCount());
-        }
         aircraftThisTick = indexAircraft(world);
         restoreQueue(world);
         dispatchQueued(world);
@@ -265,6 +261,7 @@ public final class MissionLifecycle {
             if (terminal(mission.getState())) {
                 flight.release(aircraft);
                 manager.release(mission);
+                routeRefreshes.remove(aircraft.getUniqueID());
                 dirty = true;
             }
         }
@@ -316,31 +313,26 @@ public final class MissionLifecycle {
 
         switch (mission.getState()) {
         case SEARCHING:
-            if (!atTarget(aircraft, target, mission)) return false;
+            if (!atTarget(aircraft, target, mission)
+                    || !flight.hasReachedRoutePoint(aircraft)) return false;
             mission.transitionTo(MissionState.TARGET_ACQUIRED, tick);
             if (target.entity == null) mission.lockPoint(tick);
             else mission.lockTarget(target.entity.getUniqueID(), tick);
             return true;
         case TARGET_LOCKED:
                 MissionSafety.RouteDecision approach = evaluateApproach(world, aircraft, target, mission);
-                if (approach != MissionSafety.RouteDecision.DIRECT_INTERCEPT) {
-                    if (approach == MissionSafety.RouteDecision.OFFSET_ORBIT
-                            || approach == MissionSafety.RouteDecision.SAFE_SIDE_APPROACH) {
-                        MissionState before = mission.getState();
-                        mission.transitionTo(MissionState.APPROACHING, tick);
-                        mission.transitionTo(MissionState.ON_TARGET, tick);
-                        mission.transitionTo(MissionState.ORBITING, tick);
-                        RdpUavDebug.debug("Lifecycle",
-                                "mission {} route decision={} aircraft={} target={} state {} -> {}",
-                                mission.getMissionId(), approach, aircraft.getUniqueID(),
-                                formatTarget(target), before, mission.getState());
-                        return true;
-                    }
+                if (approach == MissionSafety.RouteDecision.HOLD_AND_REEVALUATE) {
                     RdpUavDebug.debug("Lifecycle",
                             "mission {} hold-and-reevaluate aircraft={} target={} route={} distance={}",
                             mission.getMissionId(), aircraft.getUniqueID(), formatTarget(target),
                             approach, target == null ? -1.0D : targetDistance(aircraft, target));
                     return false;
+                }
+                refreshRoute(aircraft, target, mission, approach, tick);
+                if (!flight.hasReachedRoutePoint(aircraft)) return false;
+                if (approach != MissionSafety.RouteDecision.DIRECT_INTERCEPT) {
+                    mission.transitionTo(MissionState.APPROACHING, tick);
+                    return true;
                 }
                 UUID pilotTarget = KamikazePilotOverride.targetFor(aircraft.getUniqueID());
                 if (mission.isAttack() && target != null
@@ -411,14 +403,25 @@ public final class MissionLifecycle {
                 }
                 return false;
             case APPROACHING:
-                if (atTarget(aircraft, target, mission)) {
+                MissionSafety.RouteDecision approachRoute =
+                        evaluateApproach(world, aircraft, target, mission);
+                if (approachRoute == MissionSafety.RouteDecision.HOLD_AND_REEVALUATE) return false;
+                refreshRoute(aircraft, target, mission, approachRoute, tick);
+                if (atTarget(aircraft, target, mission)
+                        && flight.hasReachedRoutePoint(aircraft)) {
                     mission.transitionTo(MissionState.ON_TARGET, tick);
-                    mission.transitionTo(MissionState.SCANNING, tick);
+                    if (approachRoute == MissionSafety.RouteDecision.OFFSET_ORBIT
+                            || approachRoute == MissionSafety.RouteDecision.SAFE_SIDE_APPROACH) {
+                        mission.transitionTo(MissionState.ORBITING, tick);
+                    } else {
+                        mission.transitionTo(MissionState.SCANNING, tick);
+                    }
                     return true;
                 }
                 return false;
             case ON_TARGET:
             case ORBITING:
+                if (!flight.hasReachedRoutePoint(aircraft)) return false;
                 mission.transitionTo(MissionState.SCANNING, tick);
                 return true;
             case SCANNING:
@@ -540,6 +543,24 @@ public final class MissionLifecycle {
         return MissionSafety.decideRoute(distance, altitudeDelta, corridorBlocked, observationDistance);
     }
 
+    private void refreshRoute(MCH_EntityAircraft aircraft, Target target, RDPMission mission,
+                              MissionSafety.RouteDecision decision, long tick) {
+        if (target == null || decision == MissionSafety.RouteDecision.HOLD_AND_REEVALUATE) return;
+        UUID aircraftId = aircraft.getUniqueID();
+        RouteRefresh previous = routeRefreshes.get(aircraftId);
+        boolean orbit = decision == MissionSafety.RouteDecision.OFFSET_ORBIT
+                || decision == MissionSafety.RouteDecision.SAFE_SIDE_APPROACH;
+        boolean moved = previous == null
+                || previous.distanceSquared(target.x, target.y, target.z) >= 16.0D;
+        boolean due = previous == null
+                || (tick - previous.tick >= 10L && flight.hasReachedRoutePoint(aircraft));
+        if (!moved && !due) return;
+        if (flight.refreshObservationRoute(aircraft, target.x, target.y, target.z,
+                mission.getObservationDistance(), orbit, mission.getTargetId())) {
+            routeRefreshes.put(aircraftId, new RouteRefresh(tick, target.x, target.y, target.z));
+        }
+    }
+
     private boolean atTarget(MCH_EntityAircraft aircraft, Target target, RDPMission mission) {
         if (target == null) return false;
         double dx = aircraft.posX - target.x;
@@ -579,6 +600,7 @@ public final class MissionLifecycle {
             mission.fail(reason, tick);
             MCH_EntityAircraft aircraft = findAircraft(world, mission.getAircraftId());
             if (aircraft != null) flight.release(aircraft);
+            routeRefreshes.remove(mission.getAircraftId());
             manager.release(mission);
             RDPMissionWorldData.get(world).markDirty();
         }
@@ -645,6 +667,27 @@ public final class MissionLifecycle {
 
         private static Target point(double x, double y, double z) {
             return new Target(null, x, y, z);
+        }
+    }
+
+    private static final class RouteRefresh {
+        private final long tick;
+        private final double x;
+        private final double y;
+        private final double z;
+
+        private RouteRefresh(long tick, double x, double y, double z) {
+            this.tick = tick;
+            this.x = x;
+            this.y = y;
+            this.z = z;
+        }
+
+        private double distanceSquared(double x, double y, double z) {
+            double dx = this.x - x;
+            double dy = this.y - y;
+            double dz = this.z - z;
+            return dx * dx + dy * dy + dz * dz;
         }
     }
 }

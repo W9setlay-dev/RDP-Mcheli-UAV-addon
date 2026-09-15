@@ -63,7 +63,7 @@ public final class RdpUavDebug {
     }
 
     public static void debug(String component, String format, Object... arguments) {
-        if (enabled) LOGGER.info("[DEBUG][{}] " + format, prepend(component, arguments));
+        if (enabled) LOGGER.info("[DEBUG][{}] {}", prepend(component, arguments), format);
     }
 
     public static void warn(String component, String message) {

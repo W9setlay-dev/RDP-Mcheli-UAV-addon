@@ -30,19 +30,23 @@ import net.vas.rdp.uav.RdpUavDebug;
 
 import java.util.List;
 import java.util.UUID;
+import javax.annotation.Nonnull;
 
 public final class RdpUavCommand extends CommandBase {
     @Override
+    @Nonnull
     public String getName() {
         return "rdpuav";
     }
 
     @Override
+    @Nonnull
     public String getUsage(ICommandSender sender) {
         return "/rdpuav authorize | debug on|off|status|reload | mission create <namespace:id> [attack] | mission ai <namespace:id> [attack] | mission attack-point | mission square <x> <y> <z> [size] | mission gui|list|status <id>";
     }
 
     @Override
+    @Nonnull
     public List<String> getTabCompletions(MinecraftServer server, ICommandSender sender,
                                            String[] args, BlockPos targetPos) {
         if (args.length == 1) {

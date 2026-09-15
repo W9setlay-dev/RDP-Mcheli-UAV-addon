@@ -80,7 +80,7 @@ No Forge version was downgraded, and no runtime result was fabricated.
   and explicit detonation/fire-rejection mission states.
 * Exact-entity operator AI target locking from the Minecraft crosshair, server
   UUID/lock/weapon validation, WingMan kamikaze override, configurable close
-  firing distance, and double-tap lock cancellation.
+  firing distance, and explicit lock-clear cancellation.
 * In-memory aircraft-to-mission exclusivity for the current process.
 * In-memory mission queue and repository, with explicit peek/remove acceptance
   semantics so unaccepted work is retained.

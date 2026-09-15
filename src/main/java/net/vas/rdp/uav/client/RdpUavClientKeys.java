@@ -9,7 +9,6 @@ import net.minecraftforge.fml.common.gameevent.InputEvent;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
 import net.vas.rdp.uav.network.RdpUavNetwork;
-import net.vas.rdp.uav.flight.KamikazeConfig;
 import org.lwjgl.input.Keyboard;
 
 @SideOnly(Side.CLIENT)
@@ -34,7 +33,8 @@ public final class RdpUavClientKeys {
             "key.rdpuav.fire_self_destruct", Keyboard.KEY_H, "key.categories.rdpuav");
     private static final KeyBinding AI_TARGET_LOCK = new KeyBinding(
             "key.rdpuav.ai_target_lock", Keyboard.KEY_L, "key.categories.rdpuav");
-    private static long lastTargetLockPress;
+    private static final KeyBinding CLEAR_TARGET_LOCK = new KeyBinding(
+            "key.rdpuav.clear_target_lock", Keyboard.KEY_J, "key.categories.rdpuav");
 
     private RdpUavClientKeys() { }
 
@@ -49,6 +49,7 @@ public final class RdpUavClientKeys {
         ClientRegistry.registerKeyBinding(KAMIKAZE_SELECTED);
         ClientRegistry.registerKeyBinding(FIRE_SELF_DESTRUCT);
         ClientRegistry.registerKeyBinding(AI_TARGET_LOCK);
+        ClientRegistry.registerKeyBinding(CLEAR_TARGET_LOCK);
         net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(new RdpUavClientKeys());
     }
 
@@ -71,17 +72,11 @@ public final class RdpUavClientKeys {
         if (ABORT_SELECTED.isPressed()) GuiMissionControl.abortSelected();
         if (KAMIKAZE_SELECTED.isPressed()) GuiMissionControl.armKamikazeSelected();
         if (FIRE_SELF_DESTRUCT.isPressed()) RdpUavNetwork.fireSelfDestruct();
-        if (AI_TARGET_LOCK.isPressed()) toggleAiTargetLock(minecraft);
+        if (AI_TARGET_LOCK.isPressed()) lockAiTarget(minecraft);
+        if (CLEAR_TARGET_LOCK.isPressed()) RdpUavNetwork.clearAiTargetLock();
     }
 
-    private void toggleAiTargetLock(Minecraft minecraft) {
-        long now = System.currentTimeMillis();
-        if (now - lastTargetLockPress <= KamikazeConfig.doubleTapWindowMillis) {
-            RdpUavNetwork.clearAiTargetLock();
-            lastTargetLockPress = 0L;
-            return;
-        }
-        lastTargetLockPress = now;
+    private void lockAiTarget(Minecraft minecraft) {
         if (minecraft.objectMouseOver != null && minecraft.objectMouseOver.entityHit != null) {
             RdpUavNetwork.lockAiTarget(minecraft.objectMouseOver.entityHit.getUniqueID());
         }

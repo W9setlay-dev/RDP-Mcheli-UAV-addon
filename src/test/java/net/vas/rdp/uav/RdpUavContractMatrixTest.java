@@ -4,8 +4,10 @@ import com.norwood.mcheli.wingman.mission.MissionNode;
 import net.minecraft.nbt.NBTTagCompound;
 import net.vas.rdp.uav.mission.AircraftAssignmentRegistry;
 import net.vas.rdp.uav.mission.MissionQueue;
+import net.vas.rdp.uav.mission.MissionCoordinator;
 import net.vas.rdp.uav.mission.MissionState;
 import net.vas.rdp.uav.mission.MissionType;
+import net.vas.rdp.uav.mission.MissionSafety;
 import net.vas.rdp.uav.mission.RDPMission;
 import net.vas.rdp.uav.flight.SquareStrikePlan;
 import net.vas.rdp.uav.scan.RDPScanReport;
@@ -141,6 +143,37 @@ public class RdpUavContractMatrixTest {
         assertEquals(report.getPriority(), restored.getPriority());
         assertEquals(report.getDurationTicks(), restored.getDurationTicks());
         assertEquals(report.getTimestamp(), restored.getTimestamp());
+    }
+
+    @Test
+    public void corridorSafetyRejectsInvalidAndUnsafeInputsWithoutCommitment() {
+        MissionSafety.CorridorAssessment invalid = MissionSafety.evaluateCorridor(
+                Double.NaN, 0, false, false, false, true, true, 20);
+        assertEquals(MissionSafety.RouteDecision.HOLD_AND_REEVALUATE,
+                invalid.getRouteDecision());
+        assertFalse(invalid.isSafe());
+
+        MissionSafety.CorridorAssessment fuelBlocked = MissionSafety.evaluateCorridor(
+                40, 4, false, false, false, false, true, 20);
+        assertEquals(MissionSafety.RouteDecision.HOLD_AND_REEVALUATE,
+                fuelBlocked.getRouteDecision());
+        assertFalse(fuelBlocked.isFuelReady());
+        assertFalse(fuelBlocked.isSafe());
+    }
+
+    @Test
+    public void coordinatorReassignmentDoesNotStealAnOccupiedTarget() {
+        MissionCoordinator coordinator = new MissionCoordinator();
+        UUID firstAircraft = UUID.randomUUID();
+        UUID secondAircraft = UUID.randomUUID();
+        UUID currentTarget = UUID.randomUUID();
+        UUID occupiedTarget = UUID.randomUUID();
+
+        assertTrue(coordinator.claim(firstAircraft, currentTarget));
+        assertTrue(coordinator.claim(secondAircraft, occupiedTarget));
+        assertFalse(coordinator.reassign(firstAircraft, currentTarget, occupiedTarget, false));
+        assertTrue(coordinator.isAssigned(firstAircraft, currentTarget));
+        assertTrue(coordinator.isAssigned(secondAircraft, occupiedTarget));
     }
 
     private static boolean declaredSuccessor(MissionState state, MissionState next) {

@@ -15,6 +15,8 @@ import com.norwood.mcheli.wingman.wingman.WingmanRegistry;
 import net.vas.rdp.uav.RdpUavDebug;
 import net.vas.rdp.uav.flight.KamikazePilotOverride;
 
+import java.util.Objects;
+
 public final class RdpUavNetwork {
     private static final SimpleNetworkWrapper CHANNEL = NetworkRegistry.INSTANCE.newSimpleChannel(
             new ResourceLocation(RDPUavMod.MOD_ID, "control").toString());
@@ -93,8 +95,6 @@ public final class RdpUavNetwork {
     }
 
     public static void syncTargetTelemetry(EntityPlayerMP player) {
-        RdpUavDebug.debug("Network", "sending telemetry player={} dimension={}",
-                player.getUniqueID(), player.dimension);
         CHANNEL.sendTo(TargetTelemetry.from(player), player);
     }
 
@@ -190,6 +190,12 @@ public final class RdpUavNetwork {
         public void toBytes(ByteBuf buffer) {
             writeString(buffer, targetId);
             buffer.writeBoolean(clear);
+        }
+        public java.util.UUID getTargetId() {
+            return targetId.isEmpty() ? null : java.util.UUID.fromString(targetId);
+        }
+        public boolean isClear() {
+            return clear;
         }
     }
 
@@ -406,7 +412,7 @@ public final class RdpUavNetwork {
     public static final class ServerMissionDataHandler implements IMessageHandler<RequestMissionData, IMessage> {
         public IMessage onMessage(RequestMissionData message, MessageContext context) {
             final EntityPlayerMP player = context.getServerHandler().player;
-            player.getServer().addScheduledTask(new Runnable() {
+            Objects.requireNonNull(player.getServer()).addScheduledTask(new Runnable() {
                 public void run() { sendMissionData(player); }
             });
             return null;
@@ -416,41 +422,39 @@ public final class RdpUavNetwork {
     public static final class ServerAbortMissionHandler implements IMessageHandler<AbortMission, IMessage> {
             public IMessage onMessage(final AbortMission message, MessageContext context) {
                 final EntityPlayerMP player = context.getServerHandler().player;
-                player.getServer().addScheduledTask(new Runnable() {
-                    public void run() {
-                        try {
-                            java.util.UUID id = java.util.UUID.fromString(message.missionId);
-                            net.vas.rdp.uav.mission.RDPMission mission =
-                                    net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
-                                            .getRepository().find(id);
-                            if (mission == null || !player.getUniqueID().equals(mission.getOwnerId())
-                                    || mission.getState() == net.vas.rdp.uav.mission.MissionState.COMPLETE
-                                    || mission.getState() == net.vas.rdp.uav.mission.MissionState.ABORTED
-                                    || mission.getState() == net.vas.rdp.uav.mission.MissionState.FAILED) {
-                                    RdpUavDebug.debug("Network", "abort rejected player={} mission={}",
-                                            player.getUniqueID(), message.missionId);
-                                    return;
-                            }
+                Objects.requireNonNull(player.getServer()).addScheduledTask(() -> {
+                    try {
+                        java.util.UUID id = java.util.UUID.fromString(message.missionId);
+                        net.vas.rdp.uav.mission.RDPMission mission =
+                                net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
+                                        .getRepository().find(id);
+                        if (mission == null || !player.getUniqueID().equals(mission.getOwnerId())
+                                || mission.getState() == net.vas.rdp.uav.mission.MissionState.COMPLETE
+                                || mission.getState() == net.vas.rdp.uav.mission.MissionState.ABORTED
+                                || mission.getState() == net.vas.rdp.uav.mission.MissionState.FAILED) {
+                                RdpUavDebug.debug("Network", "abort rejected player={} mission={}",
+                                        player.getUniqueID(), message.missionId);
+                                return;
+                        }
 
-                            mission.transitionTo(net.vas.rdp.uav.mission.MissionState.ABORTED,
-                                    player.world.getTotalWorldTime());
-                            for (net.minecraft.entity.Entity entity : player.world.loadedEntityList) {
-                                if (entity instanceof MCH_EntityAircraft
-                                        && mission.getAircraftId().equals(entity.getUniqueID())) {
-                                    FLIGHT_ADAPTER.release((MCH_EntityAircraft) entity);
-                                    break;
-                                }
+                        mission.transitionTo(net.vas.rdp.uav.mission.MissionState.ABORTED,
+                                player.world.getTotalWorldTime());
+                        for (net.minecraft.entity.Entity entity : player.world.loadedEntityList) {
+                            if (entity instanceof MCH_EntityAircraft
+                                    && mission.getAircraftId().equals(entity.getUniqueID())) {
+                                FLIGHT_ADAPTER.release((MCH_EntityAircraft) entity);
+                                break;
                             }
-                            net.vas.rdp.uav.RDPUavMod.missions().release(mission);
-                            net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world).markDirty();
-                            sendMissionData(player);
-                            RdpUavDebug.debug("Network", "abort accepted player={} mission={}",
-                                    player.getUniqueID(), message.missionId);
-                        } catch (IllegalArgumentException ignored) {
-                            // Invalid client input is rejected without touching mission state.
-                            RdpUavDebug.debug("Network", "abort rejected invalid UUID player={} value={}",
-                                    player.getUniqueID(), message.missionId);
-                    }
+                        }
+                        RDPUavMod.missions().release(mission);
+                        net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world).markDirty();
+                        sendMissionData(player);
+                        RdpUavDebug.debug("Network", "abort accepted player={} mission={}",
+                                player.getUniqueID(), message.missionId);
+                    } catch (IllegalArgumentException ignored) {
+                        // Invalid client input is rejected without touching mission state.
+                        RdpUavDebug.debug("Network", "abort rejected invalid UUID player={} value={}",
+                                player.getUniqueID(), message.missionId);
                 }
             });
                 return null;
@@ -461,7 +465,7 @@ public final class RdpUavNetwork {
             implements IMessageHandler<AuthorizeAttack, IMessage> {
         public IMessage onMessage(final AuthorizeAttack message, MessageContext context) {
             final EntityPlayerMP player = context.getServerHandler().player;
-            player.getServer().addScheduledTask(new Runnable() {
+            Objects.requireNonNull(player.getServer()).addScheduledTask(new Runnable() {
                 public void run() {
                     try {
                         java.util.UUID id = java.util.UUID.fromString(message.missionId);
@@ -561,7 +565,7 @@ public final class RdpUavNetwork {
             implements IMessageHandler<FireSelfDestruct, IMessage> {
         public IMessage onMessage(final FireSelfDestruct message, MessageContext context) {
             final EntityPlayerMP player = context.getServerHandler().player;
-            player.getServer().addScheduledTask(new Runnable() {
+            Objects.requireNonNull(player.getServer()).addScheduledTask(new Runnable() {
                 public void run() {
                     MCH_EntityAircraft aircraft =
                             net.vas.rdp.uav.mission.UavControlAccess.findControlledAircraft(player);
@@ -582,7 +586,7 @@ public final class RdpUavNetwork {
             implements IMessageHandler<CreateMission, IMessage> {
         public IMessage onMessage(final CreateMission message, MessageContext context) {
             final EntityPlayerMP player = context.getServerHandler().player;
-            player.getServer().addScheduledTask(new Runnable() {
+            Objects.requireNonNull(player.getServer()).addScheduledTask(new Runnable() {
                 public void run() {
                     if (!message.point && (message.target == null
                             || !message.target.matches("[A-Za-z0-9_.-]+:[A-Za-z0-9_./-]+"))) {
@@ -607,7 +611,7 @@ public final class RdpUavNetwork {
             implements IMessageHandler<SquareStrike, IMessage> {
         public IMessage onMessage(final SquareStrike message, MessageContext context) {
             final EntityPlayerMP player = context.getServerHandler().player;
-            player.getServer().addScheduledTask(new Runnable() {
+            Objects.requireNonNull(player.getServer()).addScheduledTask(new Runnable() {
                 public void run() {
                     MCH_EntityAircraft aircraft =
                             net.vas.rdp.uav.mission.UavControlAccess.findControlledAircraft(player);
@@ -629,12 +633,16 @@ public final class RdpUavNetwork {
             implements IMessageHandler<AiTargetLock, IMessage> {
         public IMessage onMessage(final AiTargetLock message, MessageContext context) {
             final EntityPlayerMP player = context.getServerHandler().player;
-            player.getServer().addScheduledTask(new Runnable() {
+            Objects.requireNonNull(player.getServer()).addScheduledTask(new Runnable() {
                 public void run() {
                     MCH_EntityAircraft aircraft =
                             net.vas.rdp.uav.mission.UavControlAccess.findControlledAircraft(player);
                     if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, player)
-                            || aircraft == null) return;
+                            || !RDPUavMod.missions().ensureAuthorized(aircraft, player)) {
+                        player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                "UAV target lock rejected: operator authorization is required."));
+                        return;
+                    }
                     if (message.clear) {
                         KamikazePilotOverride.clear(aircraft.getUniqueID());
                         java.util.List<net.vas.rdp.uav.mission.RDPMission> missions =
@@ -654,46 +662,68 @@ public final class RdpUavNetwork {
                                 mission.transitionTo(net.vas.rdp.uav.mission.MissionState.RETURNING,
                                         player.world.getTotalWorldTime());
                             } else {
-                                mission.transitionTo(net.vas.rdp.uav.mission.MissionState.ABORTED,
-                                        player.world.getTotalWorldTime());
-                                FLIGHT_ADAPTER.release(aircraft);
-                                RDPUavMod.missions().release(mission);
+                                if (FLIGHT_ADAPTER.requestReturn(aircraft,
+                                        "RDP_TARGET_LOCK_CLEARED")) {
+                                    mission.transitionTo(net.vas.rdp.uav.mission.MissionState.RETURNING,
+                                            player.world.getTotalWorldTime());
+                                } else {
+                                    mission.transitionTo(net.vas.rdp.uav.mission.MissionState.ABORTED,
+                                            player.world.getTotalWorldTime());
+                                    FLIGHT_ADAPTER.release(aircraft);
+                                    RDPUavMod.missions().release(mission);
+                                }
                             }
                             net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world).markDirty();
                             break;
                         }
                         RdpUavDebug.debug("Network", "AI target lock cleared player={} aircraft={}",
                                 player.getUniqueID(), aircraft.getUniqueID());
+                        player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                "UAV target lock cleared; recovery requested."));
                         return;
                     }
                     try {
                         java.util.UUID targetId = java.util.UUID.fromString(message.targetId);
                         net.minecraft.entity.Entity target = TARGET_RESOLVER.findLoaded(player.world, targetId);
                         if (target == null || target == aircraft || !target.canBeCollidedWith()
-                                || aircraft.getAcInfo() == null
-                                || !FLIGHT_ADAPTER.hasSelfDestructWeaponWithAmmo(aircraft)
-                                || !aircraft.canLockEntity(target)) return;
-                        if (RDPUavMod.missions().assignedMission(aircraft.getUniqueID()) != null) return;
+                                || aircraft.getAcInfo() == null) {
+                            player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                    "UAV target lock rejected: target is unavailable."));
+                            return;
+                        }
+                        if (RDPUavMod.missions().assignedMission(aircraft.getUniqueID()) != null) {
+                            player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                    "UAV target lock rejected: aircraft already has a mission."));
+                            return;
+                        }
                         net.minecraft.util.ResourceLocation key =
                                 net.minecraft.entity.EntityList.getKey(target);
-                        if (key == null) return;
+                        if (key == null) {
+                            player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                    "UAV target lock rejected: target type is unknown."));
+                            return;
+                        }
                         net.vas.rdp.uav.mission.RDPMission mission =
                                 new net.vas.rdp.uav.mission.RDPMission(
                                         java.util.UUID.randomUUID(), player.getUniqueID(),
                                         aircraft.getUniqueID(), aircraft.getAcInfo().name,
-                                        net.vas.rdp.uav.mission.MissionType.STRIKE,
+                                        net.vas.rdp.uav.mission.MissionType.RECONNAISSANCE,
                                         net.vas.rdp.uav.target.TargetSpec.manual(
                                                 key.toString(),
                                                 net.vas.rdp.uav.target.TargetPriority.HIGH),
-                                        true, true, false, 5000.0D, 8.0D,
+                                        false, false, false, 5000.0D, 8.0D,
                                         player.world.getTotalWorldTime());
                         mission.setDimension(player.dimension);
                         RDPUavMod.missions().create(player.world, mission);
                         net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world).markDirty();
                         KamikazePilotOverride.lock(aircraft.getUniqueID(), targetId);
+                        player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                "UAV target locked for reconnaissance: " + key.toString()));
                         RdpUavDebug.debug("Network", "AI target lock accepted player={} aircraft={} target={}",
                                 player.getUniqueID(), aircraft.getUniqueID(), targetId);
-                    } catch (IllegalArgumentException ignored) {
+                    } catch (IllegalArgumentException failure) {
+                        player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                "UAV target lock rejected: invalid target."));
                         RdpUavDebug.debug("Network", "AI target lock rejected invalid target={}",
                                 message.targetId);
                     }

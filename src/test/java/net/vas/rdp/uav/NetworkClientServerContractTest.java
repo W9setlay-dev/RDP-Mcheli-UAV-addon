@@ -11,6 +11,7 @@ import java.util.UUID;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.fail;
 
@@ -39,6 +40,22 @@ public class NetworkClientServerContractTest {
                 new RdpUavNetwork.AuthorizeAttack());
         assertSameWirePayload(new RdpUavNetwork.KamikazeAttack("mission-42"),
                 new RdpUavNetwork.KamikazeAttack());
+    }
+
+    @Test
+    public void everyMissionExecutionRequestPreservesItsWireContract() {
+        assertSameWirePayload(new RdpUavNetwork.RequestMissionData(),
+                new RdpUavNetwork.RequestMissionData());
+        assertSameWirePayload(new RdpUavNetwork.FireSelfDestruct(),
+                new RdpUavNetwork.FireSelfDestruct());
+        assertSameWirePayload(new RdpUavNetwork.CreateMission("mod:target", false, false),
+                new RdpUavNetwork.CreateMission());
+        assertSameWirePayload(new RdpUavNetwork.CreateMission("", false, true),
+                new RdpUavNetwork.CreateMission());
+        assertSameWirePayload(new RdpUavNetwork.CreateMission("mod:target", true, false),
+                new RdpUavNetwork.CreateMission());
+        assertSameWirePayload(new RdpUavNetwork.SquareStrike("100 140 -50 80"),
+                new RdpUavNetwork.SquareStrike());
     }
 
     @Test
@@ -98,6 +115,20 @@ public class NetworkClientServerContractTest {
                 new RdpUavNetwork.AiTargetLock());
         assertSameWirePayload(new RdpUavNetwork.AiTargetLock(null, true),
                 new RdpUavNetwork.AiTargetLock());
+    }
+
+    @Test
+    public void targetLockWireContractNeverSubstitutesOrChangesTargetIdentity() {
+        UUID first = UUID.fromString("00000000-0000-0000-0000-000000000042");
+        UUID second = UUID.fromString("00000000-0000-0000-0000-000000000043");
+        RdpUavNetwork.AiTargetLock decoded = roundTrip(
+                new RdpUavNetwork.AiTargetLock(first, false),
+                new RdpUavNetwork.AiTargetLock());
+        assertEquals(first, decoded.getTargetId());
+        assertFalse(decoded.isClear());
+        assertEquals(second, roundTrip(
+                new RdpUavNetwork.AiTargetLock(second, false),
+                new RdpUavNetwork.AiTargetLock()).getTargetId());
     }
 
     private static <T extends net.minecraftforge.fml.common.network.simpleimpl.IMessage>

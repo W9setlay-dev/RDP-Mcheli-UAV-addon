@@ -13,7 +13,6 @@ import org.lwjgl.opengl.GL11;
 public final class RdpUavTargetHud {
     private static final RdpUavTargetHud INSTANCE = new RdpUavTargetHud();
     private Telemetry telemetry;
-    private Telemetry previous;
     private long receivedAt;
 
     private RdpUavTargetHud() { }
@@ -23,7 +22,7 @@ public final class RdpUavTargetHud {
     }
 
     public void receive(Telemetry value) {
-        previous = telemetry;
+        Telemetry previous = telemetry;
         telemetry = value;
         receivedAt = System.currentTimeMillis();
     }

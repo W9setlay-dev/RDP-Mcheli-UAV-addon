@@ -4,7 +4,6 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.entity.Entity;
-import net.minecraft.util.ResourceLocation;
 import net.minecraft.world.World;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
@@ -13,9 +12,8 @@ import net.vas.rdpcore.region.Hotspot;
 import net.vas.rdpcore.world.RDPWorldState;
 import net.vas.rdpcore.world.Scar;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 @SideOnly(Side.CLIENT)
 public final class RdpUavAnomalyAlert {
@@ -25,7 +23,7 @@ public final class RdpUavAnomalyAlert {
     private RdpUavAnomalyAlert() { }
 
     public static Alert evaluate(World world, Entity observer) {
-        if (world == null || RdpUavHudConfig.anomalyAlertEnabled == false) return null;
+        if (world == null || !RdpUavHudConfig.anomalyAlertEnabled) return null;
         double globalRdp = RDPAPI.getGlobalRDPLevel(world);
         double regionalRdp = 0.0D;
         if (observer != null) {
@@ -37,7 +35,7 @@ public final class RdpUavAnomalyAlert {
         if (observer != null) {
             biomeName = world.getBiome(observer.getPosition()).getRegistryName() == null
                     ? ""
-                    : world.getBiome(observer.getPosition()).getRegistryName().toString();
+                    : Objects.requireNonNull(world.getBiome(observer.getPosition()).getRegistryName()).toString();
         }
         RDPWorldState state = RDPAPI.getWorldState(world);
         Map<String, Hotspot> hotspots = state == null ? null : state.getHotspots();
@@ -110,9 +108,9 @@ public final class RdpUavAnomalyAlert {
         }
 
         if (kind.equals("RDP_SURGE") && distortedBiome) {
-            kind = "DISTORTED_BIOME";
+            kind = "DISTORTED_REGION";
             severity = 0.7D;
-            detail = "The biome signature matches a distorted or hostile RDP region.";
+            detail = "Unstable RDP region detected.";
         }
 
         if (kind.equals("RDP_SURGE") && threshold >= RdpUavHudConfig.anomalyAlertThreshold) {
@@ -133,7 +131,7 @@ public final class RdpUavAnomalyAlert {
         GlStateManager.scale(RdpUavHudConfig.scale, RdpUavHudConfig.scale, 1.0F);
         x = (int) (x / RdpUavHudConfig.scale);
         y = (int) (y / RdpUavHudConfig.scale);
-        font.drawStringWithShadow("RDP ALERT", x, y, 0xFFFF5555);
+        font.drawStringWithShadow("ALERT", x, y, 0xFFFF5555);
         font.drawStringWithShadow(alert.summary, x, y + 10, 0xFFFFFF);
         font.drawStringWithShadow(alert.detail, x, y + 20, 0xFFC9C9C9);
         GlStateManager.popMatrix();

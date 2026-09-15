@@ -31,13 +31,12 @@ public final class UavControlAccess {
     public static MCH_EntityAircraft findControlledAircraft(EntityPlayer player) {
         if (player == null) return null;
         MCH_EntityAircraft aircraft = MCH_EntityAircraft.getAircraft_RiddenOrControl(player);
-        if (aircraft != null && isOperator(aircraft, player)) return aircraft;
+        if (isOperator(aircraft, player)) return aircraft;
         Entity mount = player.getRidingEntity();
         if (mount instanceof MCH_EntityUavStation) {
-            Entity controlled = ((MCH_EntityUavStation) mount).getControlled();
-            if (controlled instanceof MCH_EntityAircraft
-                    && isOperator((MCH_EntityAircraft) controlled, player)) {
-                return (MCH_EntityAircraft) controlled;
+            MCH_EntityAircraft controlled = ((MCH_EntityUavStation) mount).getControlled();
+            if (isOperator(controlled, player)) {
+                return controlled;
             }
         }
         World world = player.world;

@@ -61,9 +61,11 @@ player's mission summaries from the server; select a mission and use
 `Abort selected` to safely stop a non-terminal mission, Refresh requests a new
 snapshot, and Close exits the screen. The dashboard provides an ALL/ACTIVE/ALERTS
 mission filter, free-text filtering, selected-mission details, and a live
-target-telemetry pane. `Lock crosshair [L]` sends the existing server-validated
-AI target-lock request for the entity under the crosshair; it does not bypass
-aircraft ownership, weapon, or target validation. Abort requests are checked server-side against the player's UUID,
+target-telemetry pane. `Lock crosshair [L]` sends a single-press, server-validated exact target-lock
+request for the entity or McHeli vehicle under the crosshair. `J`, or
+**Clear lock** in the dashboard, requests lock cancellation and normal WingMan
+recovery. Locking does not require a destructive weapon and does not bypass
+aircraft ownership or target validation. Abort requests are checked server-side against the player's UUID,
 mission ownership, and terminal state. Authorization requires the player to
 be the McHeli UAV pilot; another player cannot create a mission for that UAV.
 Attack-intent missions begin in reconnaissance mode and automatically arm
@@ -72,6 +74,27 @@ attack` remains available as a manual operator override. The server still
 checks ownership, UAV status, target coordinates, and mission state before
 arming the attack adapter. Dispatch starts on the server world tick and is
 handed to WingMan through the adapter.
+
+### Mission execution keys
+
+| Key | Action | Server-side safety boundary |
+| --- | --- | --- |
+| `U` | Open mission control | Opens the dashboard and requests only the player's mission data |
+| `P` | Point task | Sends a camera-point request; the server ray-traces and validates the controlled, authorized UAV |
+| `R` | Recon mission | Creates a non-destructive exact registry-target request |
+| `K` | Attack intent | Creates an attack mission intent; it does not arm weapons |
+| `A` | Authorize attack | Requires owner, operator, `TARGET_LOCKED`, live target, and a valid WingMan attack route |
+| `N` | Kamikaze/nose-dive | Explicit operator action; server requires a supported aircraft, target, payload, and route |
+| `H` | Fire SelfDestruct payload | Requires operator control, supported aircraft, destructive weapon, and ammunition |
+| `L` | Exact target lock | Locks only the loaded entity/vehicle under the crosshair; no destructive payload is implied |
+| `J` | Clear target lock | Requests lock cancellation and normal WingMan recovery |
+| `X` | Abort selected mission | Requires a server-owned mission and releases the aircraft after aborting |
+| `F` | Refresh missions | Requests a server-filtered snapshot; it does not mutate mission state |
+
+`K`, `N`, and `H` are intentionally distinct. `K` submits an attack plan,
+`N` arms a destructive kamikaze mode after the explicit operator action, and `H` directly
+fires the validated SelfDestruct weapon. The client key names are configurable
+through Minecraft's Controls menu.
 
 For an autonomous AI task, use `/rdpuav mission ai <namespace:id> [attack]`.
 The command evaluates the controlled, authorized UAV through the deterministic
@@ -109,14 +132,17 @@ range by the HUD. This limit does not claim that chunk loading, steering,
 weapon release, or damage have been verified in a live server.
 
 **Implementation boundary:** server ticks now dispatch queued missions, track
-loaded targets with reacquisition, persist scan metadata, and request WingMan
-return/parking. Mission failures are logged with the mission/aircraft IDs,
-state, target, dimension, tick age, and reason; the mission list and target HUD
-also expose the persisted failure reason and current WingMan state/node. This
-remains source/API validated only: actual autonomous steering, landing,
-scanner contents, weapon effects, and self-destruct are not verified in a live
-Forge server. Do not treat a successful build or JAR deployment as proof that
-those behaviors work in-game.
+loaded targets with reacquisition, refresh bounded native WingMan approach and
+orbit routes as targets move, persist scan metadata, and request WingMan
+return/parking. Point and entity missions do not advance merely because a
+route was created: the lifecycle waits for native WingMan route progress and
+the observation envelope. Mission failures are logged with the
+mission/aircraft IDs, state, target, dimension, tick age, and reason; the
+mission list and target HUD also expose the persisted failure reason and
+current WingMan state/node. This remains source/API validated only: actual
+landing, scanner contents, weapon effects, and self-destruct require a live
+Forge server test. Do not treat a successful build or JAR deployment as proof
+that those behaviors work in-game.
 
 Automatic selection ranks valid candidates by target priority and then distance;
 manual selection only returns the explicitly requested registry ID. The
@@ -127,18 +153,20 @@ javac -source 8 -target 8 ...
 java net.vas.rdp.uav.CoreMissionTest
 ```
 
-The Gradle test task also runs the JUnit core suite in
-`src/test/java/net/vas/rdp/uav/RdpUavCoreTest.java`. It covers mission
-transition guards, mission NBT persistence, target normalization and
-selection, target-lock ordering, assignment conflicts, RF energy bounds and
-persistence, and square-strike native-node geometry:
+The Gradle test task runs the JUnit contract suites in
+`src/test/java/net/vas/rdp/uav/`. They cover mission transition guards,
+mission NBT persistence, exact target normalization and selection, target-lock
+ordering and packet identity, assignment conflicts and reassignment, corridor
+safety decisions, RF energy bounds and persistence, scan-report persistence,
+and square-strike native-node geometry:
 
 ```text
 gradlew.bat test --no-daemon
 ```
 
 These tests are source/API validation only. They do not prove live McHeli
-steering, weapon release, projectile impact, target damage, self-destruct,
+steering, fixed-wing turning/orbiting, moving-target tracking, vehicle lock
+acceptance, weapon release, projectile impact, target damage, self-destruct,
 landing, parking, or HUD rendering. Those behaviors require a controlled
 Minecraft client/server test with the installed McHeli and WingMan runtime.
 
@@ -212,22 +240,21 @@ sensitive. `detonationRadius` defaults to `8` blocks and controls the AI
 proximity detonation distance. The trigger is implemented in `rdp-uav-addon`,
 not RDPMixins.
 
-## Operator AI target-lock override
+## Operator target lock
 
-When piloting or operating a kamikaze-capable UAV, aim the normal Minecraft
-crosshair at an exact entity and press the configurable `RDP UAV AI target
-lock` key (default `L`). The client sends only that entity UUID; the server
-revalidates that the entity is loaded, collidable, lockable by McHeli, and that
-the operator controls a UAV with a loaded self-destruct weapon. The server then
-creates a high-priority exact-target strike mission and WingMan flies the
-aircraft toward that locked entity.
+When piloting or operating a UAV, aim the normal Minecraft crosshair at an exact
+loaded entity or vehicle and press the configurable `RDP UAV AI target lock`
+key (default `L`). The client sends only that entity UUID; the server
+revalidates the dimension, identity, collision state, and operator ownership.
+The server creates a non-destructive exact-target tracking mission, so ordinary
+UAVs can approach, observe, and track targets without carrying a self-destruct
+weapon.
 
-Press the key twice within the configured double-tap window to clear the lock
-and abort the generated AI mission safely. The key is configurable through
-Minecraft's Controls menu. The generated `rdp-uav-kamikaze.cfg` setting
-`doubleTapWindowMillis` defaults to 350 ms. This feature never accepts a
-registry ID or nearby candidate as a substitute for the entity selected on
-screen, and it is unavailable to non-kamikaze UAVs.
+Press `J` (or use **Clear lock** in the dashboard) to clear the lock and
+request a normal WingMan return. Destructive attack and kamikaze behavior
+remain separate, server-gated actions and are never implied by a tracking lock.
+Both keys are configurable through Minecraft's Controls menu. Locking never
+substitutes a nearby entity for the exact entity selected on screen.
 
 ## AI tasking boundary
 

@@ -10,8 +10,8 @@ public final class KamikazeConfig {
     public static double minimumImpactSpeed = 0.35D;
     public static double impactSweepPadding = 0.35D;
     public static double noseTriggerDistance = 2.0D;
-    public static double closeFireDistance = 8.0D;
-    public static double detonationRadius = 8.0D;
+    public static double closeFireDistance = 1.0D;
+    public static double detonationRadius = 1.0D;
     public static long doubleTapWindowMillis = 350L;
 
     private KamikazeConfig() { }

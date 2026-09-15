@@ -47,10 +47,7 @@ public final class MissionCoordinator {
         }
         UUID assignedAircraft = aircraftByTarget.get(targetId);
         if (assignedAircraft != null && !assignedAircraft.equals(aircraftId)) {
-            if (force && assignedAircraft.equals(aircraftId)) {
-                return true;
-            }
-            return false;
+            return force && assignedAircraft.equals(aircraftId);
         }
         if (role != null && !role.trim().isEmpty()) {
             rolesByAircraft.put(aircraftId, role.trim());

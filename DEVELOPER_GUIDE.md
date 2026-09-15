@@ -378,27 +378,26 @@ Operators can manually fire a SelfDestruct payload with the
 operator ownership, the destructive weapon flag, and ammunition, then calls
 the same adapter without requiring a mission target or autonomous approach.
 
-### Operator AI target lock
+### Operator target lock
 
 `RdpUavClientKeys` uses Minecraft's `objectMouseOver.entityHit`, so the input
 refers to the exact entity under the operator's crosshair rather than a
-registry search result. `AiTargetLock` carries only the UUID and a clear flag.
+registry search result. `L` locks that entity in one press; `J` (or the
+dashboard button) clears the lock. `AiTargetLock` carries only the UUID and a
+clear flag.
 `ServerAiTargetLockHandler` performs the authoritative checks:
 
 * the sender controls the McHeli UAV;
 * the target is loaded, collidable, and not the aircraft itself;
-* McHeli's `canLockEntity` accepts the target;
-* the aircraft has an available weapon with `destruct=true`;
 * no other mission already owns the aircraft.
 
-After validation, the server creates a strike mission with an exact manual
-target specification. `MissionLifecycle` recognizes the active operator lock,
-refreshes WingMan's target coordinates, arms the addon kamikaze path after
-`TARGET_LOCKED`, and fires the self-destruct weapon at
-`KamikazeConfig.detonationRadius`. A second lock-key press inside
-`doubleTapWindowMillis` clears the runtime lock, requests recovery, aborts the
-generated mission, and releases its assignment. Locks are runtime-only and
-must be re-established after restart.
+After validation, the server creates a non-destructive reconnaissance mission
+with an exact manual target specification. `MissionLifecycle` refreshes a
+bounded native WingMan approach/orbit route as the target moves and only
+advances after WingMan reports route progress. The separate `J` key or
+dashboard clear action clears the runtime lock and requests normal recovery.
+Destructive attack and kamikaze missions remain separate operator-authorized
+actions. Locks are runtime-only and must be re-established after restart.
 
 ### GUI packet flow
 
@@ -578,6 +577,22 @@ Minecraft client or server can start.
 
 ### Runtime validation
 
+The keyboard path is deliberately split between intent and execution:
+
+* `P`, `R`, and `K` submit mission requests through server packets.
+* `A` is the explicit attack authorization gate; `K` alone cannot arm a weapon.
+* `N` is an explicit destructive operator action; the server still requires
+  supported aircraft, target, payload, and route conditions.
+* `H` is a direct payload-fire request, but the server still validates operator
+  control, aircraft support, destructive weapon metadata, and ammunition.
+* `L` and `J` lock and clear exact targets without substituting nearby entities.
+* `X` aborts only the requesting player's own non-terminal mission.
+* `U` and `F` are read-only dashboard/data operations.
+
+For each key, verify both the client action and the corresponding server
+rejection path with an unauthorized player or invalid/stale mission before
+testing the successful path.
+
 A real integration validation must use a matching client and server:
 
 1. start the dedicated server;
@@ -590,7 +605,10 @@ A real integration validation must use a matching client and server:
 8. verify a different player cannot abort it;
 9. verify malformed or terminal abort requests do nothing;
 10. verify the mission record survives a save/restart cycle.
-11. create a mission from the GUI using Recon, Auto attack, and Point task;
+11. press `L` over an exact entity or McHeli vehicle and verify the server
+    reports a non-destructive reconnaissance lock;
+12. press `J` or dashboard **Clear lock** and verify recovery is requested;
+13. create a mission from the GUI using Recon, Auto attack, and Point task;
 12. verify malformed target IDs are rejected without creating a mission;
 13. verify an Auto attack mission arms WingMan only after `TARGET_LOCKED`;
 14. verify manual `Authorize attack` is accepted only at `TARGET_LOCKED`;
