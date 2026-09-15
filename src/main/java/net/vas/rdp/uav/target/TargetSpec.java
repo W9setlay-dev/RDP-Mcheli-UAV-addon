@@ -41,6 +41,10 @@ public final class TargetSpec {
         return new TargetSpec(TargetSelectionMode.AUTO, null, normalized, priority, 0, 0, 0);
     }
 
+    public static TargetSpec hostile(TargetPriority priority) {
+        return new TargetSpec(TargetSelectionMode.AUTO, null, "hostile", priority, 0, 0, 0);
+    }
+
     public static TargetSpec point(double x, double y, double z, TargetPriority priority) {
         if (Double.isNaN(x) || Double.isNaN(y) || Double.isNaN(z)
                 || Double.isInfinite(x) || Double.isInfinite(y) || Double.isInfinite(z)) {

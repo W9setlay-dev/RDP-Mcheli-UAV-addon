@@ -9,6 +9,8 @@ import net.vas.rdp.uav.ai.AutonomyLevel;
 import net.vas.rdp.uav.ai.FlightIntent;
 import net.vas.rdp.uav.flight.SquareStrikePlan;
 import net.vas.rdp.uav.mission.AircraftRecord;
+import net.vas.rdp.uav.mission.MissionCoordinator;
+import net.vas.rdp.uav.mission.MissionSafety;
 import net.vas.rdp.uav.mission.MissionState;
 import net.vas.rdp.uav.mission.MissionType;
 import net.vas.rdp.uav.mission.RDPMission;
@@ -140,11 +142,105 @@ public class AutonomousMissionTest {
     }
 
     @Test
+    public void missionSafetyBlocksDangerousActionsUntilTheRouteIsClear() {
+        assertEquals(MissionSafety.RouteDecision.DIRECT_INTERCEPT,
+                MissionSafety.decideRoute(18.0D, 6.0D, false, 20.0D));
+        assertEquals(MissionSafety.RouteDecision.OFFSET_ORBIT,
+                MissionSafety.decideRoute(70.0D, 8.0D, true, 20.0D));
+        assertEquals(MissionSafety.RouteDecision.SAFE_SIDE_APPROACH,
+                MissionSafety.decideRoute(40.0D, 40.0D, false, 20.0D));
+        assertEquals(MissionSafety.RouteDecision.HOLD_AND_REEVALUATE,
+                MissionSafety.decideRoute(0.0D, 0.0D, false, 20.0D));
+
+        MissionSafety.CorridorAssessment assessment = MissionSafety.evaluateCorridor(
+                30.0D, 12.0D, false, false, false, true, true, 20.0D);
+        assertTrue(assessment.isSafe());
+        assertEquals(MissionSafety.RouteDecision.DIRECT_INTERCEPT, assessment.getRouteDecision());
+
+        MissionSafety.CorridorAssessment blocked = MissionSafety.evaluateCorridor(
+                80.0D, 12.0D, true, false, false, true, true, 20.0D);
+        assertFalse(blocked.isSafe());
+        assertEquals(MissionSafety.RouteDecision.OFFSET_ORBIT, blocked.getRouteDecision());
+
+        assertTrue(MissionSafety.canAdvanceToDangerousAction(MissionState.TARGET_LOCKED));
+        assertFalse(MissionSafety.canAdvanceToDangerousAction(MissionState.SEARCHING));
+        assertTrue(MissionSafety.requiresTarget(MissionState.ATTACK_TARGET));
+        assertFalse(MissionSafety.requiresTarget(MissionState.CRUISE));
+    }
+
+    @Test
+    public void missionCoordinatorPreventsDuplicateTargetClaims() {
+        MissionCoordinator coordinator = new MissionCoordinator();
+        UUID aircraftA = UUID.randomUUID();
+        UUID aircraftB = UUID.randomUUID();
+        UUID target = UUID.randomUUID();
+
+        assertTrue(coordinator.claim(aircraftA, target));
+        assertFalse(coordinator.claim(aircraftB, target));
+        assertTrue(coordinator.isAssigned(aircraftA, target));
+        assertTrue(coordinator.isTargetOccupied(target));
+
+        coordinator.release(aircraftA, target);
+        assertFalse(coordinator.isAssigned(aircraftA, target));
+        assertFalse(coordinator.isTargetOccupied(target));
+
+        assertTrue(coordinator.claim(aircraftB, target));
+        assertEquals(1, coordinator.activeMissionCount());
+    }
+
+    @Test
+    public void missionCoordinatorSupportsRoleBasedReassignmentAndCoverageMetadata() {
+        MissionCoordinator coordinator = new MissionCoordinator();
+        UUID aircraftA = UUID.randomUUID();
+        UUID aircraftB = UUID.randomUUID();
+        UUID targetA = UUID.randomUUID();
+        UUID targetB = UUID.randomUUID();
+
+        coordinator.setRole(aircraftA, "SCOUT");
+        coordinator.setCoverageZone(aircraftA, "RIVER");
+        assertTrue(coordinator.claim(aircraftA, targetA, "SCOUT", "RIVER"));
+        assertTrue(coordinator.isAssigned(aircraftA, targetA));
+        assertEquals("SCOUT", coordinator.aircraftRole(aircraftA));
+        assertEquals("RIVER", coordinator.coverageZone(aircraftA));
+
+        assertFalse(coordinator.claim(aircraftB, targetA, "ATTACK", "RIVER"));
+        assertTrue(coordinator.reassign(aircraftA, targetA, targetB, false, "ATTACK", "RIVER"));
+        assertFalse(coordinator.isAssigned(aircraftA, targetA));
+        assertTrue(coordinator.isAssigned(aircraftA, targetB));
+
+        coordinator.release(aircraftA);
+        assertFalse(coordinator.isTargetOccupied(targetB));
+        assertEquals(0, coordinator.activeMissionCount());
+    }
+
+    @Test
+    public void targetSelectorPrefersHigherThreatClassificationBeforeDistance() {
+        TargetSelector<String> selector = new TargetSelector<String>();
+        String selected = selector.select(TargetSpec.hostile(TargetPriority.HIGH),
+                Arrays.asList(
+                        candidate("minecraft:zombie", "zombie", TargetPriority.HIGH, 100.0D),
+                        candidate("bandit:heavy_guard", "guard", TargetPriority.HIGH, 10.0D)));
+        assertEquals("guard", selected);
+    }
+
+    @Test
     public void targetSelectorDoesNotSubstituteWhenManualTargetIsMissing() {
         TargetSelector<String> selector = new TargetSelector<String>();
         String selected = selector.select(TargetSpec.manual("hostile:target", TargetPriority.HIGH),
                 Arrays.asList(candidate("hostile:other", "wrong")));
         assertNull(selected);
+    }
+
+    @Test
+    public void targetSelectorMatchesHostileNamespaceCandidates() {
+        TargetSelector<String> selector = new TargetSelector<String>();
+        String selected = selector.select(TargetSpec.hostile(TargetPriority.HIGH),
+                Arrays.asList(
+                        candidate("minecraft:zombie", "zombie"),
+                        candidate("minecraft:iron_golem", "golem"),
+                        candidate("farmersdelight:tomato", "tomato"),
+                        candidate("minecraft:diamond_ore", "ore")));
+        assertEquals("zombie", selected);
     }
 
     private static RDPMission mission(AiTaskRequest request, UUID aircraftId) {
@@ -163,11 +259,17 @@ public class AutonomousMissionTest {
     }
 
     private static TargetSelector.Candidate<String> candidate(final String id, final String value) {
+        return candidate(id, value, TargetPriority.HIGH, 1.0D);
+    }
+
+    private static TargetSelector.Candidate<String> candidate(final String id, final String value,
+                                                            final TargetPriority priority,
+                                                            final double distanceSquared) {
         return new TargetSelector.Candidate<String>() {
             public String getRegistryId() { return id; }
-            public double getDistanceSquared() { return 1.0D; }
+            public double getDistanceSquared() { return distanceSquared; }
             public boolean isValid() { return true; }
-            public TargetPriority getPriority() { return TargetPriority.HIGH; }
+            public TargetPriority getPriority() { return priority; }
             public String getValue() { return value; }
         };
     }

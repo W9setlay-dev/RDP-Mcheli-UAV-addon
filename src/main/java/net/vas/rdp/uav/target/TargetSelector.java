@@ -36,11 +36,25 @@ public final class TargetSelector<T> {
     private boolean isPreferred(Candidate<T> candidate, Candidate<T> current) {
         int priority = Integer.compare(candidate.getPriority().getWeight(),
                 current.getPriority().getWeight());
-        return priority > 0 || (priority == 0
-                && candidate.getDistanceSquared() < current.getDistanceSquared());
+        if (priority > 0) return true;
+        if (priority < 0) return false;
+
+        int score = Integer.compare(TargetClassifier.threatScore(candidate.getRegistryId()),
+                TargetClassifier.threatScore(current.getRegistryId()));
+        if (score > 0) return true;
+        if (score < 0) return false;
+
+        return candidate.getDistanceSquared() < current.getDistanceSquared();
     }
 
     private boolean matchesNamespace(TargetSpec spec, String registryId) {
-        return registryId != null && registryId.startsWith(spec.getNamespace() + ":");
+        if (registryId == null || spec == null) {
+            return false;
+        }
+        if (TargetClassifier.isHostileNamespace(spec.getNamespace())) {
+            return TargetClassifier.matchesHostileNamespace(registryId, spec.getNamespace());
+        }
+        String namespace = spec.getNamespace();
+        return namespace != null && registryId.startsWith(namespace + ":");
     }
 }

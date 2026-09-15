@@ -134,8 +134,16 @@ public final class WingManFlightAdapter {
     }
 
     public boolean fireSelfDestructWeapon(MCH_EntityAircraft aircraft) {
+        return fireSelfDestructWeapon(aircraft, false);
+    }
+
+    public boolean fireSelfDestructWeapon(MCH_EntityAircraft aircraft, boolean requireNoseTrigger) {
+        if (aircraft == null) return false;
+        if (requireNoseTrigger && !KamikazeImpactDetector.hasNoseImpact(aircraft, KamikazeConfig.noseTriggerDistance)) {
+            return false;
+        }
         int weaponId = selectSelfDestructWeapon(aircraft);
-        if (weaponId < 0 || aircraft == null) return false;
+        if (weaponId < 0) return false;
         MCH_WeaponSet weapon = aircraft.getWeapon(weaponId);
         if (weapon == null || weapon.getInfo() == null || !weapon.getInfo().destruct
                 || weapon.getInfo().explosion <= 0.0F) return false;
@@ -152,9 +160,7 @@ public final class WingManFlightAdapter {
         if (!weapon.canFire()) return false;
         if (!(aircraft instanceof MCH_EntityHeli)) {
             int ammoBefore = weapon.getAmmo();
-            // McHeliCE's bomb SelfDestruct branch is helicopter-only and its
-            // plane path returns success without spawning a bomb or explosion.
-            // Detonate directly from the parsed weapon info for other aircraft.
+            // Plane and other non-heli airframes use the direct payload detonation branch.
             MCH_Explosion.newExplosion(
                     aircraft.world,
                     null,

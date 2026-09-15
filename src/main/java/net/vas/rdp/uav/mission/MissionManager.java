@@ -11,6 +11,7 @@ public final class MissionManager {
     private final AircraftAssignmentRegistry assignments = new AircraftAssignmentRegistry();
     private final AircraftRegistry aircraft = new AircraftRegistry();
     private final MissionQueue queue = new MissionQueue();
+    private final MissionCoordinator coordinator = new MissionCoordinator();
 
     public void registerAircraft(AircraftRecord record) { aircraft.register(record); }
     public AircraftRecord findAircraft(UUID aircraftId) { return aircraft.find(aircraftId); }
@@ -42,12 +43,16 @@ public final class MissionManager {
 
         try {
             aircraft.assign(mission.getAircraftId(), mission.getMissionId(), mission.getOwnerId());
+            if (mission.getTargetId() != null && !coordinator.claim(mission.getAircraftId(), mission.getTargetId())) {
+                throw new IllegalStateException("TARGET_ALREADY_ASSIGNED");
+            }
             RDPMissionWorldData.get(world).add(mission);
             queue.enqueue(mission);
             return mission;
         } catch (RuntimeException failure) {
             assignments.release(mission.getAircraftId(), mission.getMissionId());
             aircraft.release(mission.getAircraftId());
+            coordinator.release(mission.getAircraftId(), mission.getTargetId());
             throw failure;
         }
     }
@@ -56,6 +61,7 @@ public final class MissionManager {
         if (mission != null) {
             assignments.release(mission.getAircraftId(), mission.getMissionId());
             aircraft.release(mission.getAircraftId(), mission.getMissionId());
+            coordinator.release(mission.getAircraftId(), mission.getTargetId());
         }
     }
 

@@ -1,5 +1,32 @@
 # RDP UAV Missions
 
+## RDP hostile-world mission utility
+
+This addon is intended to behave as a persistent autonomous support system for a dangerous, dynamic RDP world. In a hostile environment, the highest-value behaviors are not generic aircraft movement tricks but practical mission utility:
+
+- persistent reconnaissance around bases, roads, depots, and anomaly zones
+- hostile-target filtering for parasite, military, bandit, and modded mob classes
+- route-based patrol and area coverage
+- persistent threat monitoring and target reacquisition
+- mission recovery after target loss, low fuel, or interruption
+- multi-UAV coordination that avoids duplicate coverage and supports reassignment
+- operator-visible reasoning before a dangerous action is committed
+
+The architecture and audit notes for this rework are recorded in `docs/`:
+
+- `docs/baseline-report.md`
+- `docs/audit-report.md`
+- `docs/current-architecture.md`
+- `docs/implementation-source-matrix.md`
+- `docs/proposed-architecture.md`
+- `docs/dependency-diagram.md`
+- `docs/api-verification-notes.md`
+- `docs/runtime-test-matrix.md`
+- `docs/bug-reproduction-matrix.md`
+- `docs/changelog.md`
+
+This keeps the project grounded in the actual McHeliCE/WingMan mission boundary and makes the hostile-world utility case explicit rather than relying on unsupported AI rhetoric.
+
 ## Operator-triggered kamikaze run
 
 For a locked attack mission, the pilot can explicitly press `N` or use the
@@ -24,7 +51,7 @@ Place the verified runtime jars at `libs/mcheli-ce-1.5.1.jar` and
 `RDP_CORE_JAR` to the installed instance jar paths. The jars are intentionally
 not copied into source control.
 
-The addon includes a small mission-control GUI and player-owned UAV mission
+The addon includes a tactical mission-control GUI and player-owned UAV mission
 commands. While piloting a McHeli UAV, authorize it with
 `/rdpuav authorize`, then create a manual-target reconnaissance mission with
 `/rdpuav mission create <namespace:id>` (append `attack` only when an attack
@@ -32,8 +59,11 @@ mission was intentionally configured). Use `/rdpuav mission gui` to monitor
 missions. The screen receives only the current
 player's mission summaries from the server; select a mission and use
 `Abort selected` to safely stop a non-terminal mission, Refresh requests a new
-snapshot, Operator help explains the AI pilot workflow, and Close exits the
-screen. Abort requests are checked server-side against the player's UUID,
+snapshot, and Close exits the screen. The dashboard provides an ALL/ACTIVE/ALERTS
+mission filter, free-text filtering, selected-mission details, and a live
+target-telemetry pane. `Lock crosshair [L]` sends the existing server-validated
+AI target-lock request for the entity under the crosshair; it does not bypass
+aircraft ownership, weapon, or target validation. Abort requests are checked server-side against the player's UUID,
 mission ownership, and terminal state. Authorization requires the player to
 be the McHeli UAV pilot; another player cannot create a mission for that UAV.
 Attack-intent missions begin in reconnaissance mode and automatically arm

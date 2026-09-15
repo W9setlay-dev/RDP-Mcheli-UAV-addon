@@ -16,6 +16,10 @@ public final class KamikazeImpactDetector {
     private KamikazeImpactDetector() { }
 
     public static boolean hasNoseImpact(MCH_EntityAircraft aircraft) {
+        return hasNoseImpact(aircraft, KamikazeConfig.noseTriggerDistance);
+    }
+
+    public static boolean hasNoseImpact(MCH_EntityAircraft aircraft, double triggerDistance) {
         if (aircraft == null || aircraft.world == null) return false;
         double speedSquared = aircraft.motionX * aircraft.motionX
                 + aircraft.motionY * aircraft.motionY
@@ -34,7 +38,7 @@ public final class KamikazeImpactDetector {
                 Math.max(previousNose.x, currentNose.x),
                 Math.max(previousNose.y, currentNose.y),
                 Math.max(previousNose.z, currentNose.z))
-                .grow(KamikazeConfig.impactSweepPadding);
+                .grow(KamikazeConfig.impactSweepPadding + triggerDistance);
 
         World world = aircraft.world;
         if (!world.getCollisionBoxes(aircraft, sweep).isEmpty()) {
@@ -49,21 +53,53 @@ public final class KamikazeImpactDetector {
                     || entity.isRidingSameEntity(aircraft)) {
                 continue;
             }
-            RdpUavDebug.debug("Kamikaze", "nose entity impact aircraft={} target={} type={} speed={}",
-                    aircraft.getUniqueID(), entity.getUniqueID(), entity.getClass().getName(),
-                    Math.sqrt(speedSquared));
-            return true;
+            double dx = entity.posX - currentNose.x;
+            double dy = entity.posY - currentNose.y;
+            double dz = entity.posZ - currentNose.z;
+            double distSq = dx * dx + dy * dy + dz * dz;
+            if (distSq <= triggerDistance * triggerDistance + 1.0D) {
+                RdpUavDebug.debug("Kamikaze", "nose entity impact aircraft={} target={} type={} speed={}",
+                        aircraft.getUniqueID(), entity.getUniqueID(), entity.getClass().getName(),
+                        Math.sqrt(speedSquared));
+                return true;
+            }
         }
         return false;
     }
 
+    public static boolean isAimedAtTargetInNoseZone(double aircraftX, double aircraftY, double aircraftZ,
+                                                    float yaw, float pitch,
+                                                    double targetX, double targetY, double targetZ,
+                                                    double triggerDistance) {
+        Vec3d forward = forwardVector(yaw, pitch);
+        double dx = targetX - aircraftX;
+        double dy = targetY - aircraftY;
+        double dz = targetZ - aircraftZ;
+        double projection = dx * forward.x + dy * forward.y + dz * forward.z;
+        if (projection <= 0.0D || projection > triggerDistance + 1.0D) {
+            return false;
+        }
+        double offsetX = dx - projection * forward.x;
+        double offsetY = dy - projection * forward.y;
+        double offsetZ = dz - projection * forward.z;
+        double offsetSq = offsetX * offsetX + offsetY * offsetY + offsetZ * offsetZ;
+        return offsetSq <= (1.25D + triggerDistance * 0.15D) * (1.25D + triggerDistance * 0.15D);
+    }
+
+    private static Vec3d forwardVector(float yaw, float pitch) {
+        double yawRad = Math.toRadians(yaw);
+        double pitchRad = Math.toRadians(pitch);
+        double x = -Math.sin(yawRad) * Math.cos(pitchRad);
+        double y = -Math.sin(pitchRad);
+        double z = Math.cos(yawRad) * Math.cos(pitchRad);
+        return new Vec3d(x, y, z);
+    }
+
     private static Vec3d nosePosition(MCH_EntityAircraft aircraft, double x, double y, double z,
                                       float yaw, float pitch) {
-        double forwardX = -Math.sin(Math.toRadians(yaw)) * Math.cos(Math.toRadians(pitch));
-        double forwardY = -Math.sin(Math.toRadians(pitch));
-        double forwardZ = Math.cos(Math.toRadians(yaw)) * Math.cos(Math.toRadians(pitch));
+        Vec3d forward = forwardVector(yaw, pitch);
         AxisAlignedBB bounds = aircraft.getEntityBoundingBox();
         double length = Math.max(bounds.maxX - bounds.minX, bounds.maxZ - bounds.minZ) * 0.5D + 0.5D;
-        return new Vec3d(x + forwardX * length, y + forwardY * length, z + forwardZ * length);
+        return new Vec3d(x + forward.x * length, y + forward.y * length, z + forward.z * length);
     }
 }

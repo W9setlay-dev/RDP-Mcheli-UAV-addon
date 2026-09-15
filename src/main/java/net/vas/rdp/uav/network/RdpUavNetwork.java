@@ -18,6 +18,10 @@ import net.vas.rdp.uav.flight.KamikazePilotOverride;
 public final class RdpUavNetwork {
     private static final SimpleNetworkWrapper CHANNEL = NetworkRegistry.INSTANCE.newSimpleChannel(
             new ResourceLocation(RDPUavMod.MOD_ID, "control").toString());
+    private static final net.vas.rdp.uav.flight.WingManFlightAdapter FLIGHT_ADAPTER =
+            new net.vas.rdp.uav.flight.WingManFlightAdapter();
+    private static final net.vas.rdp.uav.target.TargetResolver TARGET_RESOLVER =
+            new net.vas.rdp.uav.target.TargetResolver();
     private static boolean initialized;
 
     private RdpUavNetwork() { }
@@ -310,7 +314,7 @@ public final class RdpUavNetwork {
                         }
                     }
                     net.minecraft.entity.Entity target = selected.getTargetId() == null ? null
-                            : new net.vas.rdp.uav.target.TargetResolver().findLoaded(player.world, selected.getTargetId());
+                            : TARGET_RESOLVER.findLoaded(player.world, selected.getTargetId());
                     boolean point = selected.getTargetSelectionMode()
                             == net.vas.rdp.uav.target.TargetSelectionMode.POINT;
                     boolean targetStateRequiresEntity = !point && selected.getTargetId() != null;
@@ -433,8 +437,7 @@ public final class RdpUavNetwork {
                             for (net.minecraft.entity.Entity entity : player.world.loadedEntityList) {
                                 if (entity instanceof MCH_EntityAircraft
                                         && mission.getAircraftId().equals(entity.getUniqueID())) {
-                                    new net.vas.rdp.uav.flight.WingManFlightAdapter()
-                                            .release((MCH_EntityAircraft) entity);
+                                    FLIGHT_ADAPTER.release((MCH_EntityAircraft) entity);
                                     break;
                                 }
                             }
@@ -484,8 +487,7 @@ public final class RdpUavNetwork {
                         double y = mission.getTargetSpec().getY();
                         double z = mission.getTargetSpec().getZ();
                         if (mission.getTargetId() != null) {
-                            net.minecraft.entity.Entity target = new net.vas.rdp.uav.target.TargetResolver()
-                                    .findLoaded(player.world, mission.getTargetId());
+                            net.minecraft.entity.Entity target = TARGET_RESOLVER.findLoaded(player.world, mission.getTargetId());
                             if (target == null) {
                                 return;
                             }
@@ -493,7 +495,7 @@ public final class RdpUavNetwork {
                             y = target.posY;
                             z = target.posZ;
                         }
-                        if (!new net.vas.rdp.uav.flight.WingManFlightAdapter().armAttack(
+                        if (!FLIGHT_ADAPTER.armAttack(
                                 aircraft, x, y, z, mission.getObservationDistance(), mission.getTargetId())) {
                             return;
                         }
@@ -537,14 +539,11 @@ public final class RdpUavNetwork {
                         double y = mission.getTargetSpec().getY();
                         double z = mission.getTargetSpec().getZ();
                         if (mission.getTargetId() != null) {
-                            net.minecraft.entity.Entity target = new net.vas.rdp.uav.target.TargetResolver()
-                                    .findLoaded(player.world, mission.getTargetId());
+                            net.minecraft.entity.Entity target = TARGET_RESOLVER.findLoaded(player.world, mission.getTargetId());
                             if (target == null) return;
                             x = target.posX; y = target.posY; z = target.posZ;
                         }
-                        net.vas.rdp.uav.flight.WingManFlightAdapter adapter =
-                                new net.vas.rdp.uav.flight.WingManFlightAdapter();
-                        if (!adapter.armKamikaze(aircraft, x, y, z,
+                        if (!FLIGHT_ADAPTER.armKamikaze(aircraft, x, y, z,
                                 mission.getObservationDistance(), mission.getTargetId())) return;
                         mission.transitionTo(net.vas.rdp.uav.mission.MissionState.KAMIKADZE_TARGET,
                                 player.world.getTotalWorldTime());
@@ -567,11 +566,9 @@ public final class RdpUavNetwork {
                     MCH_EntityAircraft aircraft =
                             net.vas.rdp.uav.mission.UavControlAccess.findControlledAircraft(player);
                     if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, player)) return;
-                    net.vas.rdp.uav.flight.WingManFlightAdapter adapter =
-                            new net.vas.rdp.uav.flight.WingManFlightAdapter();
-                    if (!adapter.supportsKamikaze(aircraft)
-                            || !adapter.hasSelfDestructWeaponWithAmmo(aircraft)) return;
-                    if (adapter.fireSelfDestructWeapon(aircraft)) {
+                    if (!FLIGHT_ADAPTER.supportsKamikaze(aircraft)
+                            || !FLIGHT_ADAPTER.hasSelfDestructWeaponWithAmmo(aircraft)) return;
+                    if (FLIGHT_ADAPTER.fireSelfDestructWeapon(aircraft)) {
                         RdpUavDebug.debug("Network", "player fired SelfDestruct aircraft={} player={}",
                                 aircraft.getUniqueID(), player.getUniqueID());
                     }
@@ -651,17 +648,15 @@ public final class RdpUavNetwork {
                                     || mission.getState() == net.vas.rdp.uav.mission.MissionState.KAMIKADZE_DETONATED) {
                                 continue;
                             }
-                            net.vas.rdp.uav.flight.WingManFlightAdapter adapter =
-                                    new net.vas.rdp.uav.flight.WingManFlightAdapter();
                             if (mission.getState()
                                     == net.vas.rdp.uav.mission.MissionState.KAMIKADZE_TARGET) {
-                                adapter.requestReturn(aircraft, "RDP_AI_TARGET_LOCK_CLEARED");
+                                FLIGHT_ADAPTER.requestReturn(aircraft, "RDP_AI_TARGET_LOCK_CLEARED");
                                 mission.transitionTo(net.vas.rdp.uav.mission.MissionState.RETURNING,
                                         player.world.getTotalWorldTime());
                             } else {
                                 mission.transitionTo(net.vas.rdp.uav.mission.MissionState.ABORTED,
                                         player.world.getTotalWorldTime());
-                                adapter.release(aircraft);
+                                FLIGHT_ADAPTER.release(aircraft);
                                 RDPUavMod.missions().release(mission);
                             }
                             net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world).markDirty();
@@ -673,13 +668,10 @@ public final class RdpUavNetwork {
                     }
                     try {
                         java.util.UUID targetId = java.util.UUID.fromString(message.targetId);
-                        net.minecraft.entity.Entity target = new net.vas.rdp.uav.target.TargetResolver()
-                                .findLoaded(player.world, targetId);
-                        net.vas.rdp.uav.flight.WingManFlightAdapter adapter =
-                                new net.vas.rdp.uav.flight.WingManFlightAdapter();
+                        net.minecraft.entity.Entity target = TARGET_RESOLVER.findLoaded(player.world, targetId);
                         if (target == null || target == aircraft || !target.canBeCollidedWith()
                                 || aircraft.getAcInfo() == null
-                                || !adapter.hasSelfDestructWeaponWithAmmo(aircraft)
+                                || !FLIGHT_ADAPTER.hasSelfDestructWeaponWithAmmo(aircraft)
                                 || !aircraft.canLockEntity(target)) return;
                         if (RDPUavMod.missions().assignedMission(aircraft.getUniqueID()) != null) return;
                         net.minecraft.util.ResourceLocation key =

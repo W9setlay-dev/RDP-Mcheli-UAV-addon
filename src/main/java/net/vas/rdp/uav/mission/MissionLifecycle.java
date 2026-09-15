@@ -4,6 +4,8 @@ import com.norwood.mcheli.aircraft.MCH_EntityAircraft;
 import com.norwood.mcheli.wingman.wingman.WingmanEntry;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityList;
+import net.minecraft.util.math.RayTraceResult;
+import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
 import net.vas.rdp.uav.flight.WingManFlightAdapter;
 import net.vas.rdp.uav.persistence.RDPMissionWorldData;
@@ -224,7 +226,7 @@ public final class MissionLifecycle {
                     }
                     continue;
                 }
-                if (flight.fireSelfDestructWeapon(aircraft)) {
+                if (flight.fireSelfDestructWeapon(aircraft, true)) {
                     LOGGER.info("Mission {} kamikaze detonation aircraft={} impact={} inRadius={} target={} tick={}",
                             mission.getMissionId(), aircraft.getUniqueID(), noseImpact,
                             targetInRadius, formatTarget(target), tick);
@@ -320,6 +322,26 @@ public final class MissionLifecycle {
             else mission.lockTarget(target.entity.getUniqueID(), tick);
             return true;
         case TARGET_LOCKED:
+                MissionSafety.RouteDecision approach = evaluateApproach(world, aircraft, target, mission);
+                if (approach != MissionSafety.RouteDecision.DIRECT_INTERCEPT) {
+                    if (approach == MissionSafety.RouteDecision.OFFSET_ORBIT
+                            || approach == MissionSafety.RouteDecision.SAFE_SIDE_APPROACH) {
+                        MissionState before = mission.getState();
+                        mission.transitionTo(MissionState.APPROACHING, tick);
+                        mission.transitionTo(MissionState.ON_TARGET, tick);
+                        mission.transitionTo(MissionState.ORBITING, tick);
+                        RdpUavDebug.debug("Lifecycle",
+                                "mission {} route decision={} aircraft={} target={} state {} -> {}",
+                                mission.getMissionId(), approach, aircraft.getUniqueID(),
+                                formatTarget(target), before, mission.getState());
+                        return true;
+                    }
+                    RdpUavDebug.debug("Lifecycle",
+                            "mission {} hold-and-reevaluate aircraft={} target={} route={} distance={}",
+                            mission.getMissionId(), aircraft.getUniqueID(), formatTarget(target),
+                            approach, target == null ? -1.0D : targetDistance(aircraft, target));
+                    return false;
+                }
                 UUID pilotTarget = KamikazePilotOverride.targetFor(aircraft.getUniqueID());
                 if (mission.isAttack() && target != null
                         && flight.hasSelfDestructWeaponWithAmmo(aircraft)
@@ -495,6 +517,29 @@ public final class MissionLifecycle {
         }
     }
 
+    private MissionSafety.RouteDecision evaluateApproach(World world, MCH_EntityAircraft aircraft,
+                                                        Target target, RDPMission mission) {
+        if (world == null || aircraft == null || target == null) {
+            return MissionSafety.RouteDecision.HOLD_AND_REEVALUATE;
+        }
+
+        double dx = target.x - aircraft.posX;
+        double dy = target.y - aircraft.posY;
+        double dz = target.z - aircraft.posZ;
+        double distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (distance <= 1.0D) {
+            return MissionSafety.RouteDecision.HOLD_AND_REEVALUATE;
+        }
+
+        double altitudeDelta = Math.abs(dy);
+        double observationDistance = mission.getObservationDistance();
+        Vec3d start = new Vec3d(aircraft.posX, aircraft.posY + aircraft.getEyeHeight(), aircraft.posZ);
+        Vec3d end = new Vec3d(target.x, target.y + 1.0D, target.z);
+        RayTraceResult hit = world.rayTraceBlocks(start, end, false, true, false);
+        boolean corridorBlocked = hit != null && hit.typeOfHit == RayTraceResult.Type.BLOCK;
+        return MissionSafety.decideRoute(distance, altitudeDelta, corridorBlocked, observationDistance);
+    }
+
     private boolean atTarget(MCH_EntityAircraft aircraft, Target target, RDPMission mission) {
         if (target == null) return false;
         double dx = aircraft.posX - target.x;
@@ -573,9 +618,7 @@ public final class MissionLifecycle {
     }
 
     private boolean requiresTarget(MissionState state) {
-        return state == MissionState.TARGET_LOCKED || state == MissionState.ATTACK_TARGET
-                || state == MissionState.APPROACHING || state == MissionState.ON_TARGET
-                || state == MissionState.ORBITING || state == MissionState.SCANNING;
+        return MissionSafety.requiresTarget(state);
     }
 
     private boolean terminal(MissionState state) {

@@ -28,6 +28,10 @@ public final class RdpUavTargetHud {
         receivedAt = System.currentTimeMillis();
     }
 
+    public Telemetry snapshot() {
+        return telemetry;
+    }
+
     @SubscribeEvent
     public void render(RenderGameOverlayEvent.Post event) {
         if (event.getType() != RenderGameOverlayEvent.ElementType.ALL
@@ -39,6 +43,13 @@ public final class RdpUavTargetHud {
         // UAV HUDs because the client does not always expose the controlled craft.
         if (RdpUavHudConfig.telemetryVisible) drawTelemetry(mc, event.getResolution().getScaledWidth(),
                 event.getResolution().getScaledHeight());
+        if (RdpUavHudConfig.anomalyAlertEnabled) {
+            RdpUavAnomalyAlert.Alert alert = RdpUavAnomalyAlert.evaluate(mc.world, mc.player);
+            if (alert != null) {
+                RdpUavAnomalyAlert.drawAlert(mc, event.getResolution().getScaledWidth(),
+                        event.getResolution().getScaledHeight(), alert);
+            }
+        }
         if (RdpUavHudConfig.markerVisible && telemetry.hasPosition) drawMarker(mc,
                 event.getResolution().getScaledWidth(), event.getResolution().getScaledHeight());
     }
@@ -94,6 +105,14 @@ public final class RdpUavTargetHud {
         GL11.glEnd();
         GlStateManager.enableTexture2D();
         GlStateManager.popMatrix();
+
+        if (telemetry.registryId != null && !telemetry.registryId.isEmpty()) {
+            FontRenderer font = mc.fontRenderer;
+            int labelX = (int) Math.round(screen[0] + 12.0D);
+            int labelY = (int) Math.round(screen[1] - 12.0D);
+            font.drawStringWithShadow(telemetry.registryId, labelX, labelY, 0xFFFF5555);
+            font.drawStringWithShadow("LOCK " + telemetry.targetState, labelX, labelY + 10, 0xFFFFFFFF);
+        }
     }
 
     private double[] project(Minecraft mc, double x, double y, double z, int width, int height) {

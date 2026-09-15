@@ -51,9 +51,14 @@ public final class TargetResolver {
             ResourceLocation key = EntityList.getKey(entity);
             if (key == null) continue;
             String id = key.toString();
-            boolean matches = specification.getMode() == TargetSelectionMode.MANUAL
-                    ? id.equals(specification.getRegistryId())
-                    : id.startsWith(specification.getNamespace() + ":");
+            boolean matches;
+            if (specification.getMode() == TargetSelectionMode.MANUAL) {
+                matches = id.equals(specification.getRegistryId());
+            } else if (TargetClassifier.isHostileNamespace(specification.getNamespace())) {
+                matches = TargetClassifier.isHostileCandidate(id);
+            } else {
+                matches = id.startsWith(specification.getNamespace() + ":");
+            }
             if (matches) result.add(new EntityCandidate(entity, id, distance));
         }
         Collections.sort(result, new Comparator<EntityCandidate>() {

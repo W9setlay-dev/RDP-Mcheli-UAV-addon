@@ -11,3 +11,6 @@
 *.md
 !DEVELOPER_GUIDE.md
 !README.md
+!BUILD_VALIDATION_REPORT.md
+!docs/
+!docs/*.md

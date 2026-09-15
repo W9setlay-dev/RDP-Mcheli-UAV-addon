@@ -9,6 +9,7 @@ public final class KamikazeConfig {
     public static final String MIN_SPEED_KEY = "rdpuav_kamikaze_min_speed";
     public static double minimumImpactSpeed = 0.35D;
     public static double impactSweepPadding = 0.35D;
+    public static double noseTriggerDistance = 2.0D;
     public static double closeFireDistance = 8.0D;
     public static double detonationRadius = 8.0D;
     public static long doubleTapWindowMillis = 350L;
@@ -26,6 +27,10 @@ public final class KamikazeConfig {
                 impactSweepPadding,
                 "Extra block/entity collision padding around the UAV nose sweep.",
                 0.05D, 2.0D).getDouble();
+        noseTriggerDistance = config.get("kamikaze", "noseTriggerDistance",
+                noseTriggerDistance,
+                "Maximum forward distance from the aircraft nose at which a block/entity/vehicle triggers a self-destruct payload.",
+                0.5D, 8.0D).getDouble();
         closeFireDistance = config.get("kamikaze", "closeFireDistance",
                 closeFireDistance,
                 "Distance at which an AI-locked kamikaze UAV fires its self-destruct weapon.",
