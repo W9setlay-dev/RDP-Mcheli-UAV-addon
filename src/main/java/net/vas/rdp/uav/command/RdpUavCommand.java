@@ -43,7 +43,7 @@ public final class RdpUavCommand extends CommandBase {
     @Override
     @Nonnull
     public String getUsage(ICommandSender sender) {
-        return "/rdpuav authorize | debug on|off|status|reload | swarm create <name> | swarm add <id> | swarm remove <id> <aircraft> | swarm pause|resume|disband <id> | swarm reform <id> <formation> | mission ...";
+        return "/rdpuav authorize | debug on|off|status|reload | swarm create <name> | swarm add <id> | swarm remove <id> <aircraft> | swarm pause|resume|disband <id> | swarm reform <id> <formation> | mission return | mission ...";
     }
 
     @Override
@@ -62,7 +62,7 @@ public final class RdpUavCommand extends CommandBase {
         }
         if (args.length == 2 && "mission".equalsIgnoreCase(args[0])) {
             return getListOfStringsMatchingLastWord(args, "create", "ai", "attack-point",
-                    "square", "gui", "list", "status");
+                    "square", "return", "gui", "list", "status");
         }
         return java.util.Collections.emptyList();
     }
@@ -101,6 +101,10 @@ public final class RdpUavCommand extends CommandBase {
         }
         if ("square".equalsIgnoreCase(args[1])) {
             createSquareStrike(player, args);
+            return;
+        }
+        if ("return".equalsIgnoreCase(args[1])) {
+            returnToBase(player);
             return;
         }
         if ("create".equalsIgnoreCase(args[1])) {
@@ -147,6 +151,40 @@ public final class RdpUavCommand extends CommandBase {
             return;
         }
         sender.sendMessage(new TextComponentString(getUsage(sender)));
+    }
+
+    private void returnToBase(EntityPlayer player) {
+        MCH_EntityAircraft aircraft = UavControlAccess.findControlledAircraft(player);
+        if (!UavControlAccess.isOperator(aircraft, player)) {
+            player.sendMessage(new TextComponentString("You must control the aircraft to request return-to-base."));
+            return;
+        }
+        RDPMission mission = null;
+        for (RDPMission candidate : RDPMissionWorldData.get(player.world).getRepository()
+                .byOwner(player.getUniqueID())) {
+            if (candidate.getAircraftId().equals(aircraft.getUniqueID()) && !candidate.isTerminal()) {
+                mission = candidate;
+                break;
+            }
+        }
+        if (mission == null) {
+            player.sendMessage(new TextComponentString("No active mission is assigned to this aircraft."));
+            return;
+        }
+        if (mission.getState() == net.vas.rdp.uav.mission.MissionState.PLANNED
+                || mission.getState() == net.vas.rdp.uav.mission.MissionState.DISPATCHED) {
+            player.sendMessage(new TextComponentString("Mission has not entered flight; return-to-base is unavailable."));
+            return;
+        }
+        if (!new WingManFlightAdapter().requestReturn(aircraft, "RDP_PLAYER_RTB")) {
+            player.sendMessage(new TextComponentString("Native McHeli return-to-base was rejected."));
+            return;
+        }
+        mission.transitionTo(net.vas.rdp.uav.mission.MissionState.RETURNING,
+                player.world.getTotalWorldTime());
+        RDPMissionWorldData.get(player.world).markDirty();
+        player.sendMessage(new TextComponentString("Return-to-base requested for mission "
+                + mission.getMissionId() + "."));
     }
 
     private void handleSwarm(EntityPlayer player, String[] args) {
@@ -244,7 +282,7 @@ public final class RdpUavCommand extends CommandBase {
         MCH_EntityAircraft aircraft = UavControlAccess.findControlledAircraft(player);
         if (!UavControlAccess.isOperator(aircraft, player)) {
             player.sendMessage(new TextComponentString(
-                    "Authorization requires piloting a McHeli UAV. Mount the UAV and try again."));
+                    "Aircraft cannot be found or controlled. Pilot the McHeli aircraft or connect to its UAV station, then try again."));
             return;
         }
         UUID aircraftId = aircraft.getUniqueID();
@@ -268,7 +306,7 @@ public final class RdpUavCommand extends CommandBase {
         MCH_EntityAircraft aircraft = UavControlAccess.findControlledAircraft(player);
         if (!UavControlAccess.isOperator(aircraft, player)) {
             player.sendMessage(new TextComponentString(
-                    "You must be piloting an authorized McHeli UAV."));
+                    "Aircraft cannot be found or controlled. Pilot the McHeli aircraft or connect to its UAV station."));
             return;
         }
         UUID aircraftId = aircraft.getUniqueID();

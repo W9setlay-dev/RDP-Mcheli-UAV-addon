@@ -51,6 +51,7 @@ public final class RdpUavNetwork {
         CHANNEL.registerMessage(ClientSwarmTelemetryHandler.class, SwarmTelemetry.class, 11, Side.CLIENT);
         CHANNEL.registerMessage(ServerContactSelectionHandler.class, ContactSelection.class, 12, Side.SERVER);
         CHANNEL.registerMessage(ServerClearMissionsHandler.class, ClearMissions.class, 13, Side.SERVER);
+        CHANNEL.registerMessage(ServerReturnToBaseHandler.class, ReturnToBase.class, 14, Side.SERVER);
     }
 
     public static void openMissionControl(EntityPlayerMP player) {
@@ -71,6 +72,10 @@ public final class RdpUavNetwork {
 
     public static void clearAllMissions() {
         CHANNEL.sendToServer(new ClearMissions("", true));
+    }
+
+    public static void returnToBase(String missionId) {
+        CHANNEL.sendToServer(new ReturnToBase(missionId));
     }
 
     public static void authorizeAttack(String missionId) {
@@ -177,6 +182,50 @@ public final class RdpUavNetwork {
         public AbortMission(String missionId) { this.missionId = missionId == null ? "" : missionId; }
         public void fromBytes(ByteBuf buffer) { missionId = readString(buffer); }
         public void toBytes(ByteBuf buffer) { writeString(buffer, missionId); }
+    }
+
+    public static final class ReturnToBase implements IMessage {
+        private String missionId = "";
+        public ReturnToBase() { }
+        public ReturnToBase(String missionId) { this.missionId = missionId == null ? "" : missionId; }
+        public void fromBytes(ByteBuf buffer) { missionId = readString(buffer); }
+        public void toBytes(ByteBuf buffer) { writeString(buffer, missionId); }
+    }
+
+    public static final class ServerReturnToBaseHandler
+            implements IMessageHandler<ReturnToBase, IMessage> {
+        public IMessage onMessage(final ReturnToBase message, MessageContext context) {
+            final EntityPlayerMP player = context.getServerHandler().player;
+            Objects.requireNonNull(player.getServer()).addScheduledTask(new Runnable() {
+                public void run() {
+                    try {
+                        java.util.UUID id = java.util.UUID.fromString(message.missionId);
+                        net.vas.rdp.uav.mission.RDPMission mission =
+                                net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
+                                        .getRepository().find(id);
+                        if (mission == null || !player.getUniqueID().equals(mission.getOwnerId())
+                                || mission.isTerminal()) return;
+                        MCH_EntityAircraft aircraft = null;
+                        for (net.minecraft.entity.Entity entity : player.world.loadedEntityList) {
+                            if (entity instanceof MCH_EntityAircraft
+                                    && mission.getAircraftId().equals(entity.getUniqueID())) {
+                                aircraft = (MCH_EntityAircraft) entity;
+                                break;
+                            }
+                        }
+                        if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, player)
+                                || !FLIGHT_ADAPTER.requestReturn(aircraft, "RDP_PLAYER_RTB")) return;
+                        mission.transitionTo(net.vas.rdp.uav.mission.MissionState.RETURNING,
+                                player.world.getTotalWorldTime());
+                        net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world).markDirty();
+                        sendMissionData(player);
+                    } catch (IllegalArgumentException ignored) {
+                        RdpUavDebug.debug("Network", "RTB rejected invalid mission={}", message.missionId);
+                    }
+                }
+            });
+            return null;
+        }
     }
 
     /** Operator-only mission cleanup; false clears one id, true clears all owned missions. */

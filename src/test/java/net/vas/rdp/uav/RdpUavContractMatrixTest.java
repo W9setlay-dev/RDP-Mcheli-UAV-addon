@@ -103,6 +103,17 @@ public class RdpUavContractMatrixTest {
             assertEquals(MissionState.SEARCHING, mission.getState());
         }
 
+        @Test
+        public void recoverableConditionsDoNotImmediatelyFailMission() {
+            RDPMission mission = mission();
+            mission.transitionTo(MissionState.DISPATCHED, 1);
+            mission.transitionTo(MissionState.TAKEOFF, 2);
+            assertTrue(mission.defer("CHUNK_UNLOADED", MissionState.WAITING_FOR_WORLD, 3));
+            assertEquals(MissionState.WAITING_FOR_WORLD, mission.getState());
+            assertEquals(1, mission.getRecoveryAttempts());
+            assertTrue(!mission.isTerminal());
+        }
+
     @Test
     public void assignmentReleaseCannotBeHijackedByAnotherMission() {
         UUID aircraft = UUID.randomUUID();
@@ -354,6 +365,14 @@ public class RdpUavContractMatrixTest {
     }
 
     private static boolean declaredSuccessor(MissionState state, MissionState next) {
+        if (next == MissionState.WAITING_FOR_WORLD
+                || next == MissionState.EXECUTION_STALLED
+                || next == MissionState.REPLAN
+                || next == MissionState.RECOVERING) {
+            return state != MissionState.COMPLETE && state != MissionState.ABORTED
+                    && state != MissionState.FAILED
+                    && state != MissionState.KAMIKADZE_DETONATED;
+        }
         switch (state) {
             case PLANNED: return next == MissionState.DISPATCHED;
             case DISPATCHED: return next == MissionState.TAXI || next == MissionState.TAKEOFF;
@@ -385,7 +404,22 @@ public class RdpUavContractMatrixTest {
             case SCANNING: return next == MissionState.DEEP_SCANNING
                     || next == MissionState.REPORTING;
             case DEEP_SCANNING: return next == MissionState.REPORTING;
-            case REPORTING: return next == MissionState.RETURNING;
+            case REPORTING: return next == MissionState.HOLDING
+                    || next == MissionState.RETURNING;
+            case HOLDING: return next == MissionState.RETURNING
+                    || next == MissionState.COMPLETE;
+            case WAITING_FOR_WORLD:
+            case EXECUTION_STALLED:
+            case RECOVERING:
+                return next == MissionState.REPLAN
+                        || next == MissionState.WAITING_FOR_WORLD
+                        || next == MissionState.EXECUTION_STALLED
+                        || next == MissionState.RECOVERING;
+            case REPLAN:
+                return next == MissionState.SEARCHING
+                        || next == MissionState.TARGET_LOCKED
+                        || next == MissionState.APPROACHING
+                        || next == MissionState.ATTACK_TARGET;
             case RETURNING: return next == MissionState.LANDING;
             case LANDING: return next == MissionState.PARKING;
             case PARKING: return next == MissionState.COMPLETE;

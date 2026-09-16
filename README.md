@@ -74,6 +74,10 @@ attack` remains available as a manual operator override. The server still
 checks ownership, UAV status, target coordinates, and mission state before
 arming the attack adapter. Dispatch starts on the server world tick and is
 handed to WingMan through the adapter.
+Completed observation/strike missions enter `HOLDING`; they do not silently
+land or return. Use **Return to base** in the dashboard, or
+`/rdpuav mission return`, to request native McHeli return and landing for the
+selected/controlled mission.
 
 ### Mission execution keys
 
@@ -89,6 +93,7 @@ handed to WingMan through the adapter.
 | `L` | Exact target lock | Locks only a loaded, hostile, non-vehicle contact under the crosshair; no destructive payload is implied |
 | `J` | Clear target lock | Requests lock cancellation and normal WingMan recovery |
 | `X` | Abort selected mission | Requires a server-owned mission and releases the aircraft after aborting |
+| — | Return to base | Dashboard button or `/rdpuav mission return`; explicit operator request only |
 | `F` | Refresh missions | Requests a server-filtered snapshot; it does not mutate mission state |
 
 `K`, `N`, and `H` are intentionally distinct. `K` submits an attack plan,
@@ -108,7 +113,14 @@ they are not incorrectly rejected by the old 256-block acquisition search.
 Long-range/reusable profiles, including MQ-9, additionally require explicit
 destructive authorization before any kamikaze route. One-way/FPV square
 strikes are supported and use their configured terminal payload behavior
-(default self-destruct), while reusable square strikes return to base.
+(default self-destruct), while reusable square strikes remain under operator control until an explicit
+return-to-base request.
+
+Temporary execution conditions are not immediate failures. Missing entities
+use `WAITING_FOR_TARGET`, unavailable world/chunks use `WAITING_FOR_WORLD`,
+stalled native routes use `EXECUTION_STALLED`, and target/route recovery uses
+`REPLAN` with bounded persisted attempts. Only exhausted recovery becomes
+`FAILED`.
 
 For a survival-safe point attack, look at a block or structure from the
 piloted UAV and run `/rdpuav mission attack-point`. The server ray-traces the

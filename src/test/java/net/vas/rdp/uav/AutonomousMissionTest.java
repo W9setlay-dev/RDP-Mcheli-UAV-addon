@@ -65,10 +65,11 @@ public class AutonomousMissionTest {
         mission.transitionTo(MissionState.ON_TARGET, 10);
         mission.transitionTo(MissionState.SCANNING, 11);
         mission.transitionTo(MissionState.REPORTING, 12);
-        mission.transitionTo(MissionState.RETURNING, 13);
-        mission.transitionTo(MissionState.LANDING, 14);
-        mission.transitionTo(MissionState.PARKING, 15);
-        mission.transitionTo(MissionState.COMPLETE, 16);
+        mission.transitionTo(MissionState.HOLDING, 13);
+        mission.transitionTo(MissionState.RETURNING, 14);
+        mission.transitionTo(MissionState.LANDING, 15);
+        mission.transitionTo(MissionState.PARKING, 16);
+        mission.transitionTo(MissionState.COMPLETE, 17);
         assertEquals(MissionState.COMPLETE, mission.getState());
     }
 
@@ -105,13 +106,32 @@ public class AutonomousMissionTest {
         mission.transitionTo(MissionState.ON_TARGET, 8);
         mission.transitionTo(MissionState.SCANNING, 9);
         mission.transitionTo(MissionState.REPORTING, 10);
-        mission.transitionTo(MissionState.RETURNING, 11);
-        mission.transitionTo(MissionState.LANDING, 12);
-        mission.transitionTo(MissionState.PARKING, 13);
-        mission.transitionTo(MissionState.COMPLETE, 14);
+        mission.transitionTo(MissionState.HOLDING, 11);
+        mission.transitionTo(MissionState.RETURNING, 12);
+        mission.transitionTo(MissionState.LANDING, 13);
+        mission.transitionTo(MissionState.PARKING, 14);
+        mission.transitionTo(MissionState.COMPLETE, 15);
         assertTrue(mission.isTerminal());
         mission.transitionTo(MissionState.COMPLETE, 15);
         assertEquals(MissionState.COMPLETE, mission.getState());
+    }
+
+    @Test
+    public void recoverableConditionsExhaustBeforeFailure() {
+        RDPMission mission = mission(new AiTaskRequest(UUID.randomUUID(), UUID.randomUUID(),
+                MissionType.RECONNAISSANCE, TargetSpec.point(20, 90, -4, TargetPriority.NORMAL),
+                TargetPriority.NORMAL, false, AutonomyLevel.AUTONOMOUS), UUID.randomUUID());
+
+        for (int tick = 1; tick <= 5; tick++) {
+            assertTrue(mission.defer("WORLD_UNAVAILABLE",
+                    MissionState.WAITING_FOR_WORLD, tick));
+            assertEquals(MissionState.WAITING_FOR_WORLD, mission.getState());
+        }
+        assertFalse(mission.defer("WORLD_UNAVAILABLE",
+                MissionState.WAITING_FOR_WORLD, 6));
+        assertEquals(MissionState.FAILED, mission.getState());
+        assertEquals("WORLD_UNAVAILABLE_RECOVERY_EXHAUSTED",
+                mission.getFailureReason());
     }
 
     @Test

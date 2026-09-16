@@ -73,6 +73,9 @@ public final class GuidedWeaponAdapter {
         if (capability == null || capability.getBehavior() == GuidedNativeBehavior.UNSUPPORTED) {
             return GuidedWeaponDecision.reject("UNSUPPORTED_GUIDANCE");
         }
+        if (!GuidedNativeContract.supportsAiGuidance(capability.getBehavior())) {
+            return GuidedWeaponDecision.reject("AI_TV_GUIDANCE_UNSUPPORTED");
+        }
         GuidedSafetyDecision safety = GuidedSafetyPolicy.evaluate(world, aircraft, objective,
                 requireLineOfSight, capability.getTerminalProfile());
         if (safety != GuidedSafetyDecision.ALLOW) {

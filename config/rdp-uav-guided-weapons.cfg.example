@@ -20,7 +20,7 @@ noOrbit=true
 
 [weapon.asmissile]
 type=asmissile
-behavior=COORDINATE_TV_LASER
+behavior=COORDINATE_BALLISTIC
 objectives=SQUARE
 maximumAircraftSpeed=0
 minimumAltitude=0
@@ -35,6 +35,12 @@ maximumAircraftSpeed=0
 minimumAltitude=0
 maximumAltitude=4096
 noOrbit=true
+
+# AI guidance is intentionally rejected for COORDINATE_TV_LASER because
+# McHeliCE obtains its terminal point from the native player camera/laser
+# path. Player-operated TV guidance remains native McHeliCE behavior.
+# COORDINATE_BALLISTIC preserves the weapon's native gravity and collision;
+# the addon only validates the release corridor and submits the target point.
 
 # Unsupported combinations are rejected server-side. This registry does not
 # create projectiles, mutate projectile position/velocity, or replace McHeli

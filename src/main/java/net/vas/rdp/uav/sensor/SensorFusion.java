@@ -20,11 +20,7 @@ public final class SensorFusion {
         if (usable.isEmpty()) {
             return new FusionResult(null, 0.0D, false, "No usable observations available");
         }
-        Collections.sort(usable, new Comparator<SensorObservation>() {
-            public int compare(SensorObservation left, SensorObservation right) {
-                return Double.compare(right.getConfidence(), left.getConfidence());
-            }
-        });
+        Collections.sort(usable, (left, right) -> Double.compare(right.getConfidence(), left.getConfidence()));
         SensorObservation best = usable.get(0);
         boolean disagreement = false;
         for (int i = 1; i < usable.size(); i++) {

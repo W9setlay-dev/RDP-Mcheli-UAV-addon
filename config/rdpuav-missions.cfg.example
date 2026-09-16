@@ -45,6 +45,8 @@ terminalPayloadBehavior=NONE
 detectionRange=2048
 lockRange=1536
 missionExecutionRange=64
+# Configure attackWeaponPriority in rdp-uav-vehicles.cfg:
+# agm114,agm114tv
 # Vehicle profiles also accept bounded native routing envelopes:
 # oneWaySpeed=0 (native McHeli default; no projectile steering is emulated)
 # attackEnvelope=64 (passed to the native WingMan ATTACK node)

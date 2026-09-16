@@ -52,6 +52,17 @@ public class GuidedWeaponTest {
     }
 
     @Test
+    public void registryUsesNativeTypeForDifferentWeaponDefinitionName() {
+        GuidedWeaponRegistry.clear();
+        GuidedWeaponCapability capability = new GuidedWeaponCapability("atmissile", "atmissile",
+                GuidedNativeBehavior.ENTITY_SEEKER, EnumSet.of(GuidedObjectiveType.ENTITY),
+                new GuidedTerminalProfile(0, true));
+        GuidedWeaponRegistry.register(capability);
+        assertEquals(capability, GuidedWeaponRegistry.find("agm114", "atmissile"));
+        GuidedWeaponRegistry.clear();
+    }
+
+    @Test
     public void objectiveMustBeAuthorizedBeforeReleaseBoundary() {
         GuidedStrikeObjective objective = GuidedStrikeObjective.square(UUID.randomUUID(), 0,
                 1, 2, 3, 0);
@@ -66,6 +77,14 @@ public class GuidedWeaponTest {
         assertEquals("GUIDED_TARGET_LOST", GuidedNativeContract.entityDecision(false, false));
         assertEquals("UNSUPPORTED_SEEKER_TARGET_ASSIGNMENT",
                 GuidedNativeContract.entityDecision(false, true));
+    }
+
+    @Test
+    public void tvLaserIsExplicitlyRejectedForAiButBallisticCoordinateIsAllowed() {
+        assertTrue(!GuidedNativeContract.supportsAiGuidance(
+        GuidedNativeBehavior.COORDINATE_TV_LASER));
+        assertTrue(GuidedNativeContract.supportsAiGuidance(
+        GuidedNativeBehavior.COORDINATE_BALLISTIC));
     }
 
     @Test

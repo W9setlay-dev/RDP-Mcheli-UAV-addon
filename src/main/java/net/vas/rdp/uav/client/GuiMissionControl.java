@@ -71,6 +71,10 @@ public final class GuiMissionControl extends GuiScreen {
     }
 
     public static void clearAll() { RdpUavNetwork.clearAllMissions(); }
+    public static void returnSelected() {
+        String id = selectedMissionId();
+        if (id != null) RdpUavNetwork.returnToBase(id);
+    }
 
     public static void createReconFromField() {
         if (active != null) active.createEntityMission(false);
@@ -102,24 +106,28 @@ public final class GuiMissionControl extends GuiScreen {
         buttonList.clear();
         int left = width / 2 - 220;
         int right = width / 2 + 15;
+        // Keep every action inside one of the two 205/220px content columns.
+        // The previous layout placed several buttons past the right panel and
+        // over the selected-mission heading.
         buttonList.add(new GuiButton(0, left, height - 28, 62, 20, "Refresh"));
-        buttonList.add(new GuiButton(1, left + 67, height - 28, 92, 20, help ? "Dashboard" : "Help"));
-        buttonList.add(new GuiButton(2, right + 158, height - 28, 62, 20, "Close"));
+        buttonList.add(new GuiButton(1, left + 67, height - 28, 62, 20, help ? "Dashboard" : "Help"));
+        buttonList.add(new GuiButton(2, right, height - 28, 62, 20, "Close"));
+        buttonList.add(new GuiButton(16, right + 67, height - 28, 115, 20, "Return to base"));
         buttonList.add(new GuiButton(3, left, height - 54, 100, 20, "Authorize [A]"));
         buttonList.add(new GuiButton(4, left + 105, height - 54, 100, 20, "Abort [X]"));
-        buttonList.add(new GuiButton(14, left + 210, height - 54, 100, 20, "Clear selected"));
-        buttonList.add(new GuiButton(15, left + 315, height - 54, 100, 20, "Clear all"));
+        buttonList.add(new GuiButton(13, right, height - 54, 100, 20, "Clear lock [J]"));
         buttonList.add(new GuiButton(8, right + 105, height - 54, 115, 20, "Nose-dive [N]"));
-        buttonList.add(new GuiButton(5, left, height - 80, 68, 20, "Recon [R]"));
-        buttonList.add(new GuiButton(6, left + 73, height - 80, 68, 20, "Attack [K]"));
-        buttonList.add(new GuiButton(7, left + 146, height - 80, 59, 20, "Point [P]"));
+        buttonList.add(new GuiButton(14, left, height - 80, 100, 20, "Clear selected"));
+        buttonList.add(new GuiButton(15, left + 105, height - 80, 100, 20, "Clear all"));
         buttonList.add(new GuiButton(9, right, height - 80, 100, 20, "Square strike"));
         buttonList.add(new GuiButton(10, right + 105, height - 80, 115, 20, "Lock crosshair [L]"));
-        buttonList.add(new GuiButton(13, right, height - 54, 100, 20, "Clear lock [J]"));
-        buttonList.add(new GuiButton(12, right, 66, 220, 20, filterLabel()));
+        buttonList.add(new GuiButton(5, left, height - 106, 64, 20, "Recon [R]"));
+        buttonList.add(new GuiButton(6, left + 70, height - 106, 64, 20, "Attack [K]"));
+        buttonList.add(new GuiButton(7, left + 140, height - 106, 65, 20, "Point [P]"));
+        buttonList.add(new GuiButton(12, right, 64, 220, 20, filterLabel()));
         for (int i = 0, shown = 0; i < missionRows.length && shown < 11; i++) {
             if (!matchesFilter(missionRows[i])) continue;
-            buttonList.add(new GuiButton(100 + i, left, 78 + shown * 17, 205, 15,
+            buttonList.add(new GuiButton(100 + i, left, 108 + shown * 17, 205, 15,
                     (i == selected ? "> " : "  ") + missionRows[i]));
             shown++;
         }
@@ -163,6 +171,9 @@ public final class GuiMissionControl extends GuiScreen {
         else if (button.id == 15) confirmDangerAction("clear-all", new Runnable() {
             @Override public void run() { clearAll(); }
         }, "Clear all of your mission records?");
+        else if (button.id == 16) confirmDangerAction("return-to-base", new Runnable() {
+            @Override public void run() { returnSelected(); }
+        }, "Request native McHeli return and landing for the selected mission?");
         else if (button.id == 5) createEntityMission(false);
         else if (button.id == 6) confirmDangerAction("attack", new Runnable() {
             @Override public void run() { createEntityMission(true); }
@@ -256,36 +267,37 @@ public final class GuiMissionControl extends GuiScreen {
             if (targetField != null) targetField.drawTextBox();
             drawString(fontRenderer, "MISSION FILTER", right, 30, 0xB0D8FF);
             if (filterField != null) filterField.drawTextBox();
-            if (!status.isEmpty()) drawString(fontRenderer, status, left, 61, 0xFFCC66);
+            if (!status.isEmpty()) drawString(fontRenderer, status, left, 64, 0xFFCC66);
             drawMissions(left, right);
         }
         super.drawScreen(mouseX, mouseY, partialTicks);
     }
 
     private void drawMissions(int left, int right) {
-        drawRect(left - 4, 74, left + 209, height - 89, 0x66000000);
-        drawRect(right - 4, 74, right + 224, height - 89, 0x66000000);
-        drawString(fontRenderer, "SERVER MISSIONS", left, 66, 0xB0D8FF);
+        int panelTop = 90;
+        drawRect(left - 4, panelTop, left + 209, height - 113, 0x66000000);
+        drawRect(right - 4, panelTop, right + 224, height - 113, 0x66000000);
+        drawString(fontRenderer, "SERVER MISSIONS", left, panelTop + 2, 0xB0D8FF);
         if (missionRows.length == 0) {
-            drawString(fontRenderer, "No missions assigned.", left, 85, 0xAAAAAA);
+            drawString(fontRenderer, "No missions assigned.", left, panelTop + 20, 0xAAAAAA);
         } else {
-            int y = 82;
+            int y = panelTop + 20;
             for (String row : missionRows) {
                 if (!matchesFilter(row)) continue;
                 drawString(fontRenderer, row, left, y, 0xFFFFFF);
                 y += 17;
-                if (y > height - 100) break;
+                if (y > height - 124) break;
             }
         }
-        drawString(fontRenderer, "SELECTED MISSION", right, 66, 0xB0D8FF);
+        drawString(fontRenderer, "SELECTED MISSION", right, panelTop + 2, 0xB0D8FF);
         if (selected >= 0 && selected < missionRows.length) {
-            drawString(fontRenderer, missionRows[selected], right, 86, 0xFFFFFF);
-            drawString(fontRenderer, "ID: " + missionIds[selected], right, 101, 0xAAAAAA);
+            drawString(fontRenderer, missionRows[selected], right, panelTop + 20, 0xFFFFFF);
+            drawString(fontRenderer, "ID: " + missionIds[selected], right, panelTop + 35, 0xAAAAAA);
         } else {
-            drawString(fontRenderer, "Select a mission to inspect.", right, 86, 0xAAAAAA);
+            drawString(fontRenderer, "Select a mission to inspect.", right, panelTop + 20, 0xAAAAAA);
         }
-        drawThreatSuggestions(right, 122);
-        drawTelemetry(right, 185);
+        drawThreatSuggestions(right, panelTop + 56);
+        drawTelemetry(right, panelTop + 130);
     }
 
     private void drawThreatSuggestions(int x, int y) {

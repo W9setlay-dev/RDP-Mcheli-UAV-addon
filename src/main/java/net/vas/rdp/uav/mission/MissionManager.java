@@ -28,6 +28,7 @@ public final class MissionManager {
         if (aircraft == null || player == null) return false;
         AircraftRecord existing = this.aircraft.find(aircraft.getUniqueID());
         if (existing == null) {
+            if (aircraft.getAcInfo() == null) return false;
             registerAircraft(new AircraftRecord(aircraft.getUniqueID(), player.getUniqueID(),
                     aircraft.dimension, aircraft.getAcInfo().name, true, true));
             return true;

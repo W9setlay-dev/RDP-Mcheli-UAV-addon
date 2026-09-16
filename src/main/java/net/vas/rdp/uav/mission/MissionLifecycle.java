@@ -42,7 +42,6 @@ import net.vas.rdp.uav.RdpUavDebug;
  */
 public final class MissionLifecycle {
     private static final Logger LOGGER = LogManager.getLogger("RDP-UAV/MissionLifecycle");
-    private static final long QUEUE_WAIT_TIMEOUT = 600L;
     private static final long MISSION_TIMEOUT = 12000L;
     private static final long WINGMAN_ENTRY_GRACE_TICKS = 20L;
 
@@ -102,13 +101,14 @@ public final class MissionLifecycle {
         long tick = world.getTotalWorldTime();
         MCH_EntityAircraft aircraft = findAircraft(world, mission.getAircraftId());
         if (aircraft == null) {
-            RdpUavDebug.debug("Lifecycle", "mission {} failed: aircraft not found {}",
+            RdpUavDebug.debug("Lifecycle", "mission {} waiting for aircraft {}",
                     mission.getMissionId(), mission.getAircraftId());
-            fail(world, mission, "AIRCRAFT_NOT_FOUND", tick);
+            defer(world, mission, "AIRCRAFT_NOT_FOUND", MissionState.WAITING_FOR_WORLD, tick);
             return;
         }
         if (aircraft.getAcInfo() == null) {
-            fail(world, mission, "AIRCRAFT_METADATA_UNAVAILABLE", tick);
+            defer(world, mission, "AIRCRAFT_METADATA_UNAVAILABLE",
+                    MissionState.WAITING_FOR_WORLD, tick);
             return;
         }
         // MissionManager.create already assigned this aircraft. Re-registering
@@ -128,11 +128,7 @@ public final class MissionLifecycle {
         RdpUavDebug.debug("Lifecycle", "mission {} target lookup result={} state={}",
                 mission.getMissionId(), formatTarget(target), mission.getState());
         if (target == null) {
-            if (tick - mission.getCreatedTick() > QUEUE_WAIT_TIMEOUT) {
-                fail(world, mission, "INVALID_TARGET", tick);
-            } else {
-                manager.enqueueQueuedMission(mission);
-            }
+            defer(world, mission, "TARGET_NOT_AVAILABLE", MissionState.WAITING_FOR_TARGET, tick);
             return;
         }
         double dispatchRange = Math.max(mission.getMissionRangeLimit(),
@@ -213,8 +209,10 @@ public final class MissionLifecycle {
                 flight.clearGuidance(findAircraft(world, mission.getAircraftId()));
                 continue;
             }
-            if (tick - mission.getLastUpdateTick() > MISSION_TIMEOUT) {
-                fail(world, mission, mission.getState().name() + "_TIMEOUT", tick);
+            if (mission.getState() != MissionState.HOLDING
+                    && tick - mission.getLastUpdateTick() > MISSION_TIMEOUT) {
+                defer(world, mission, mission.getState().name() + "_TIMEOUT",
+                        MissionState.EXECUTION_STALLED, tick);
                 dirty = true;
                 continue;
             }
@@ -227,23 +225,27 @@ public final class MissionLifecycle {
                     dirty = true;
                     continue;
                 }
-                fail(world, mission, "AIRCRAFT_LOST", tick);
+                defer(world, mission, "AIRCRAFT_UNAVAILABLE", MissionState.WAITING_FOR_WORLD, tick);
                 dirty = true;
                 continue;
+            }
+            if (mission.getState() == MissionState.WAITING_FOR_WORLD
+                    || mission.getState() == MissionState.EXECUTION_STALLED
+                    || mission.getState() == MissionState.RECOVERING
+                    || mission.getState() == MissionState.REPLAN) {
+                if (mission.getState() != MissionState.REPLAN) {
+                    mission.transitionTo(MissionState.REPLAN, tick);
+                }
+                dirty = true;
             }
             if (!flight.hasFuelForMission(aircraft)
                     && mission.getState() != MissionState.RETURNING
                     && mission.getState() != MissionState.LANDING
                     && mission.getState() != MissionState.PARKING) {
-                if (!flight.requestReturn(aircraft, "RDP_LOW_FUEL")) {
-                    fail(world, mission, "LOW_FUEL_RETURN_REJECTED", tick);
-                } else if (!mission.isTerminal()) {
-                    mission.transitionTo(MissionState.RETURNING, tick);
-                } else {
-                    RdpUavDebug.debug("Lifecycle",
-                            "mission {} became terminal during return request; stopping update state={}",
-                            mission.getMissionId(), mission.getState());
-                }
+                // Low fuel is reported to the operator; autonomous mission
+                // logic must never initiate RTB.  The player can explicitly
+                // request native return through the GUI or command.
+                fail(world, mission, "LOW_FUEL_OPERATOR_RTB_REQUIRED", tick);
                 dirty = true;
                 continue;
             }
@@ -261,16 +263,19 @@ public final class MissionLifecycle {
                     : reacquire(world, aircraft, mission, tick);
             if (mission.getTargetSelectionMode() != TargetSelectionMode.POINT && target == null) {
                 flight.clearGuidance(aircraft);
-                // A one-way airframe has no safe holding/reacquisition mode.
-                // End the mission deterministically instead of leaving the
-                // native route in a repeating loiter after a miss.
+                if (mission.isAttack()) {
+                    // Do not leave a stale native loiter route active while
+                    // an entity lock is temporarily unavailable. REPLAN will
+                    // rebuild the route when the same objective is available.
+                    flight.release(aircraft);
+                }
                 if (mission.isAttack() && mission.getMissionType() != MissionType.SQUARE_STRIKE
-                        && !profile(aircraft).isReusable()
                         && (mission.getState() == MissionState.ATTACK_TARGET
                         || mission.getState() == MissionState.TARGET_LOCKED
                         || mission.getState() == MissionState.APPROACHING
                         || mission.getState() == MissionState.KAMIKADZE_TARGET)) {
-                    fail(world, mission, "ONE_WAY_TARGET_MISSED", tick);
+                    defer(world, mission, "TARGET_TEMPORARILY_UNAVAILABLE",
+                            MissionState.REPLAN, tick);
                     dirty = true;
                     continue;
                 }
@@ -290,6 +295,13 @@ public final class MissionLifecycle {
                     dirty = true;
                     continue;
                 }
+                if (mission.getState() == MissionState.REPLAN) {
+                    RdpUavDebug.debug("Lifecycle",
+                            "mission {} replan waiting for original target aircraft={}",
+                            mission.getMissionId(), aircraft.getUniqueID());
+                    dirty = true;
+                    continue;
+                }
                 if (requiresTarget(mission.getState())) {
                     mission.clearTarget("TARGET_LOST_NO_CANDIDATE", tick);
                     mission.transitionTo(MissionState.LOST, tick);
@@ -304,6 +316,7 @@ public final class MissionLifecycle {
                 mission.transitionTo(MissionState.SEARCHING, tick);
                 dirty = true;
             }
+            if (target != null) mission.clearRecovery();
             if (mission.getTargetSelectionMode() != TargetSelectionMode.POINT && target == null
                     && requiresTarget(mission.getState())) {
                 continue;
@@ -387,6 +400,20 @@ public final class MissionLifecycle {
     private boolean updateMission(World world, RDPMission mission, MCH_EntityAircraft aircraft,
                                   Target target, long tick) {
         if (mission.isTerminal()) return false;
+        if (mission.getState() == MissionState.REPLAN && target != null) {
+            flight.release(aircraft);
+            double routeY = guidanceAltitude(aircraft, target.y);
+            if (!flight.dispatch(aircraft, target.x, routeY, target.z,
+                    mission.getObservationDistance(), 200, mission.isAttack(),
+                    target.entity == null ? null : target.entity.getUniqueID())) {
+                defer(world, mission, "REPLAN_DISPATCH_REJECTED",
+                        MissionState.EXECUTION_STALLED, tick);
+                return true;
+            }
+            mission.clearRecovery();
+            mission.transitionTo(MissionState.SEARCHING, tick);
+            return true;
+        }
         WingmanEntry entry = flight.getEntry(aircraft);
         if (entry == null) {
             RdpUavDebug.debug("Lifecycle", "mission {} WingMan entry missing age={}",
@@ -394,7 +421,8 @@ public final class MissionLifecycle {
             if (tick - mission.getCreatedTick() <= WINGMAN_ENTRY_GRACE_TICKS) {
                 return false;
             }
-            fail(world, mission, "WINGMAN_ENTRY_LOST", tick);
+            defer(world, mission, "WINGMAN_ENTRY_UNAVAILABLE",
+                    MissionState.EXECUTION_STALLED, tick);
             return true;
         }
         if (target != null) {
@@ -407,7 +435,8 @@ public final class MissionLifecycle {
         }
         if (flight.isParked(aircraft) && mission.getState() != MissionState.RETURNING) {
             if (mission.isTerminal()) return false;
-            fail(world, mission, "WINGMAN_TERMINATED_BEFORE_RETURN", tick);
+            defer(world, mission, "WINGMAN_TERMINATED_BEFORE_RETURN",
+                    MissionState.EXECUTION_STALLED, tick);
             return true;
         }
         if (flight.isReturning(aircraft) && mission.getState() != MissionState.RETURNING) {
@@ -415,7 +444,8 @@ public final class MissionLifecycle {
                     || mission.getState() == MissionState.REPORTING) {
                 mission.transitionTo(MissionState.RETURNING, tick);
             } else {
-                fail(world, mission, "WINGMAN_RTB_BEFORE_REPORT", tick);
+                defer(world, mission, "WINGMAN_RTB_BEFORE_REPORT",
+                        MissionState.RECOVERING, tick);
             }
             return true;
         }
@@ -605,12 +635,12 @@ public final class MissionLifecycle {
                 mission.transitionTo(MissionState.REPORTING, tick);
                 return true;
             case REPORTING:
-                if (!flight.requestReturn(aircraft, "RDP_REPORT_COMPLETE")) {
-                    fail(world, mission, "WINGMAN_RETURN_REJECTED", tick);
-                } else {
-                    mission.transitionTo(MissionState.RETURNING, tick);
-                }
+                // Reporting ends the task but does not silently land or RTB.
+                // The operator must explicitly request return-to-base.
+                mission.transitionTo(MissionState.HOLDING, tick);
                 return true;
+            case HOLDING:
+                return false;
             case RETURNING:
                 if (flight.isParked(aircraft)) {
                     mission.transitionTo(MissionState.LANDING, tick);
@@ -756,16 +786,6 @@ public final class MissionLifecycle {
         return false;
     }
 
-    private void recoverFromTargetLoss(World world, RDPMission mission,
-                                       MCH_EntityAircraft aircraft, long tick) {
-        if (mission.getState() == MissionState.ATTACK_TARGET
-                && flight.requestReturn(aircraft, "RDP_TARGET_LOST")) {
-            mission.transitionTo(MissionState.RETURNING, tick);
-        } else {
-            fail(world, mission, "TARGET_LOST", tick);
-        }
-    }
-
     private MissionSafety.RouteDecision evaluateApproach(World world, MCH_EntityAircraft aircraft,
                                                         Target target, RDPMission mission) {
         if (world == null || aircraft == null || target == null) {
@@ -867,9 +887,13 @@ public final class MissionLifecycle {
     private Map<UUID, MCH_EntityAircraft> indexAircraft(World world) {
         Map<UUID, MCH_EntityAircraft> result = new HashMap<UUID, MCH_EntityAircraft>();
         for (Entity entity : world.loadedEntityList) {
+            // Piloted aircraft are valid mission platforms for native guided
+            // weapon release even though WingMan itself only controls UAVs.
+            // Filtering this index to isUAV() made aircraft such as the A-10
+            // appear unavailable immediately after a weapon mission was
+            // created.
             if (entity instanceof MCH_EntityAircraft && !entity.isDead
-                    && entity.dimension == world.provider.getDimension()
-                    && ((MCH_EntityAircraft) entity).isUAV()) {
+                    && entity.dimension == world.provider.getDimension()) {
                 result.put(entity.getUniqueID(), (MCH_EntityAircraft) entity);
             }
         }
@@ -886,6 +910,23 @@ public final class MissionLifecycle {
             if (aircraft != null) flight.release(aircraft);
             routeRefreshes.remove(mission.getAircraftId());
             manager.release(mission);
+            RDPMissionWorldData.get(world).markDirty();
+        }
+    }
+
+    private void defer(World world, RDPMission mission, String reason,
+                       MissionState recoveryState, long tick) {
+        if (mission == null || mission.isTerminal()) return;
+        boolean retained = mission.defer(reason, recoveryState, tick);
+        if (!retained) {
+            MCH_EntityAircraft aircraft = findAircraft(world, mission.getAircraftId());
+            if (aircraft != null) flight.release(aircraft);
+            routeRefreshes.remove(mission.getAircraftId());
+            manager.release(mission);
+            RDPMissionWorldData.get(world).markDirty();
+        } else {
+            RdpUavDebug.debug("Lifecycle", "mission {} deferred state={} reason={} attempt={}",
+                    mission.getMissionId(), recoveryState, reason, mission.getRecoveryAttempts());
             RDPMissionWorldData.get(world).markDirty();
         }
     }

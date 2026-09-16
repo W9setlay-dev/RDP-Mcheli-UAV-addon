@@ -32,6 +32,9 @@ public final class RDPMission {
     private String recoveryPolicy = "RETURN_TO_BASE";
     private boolean destructiveAuthorized;
     private boolean paused;
+    private int recoveryAttempts;
+    private String recoveryReason;
+    private static final int MAX_RECOVERY_ATTEMPTS = 5;
 
     public RDPMission(UUID missionId, UUID ownerId, UUID aircraftId, String aircraftType,
                       MissionType missionType, TargetSpec targetSpec, boolean attack,
@@ -62,7 +65,8 @@ public final class RDPMission {
         if (nextState == null || tick < lastUpdateTick) {
             throw new IllegalArgumentException("Invalid mission transition");
         }
-        if (isTerminal() && nextState == state) {
+        if (nextState == state) {
+            lastUpdateTick = tick;
             return;
         }
         if (!state.canTransitionTo(nextState)) {
@@ -141,6 +145,35 @@ public final class RDPMission {
         transitionTo(MissionState.FAILED, tick);
     }
 
+    /**
+     * Records a recoverable condition. FAILED is reserved for exhausted
+     * recovery, not for a single missing entity, chunk, or stalled route.
+     */
+    public boolean defer(String reason, MissionState recoveryState, long tick) {
+        if (reason == null || reason.trim().isEmpty() || recoveryState == null) {
+            throw new IllegalArgumentException("Recovery reason and state are required");
+        }
+        if (isTerminal()) return false;
+        recoveryAttempts++;
+        recoveryReason = reason;
+        if (recoveryAttempts > MAX_RECOVERY_ATTEMPTS) {
+            fail(reason + "_RECOVERY_EXHAUSTED", tick);
+            return false;
+        }
+        transitionTo(recoveryState, tick);
+        return true;
+    }
+
+    public void clearRecovery() {
+        recoveryAttempts = 0;
+        recoveryReason = null;
+    }
+
+    public void restoreRecovery(int attempts, String reason) {
+        recoveryAttempts = Math.max(0, Math.min(MAX_RECOVERY_ATTEMPTS, attempts));
+        recoveryReason = reason == null || reason.trim().isEmpty() ? null : reason;
+    }
+
     public void markKamikazeDetonated(long tick) {
         transitionTo(MissionState.KAMIKADZE_DETONATED, tick);
     }
@@ -215,4 +248,6 @@ public final class RDPMission {
     public int getDimension() { return dimension; }
     public boolean isQueued() { return queued; }
     public String getRecoveryPolicy() { return recoveryPolicy; }
+    public int getRecoveryAttempts() { return recoveryAttempts; }
+    public String getRecoveryReason() { return recoveryReason; }
 }

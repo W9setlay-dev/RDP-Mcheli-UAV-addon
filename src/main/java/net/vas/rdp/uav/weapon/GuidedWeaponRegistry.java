@@ -22,7 +22,7 @@ public final class GuidedWeaponRegistry {
                 "ENTITY", 0.0D, true);
         register(config, "atmissile", "atmissile", GuidedNativeBehavior.ENTITY_SEEKER,
                 "ENTITY", 0.0D, true);
-        register(config, "asmissile", "asmissile", GuidedNativeBehavior.COORDINATE_TV_LASER,
+        register(config, "asmissile", "asmissile", GuidedNativeBehavior.COORDINATE_BALLISTIC,
                 "SQUARE", 0.0D, true);
         register(config, "tvmissile", "tvmissile", GuidedNativeBehavior.COORDINATE_TV_LASER,
                 "SQUARE", 0.0D, true);
@@ -47,7 +47,7 @@ public final class GuidedWeaponRegistry {
         String type = c.getString("type", category, defaultDefinition,
                 "Exact MCH_WeaponInfo.type");
         String behaviorName = c.getString("behavior", category, GuidedNativeBehavior.UNSUPPORTED.name(),
-                "ENTITY_SEEKER, COORDINATE_TV_LASER, or UNSUPPORTED");
+                "ENTITY_SEEKER, COORDINATE_BALLISTIC, COORDINATE_TV_LASER, or UNSUPPORTED");
         String objectiveNames = c.getString("objectives", category, "",
                 "Comma-separated ENTITY and/or SQUARE");
         double maxSpeed = c.get(category, "maximumAircraftSpeed", 0.0D,
@@ -108,7 +108,21 @@ public final class GuidedWeaponRegistry {
     }
 
     public static GuidedWeaponCapability find(String definition, String type) {
-        return CAPABILITIES.get(key(definition, type));
+        GuidedWeaponCapability exact = CAPABILITIES.get(key(definition, type));
+        if (exact != null) return exact;
+        // McHeli weapon definitions commonly use names such as agm114 while
+        // the native type is atmissile. Built-in and custom type capabilities
+        // must therefore apply to a differently named compatible definition.
+        String normalizedType = normalize(type);
+        if (!normalizedType.isEmpty()) {
+            for (GuidedWeaponCapability capability : CAPABILITIES.values()) {
+                if (normalizedType.equals(capability.getType())
+                        && normalizedType.equals(capability.getDefinition())) {
+                    return capability;
+                }
+            }
+        }
+        return null;
     }
 
     public static void clear() { CAPABILITIES.clear(); }

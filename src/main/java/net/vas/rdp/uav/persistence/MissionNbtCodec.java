@@ -46,6 +46,8 @@ public final class MissionNbtCodec {
         tag.setString("recoveryPolicy", mission.getRecoveryPolicy());
         tag.setBoolean("destructiveAuthorized", mission.isDestructiveAuthorized());
         tag.setBoolean("paused", mission.isPaused());
+        tag.setInteger("recoveryAttempts", mission.getRecoveryAttempts());
+        tag.setString("recoveryReason", mission.getRecoveryReason() == null ? "" : mission.getRecoveryReason());
         return tag;
     }
 
@@ -79,6 +81,8 @@ public final class MissionNbtCodec {
         if (tag.hasKey("recoveryPolicy")) mission.setRecoveryPolicy(tag.getString("recoveryPolicy"));
         mission.setDestructiveAuthorized(tag.getBoolean("destructiveAuthorized"));
         mission.setPaused(tag.getBoolean("paused"));
+        String recoveryReason = tag.getString("recoveryReason");
+        mission.restoreRecovery(tag.getInteger("recoveryAttempts"), recoveryReason);
         return mission;
     }
 }
