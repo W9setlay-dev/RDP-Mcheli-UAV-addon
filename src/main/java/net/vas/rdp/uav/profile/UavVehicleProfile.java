@@ -11,6 +11,7 @@ public final class UavVehicleProfile {
     private final double detectionRange;
     private final double lockRange;
     private final double missionExecutionRange;
+    private final String attackWeaponPriority;
 
     public UavVehicleProfile(UavExecutionProfile executionProfile, double executionAltitude,
                              double minimumExecutionAltitude, double maximumExecutionAltitude,
@@ -26,6 +27,18 @@ public final class UavVehicleProfile {
                              double altitudeTolerance, boolean holdingEnabled,
                              String terminalPayloadBehavior, double detectionRange,
                              double lockRange, double missionExecutionRange) {
+        this(executionProfile, executionAltitude, minimumExecutionAltitude,
+                maximumExecutionAltitude, altitudeTolerance, holdingEnabled,
+                terminalPayloadBehavior, detectionRange, lockRange,
+                missionExecutionRange, "");
+    }
+
+    public UavVehicleProfile(UavExecutionProfile executionProfile, double executionAltitude,
+                             double minimumExecutionAltitude, double maximumExecutionAltitude,
+                             double altitudeTolerance, boolean holdingEnabled,
+                             String terminalPayloadBehavior, double detectionRange,
+                             double lockRange, double missionExecutionRange,
+                             String attackWeaponPriority) {
         if (executionProfile == null || executionAltitude < 0 || minimumExecutionAltitude < 0
                 || maximumExecutionAltitude < minimumExecutionAltitude
                 || altitudeTolerance < 0 || detectionRange <= 0 || lockRange <= 0
@@ -43,6 +56,7 @@ public final class UavVehicleProfile {
         this.detectionRange = detectionRange;
         this.lockRange = lockRange;
         this.missionExecutionRange = missionExecutionRange;
+        this.attackWeaponPriority = attackWeaponPriority == null ? "" : attackWeaponPriority.trim();
     }
 
     public boolean isReusable() {
@@ -62,4 +76,5 @@ public final class UavVehicleProfile {
     public double getDetectionRange() { return detectionRange; }
     public double getLockRange() { return lockRange; }
     public double getMissionExecutionRange() { return missionExecutionRange; }
+    public String getAttackWeaponPriority() { return attackWeaponPriority; }
 }

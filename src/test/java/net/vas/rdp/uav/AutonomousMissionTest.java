@@ -91,6 +91,30 @@ public class AutonomousMissionTest {
     }
 
     @Test
+    public void terminalMissionRejectsLaterNormalTransitionWithoutChangingState() {
+        RDPMission mission = mission(new AiTaskRequest(UUID.randomUUID(), UUID.randomUUID(),
+                MissionType.RECONNAISSANCE, TargetSpec.point(20, 90, -4, TargetPriority.NORMAL),
+                TargetPriority.NORMAL, false, AutonomyLevel.AUTONOMOUS), UUID.randomUUID());
+        mission.transitionTo(MissionState.DISPATCHED, 1);
+        mission.transitionTo(MissionState.TAKEOFF, 2);
+        mission.transitionTo(MissionState.CRUISE, 3);
+        mission.transitionTo(MissionState.SEARCHING, 4);
+        mission.transitionTo(MissionState.TARGET_ACQUIRED, 5);
+        mission.transitionTo(MissionState.TARGET_LOCKED, 6);
+        mission.transitionTo(MissionState.APPROACHING, 7);
+        mission.transitionTo(MissionState.ON_TARGET, 8);
+        mission.transitionTo(MissionState.SCANNING, 9);
+        mission.transitionTo(MissionState.REPORTING, 10);
+        mission.transitionTo(MissionState.RETURNING, 11);
+        mission.transitionTo(MissionState.LANDING, 12);
+        mission.transitionTo(MissionState.PARKING, 13);
+        mission.transitionTo(MissionState.COMPLETE, 14);
+        assertTrue(mission.isTerminal());
+        mission.transitionTo(MissionState.COMPLETE, 15);
+        assertEquals(MissionState.COMPLETE, mission.getState());
+    }
+
+    @Test
     public void wingmanFlightPlanAlternatesFlyAndAttackPasses() {
         SquareStrikePlan plan = new SquareStrikePlan(
                 100.0D, 140.0D, -50.0D, 60.0D, 90.0D, 0.0D,

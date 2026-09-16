@@ -521,6 +521,14 @@ autonomous attack missions, or manually by the operator override. This addon
 does not claim weapon firing, damage, or self-destruct behavior without a live
 instance test.
 
+Square strike is a reusable-UAV area objective, not a generic attack fallback.
+The command rejects `ONE_WAY` and unknown profiles before creating the mission;
+the lifecycle repeats that guard before arming WingMan. Point/entity attack is
+the intended path for Shahed/FPV-style one-way aircraft. Square route altitude,
+heading, and pass spacing are loaded from `rdp-uav-square-strike.cfg`; the
+requested coordinates identify the area center and are never treated as a
+hardcoded aircraft placement.
+
 Never infer API signatures from online examples when the installed jar is
 available. Verify the exact binary with `javap` or a source-compatible compile.
 
@@ -739,3 +747,12 @@ Long-range reusable profiles add independent detection, lock, and mission
 execution ranges. Detection uses the shared target resolver; lock validation
 uses the authoritative UUID and 3D distance; reusable execution uses the
 configured horizontal mission range while preserving execution altitude.
+
+## Swarm ownership
+
+`SwarmManager` and `RDPUavSwarmWorldData` provide the server-side aggregate.
+They do not duplicate aircraft assignment, target reservation, mission queues,
+or flight control. A swarm member can be unavailable or manually controlled
+without destroying the aggregate; reconciliation marks disconnected members and
+degrades the swarm when no reference member is available. Individual mission
+execution remains exclusively in `MissionManager` and `MissionLifecycle`.

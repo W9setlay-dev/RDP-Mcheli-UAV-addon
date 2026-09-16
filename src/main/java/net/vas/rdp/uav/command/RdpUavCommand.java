@@ -26,6 +26,7 @@ import net.vas.rdp.uav.target.TargetPriority;
 import net.vas.rdp.uav.target.TargetResolver;
 import net.vas.rdp.uav.target.TargetSpec;
 import net.vas.rdp.uav.flight.WingManFlightAdapter;
+import net.vas.rdp.uav.profile.UavVehicleProfiles;
 import net.vas.rdp.uav.RdpUavDebug;
 
 import java.util.List;
@@ -42,7 +43,7 @@ public final class RdpUavCommand extends CommandBase {
     @Override
     @Nonnull
     public String getUsage(ICommandSender sender) {
-        return "/rdpuav authorize | debug on|off|status|reload | mission create <namespace:id> [attack] | mission ai <namespace:id> [attack] | mission attack-point | mission square <x> <y> <z> [size] | mission gui|list|status <id>";
+        return "/rdpuav authorize | debug on|off|status|reload | swarm create <name> | swarm add <id> | swarm remove <id> <aircraft> | swarm pause|resume|disband <id> | swarm reform <id> <formation> | mission ...";
     }
 
     @Override
@@ -50,7 +51,11 @@ public final class RdpUavCommand extends CommandBase {
     public List<String> getTabCompletions(MinecraftServer server, ICommandSender sender,
                                            String[] args, BlockPos targetPos) {
         if (args.length == 1) {
-            return getListOfStringsMatchingLastWord(args, "authorize", "debug", "mission");
+            return getListOfStringsMatchingLastWord(args, "authorize", "debug", "mission", "swarm");
+        }
+        if (args.length == 2 && "swarm".equalsIgnoreCase(args[0])) {
+            return getListOfStringsMatchingLastWord(args, "create", "add", "remove",
+                    "pause", "resume", "reform", "disband", "status");
         }
         if (args.length == 2 && "debug".equalsIgnoreCase(args[0])) {
             return getListOfStringsMatchingLastWord(args, "on", "off", "status", "reload");
@@ -80,10 +85,15 @@ public final class RdpUavCommand extends CommandBase {
             authorize((EntityPlayer) sender);
             return;
         }
+        if ("swarm".equalsIgnoreCase(args[0])) {
+            handleSwarm((EntityPlayer) sender, args);
+            return;
+        }
         if (args.length < 2 || !"mission".equalsIgnoreCase(args[0])) {
             sender.sendMessage(new TextComponentString(getUsage(sender)));
             return;
         }
+
         EntityPlayer player = (EntityPlayer) sender;
         if ("attack-point".equalsIgnoreCase(args[1])) {
             createPointAttack(player);
@@ -137,6 +147,82 @@ public final class RdpUavCommand extends CommandBase {
             return;
         }
         sender.sendMessage(new TextComponentString(getUsage(sender)));
+    }
+
+    private void handleSwarm(EntityPlayer player, String[] args) {
+        if (args.length < 3) {
+            player.sendMessage(new TextComponentString(
+                    "Usage: /rdpuav swarm create <name> | add|remove|pause|resume|reform|disband|status <id>"));
+            return;
+        }
+        String action = args[1];
+        try {
+            if ("create".equalsIgnoreCase(action)) {
+                net.vas.rdp.uav.swarm.SwarmRecord record =
+                        RDPUavMod.swarms().create(player.world, player.getUniqueID(), args[2]);
+                player.sendMessage(new TextComponentString("Swarm created: " + record.getSwarmId()));
+                return;
+            }
+            UUID swarmId = UUID.fromString(args[2]);
+            if ("add".equalsIgnoreCase(action)) {
+                MCH_EntityAircraft aircraft = UavControlAccess.findControlledAircraft(player);
+                if (!UavControlAccess.isOperator(aircraft, player) || aircraft.getAcInfo() == null
+                        || !RDPUavMod.missions().ensureAuthorized(aircraft, player)) {
+                    throw new IllegalArgumentException("You must control an authorized UAV.");
+                }
+                net.vas.rdp.uav.profile.UavVehicleProfile profile =
+                        net.vas.rdp.uav.profile.UavVehicleProfiles.forAircraft(aircraft.getAcInfo().name);
+                if (profile.getExecutionProfile() == net.vas.rdp.uav.profile.UavExecutionProfile.UNKNOWN) {
+                    throw new IllegalArgumentException("UAV definition has no configured profile.");
+                }
+                boolean added = RDPUavMod.swarms().addMember(player.world, player.getUniqueID(), swarmId,
+                        new net.vas.rdp.uav.swarm.SwarmMember(aircraft.getUniqueID(),
+                                profile.getExecutionProfile().name(), profile.supportsLongRangeLock(),
+                                aircraft.getWeapons() != null));
+                if (!added) throw new IllegalArgumentException("Member rejected or swarm full.");
+                player.sendMessage(new TextComponentString("Swarm member added: " + aircraft.getUniqueID()));
+                return;
+            }
+            if ("remove".equalsIgnoreCase(action)) {
+                if (args.length < 4 || !RDPUavMod.swarms().removeMember(player.world, player.getUniqueID(),
+                        swarmId, UUID.fromString(args[3]))) throw new IllegalArgumentException("Member not found.");
+                player.sendMessage(new TextComponentString("Swarm member removed."));
+                return;
+            }
+            if ("pause".equalsIgnoreCase(action) || "resume".equalsIgnoreCase(action)
+                    || "disband".equalsIgnoreCase(action)) {
+                net.vas.rdp.uav.swarm.SwarmState state = "pause".equalsIgnoreCase(action)
+                        ? net.vas.rdp.uav.swarm.SwarmState.AWAITING_OPERATOR
+                        : "resume".equalsIgnoreCase(action)
+                        ? net.vas.rdp.uav.swarm.SwarmState.READY
+                        : net.vas.rdp.uav.swarm.SwarmState.DISBANDED;
+                if (!RDPUavMod.swarms().setState(player.world, player.getUniqueID(), swarmId, state)) {
+                    throw new IllegalArgumentException("Swarm not found or unauthorized.");
+                }
+                player.sendMessage(new TextComponentString("Swarm state: " + state.name()));
+                return;
+            }
+            if ("reform".equalsIgnoreCase(action)) {
+                if (args.length < 4) throw new IllegalArgumentException("Formation is required.");
+                net.vas.rdp.uav.swarm.SwarmFormation formation =
+                        net.vas.rdp.uav.swarm.SwarmFormation.valueOf(args[3].toUpperCase());
+                if (!RDPUavMod.swarms().reform(player.world, player.getUniqueID(), swarmId, formation)) {
+                    throw new IllegalArgumentException("Swarm not found or unauthorized.");
+                }
+                player.sendMessage(new TextComponentString("Swarm reformed: " + formation.name()));
+                return;
+            }
+            net.vas.rdp.uav.swarm.SwarmRecord record = RDPUavMod.swarms().find(player.world, swarmId);
+            if (!RDPUavMod.swarms().owns(record, player.getUniqueID())) {
+                throw new IllegalArgumentException("Swarm not found or unauthorized.");
+            }
+            player.sendMessage(new TextComponentString("Swarm " + record.getName() + " state="
+                    + record.getState() + " members=" + record.getMembers().size()
+                    + " leader=" + record.referenceMember()));
+        } catch (RuntimeException failure) {
+            player.sendMessage(new TextComponentString("Swarm command rejected: "
+                    + (failure.getMessage() == null ? "invalid request" : failure.getMessage())));
+        }
     }
 
     private void handleDebug(ICommandSender sender, String action) {
@@ -320,6 +406,12 @@ public final class RdpUavCommand extends CommandBase {
             return;
         }
         try {
+            net.vas.rdp.uav.profile.UavVehicleProfile vehicleProfile =
+                    UavVehicleProfiles.forAircraft(aircraft.getAcInfo().name);
+            if (!vehicleProfile.isReusable()) {
+                throw new IllegalArgumentException(
+                        "square strike requires a reusable UAV profile; use point/entity attack for one-way UAVs");
+            }
             double x = Double.parseDouble(args[2]);
             double y = Double.parseDouble(args[3]);
             double z = Double.parseDouble(args[4]);

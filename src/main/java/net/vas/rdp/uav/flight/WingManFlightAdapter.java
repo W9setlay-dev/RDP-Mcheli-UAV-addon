@@ -18,6 +18,7 @@ import net.vas.rdp.uav.energy.UavEnergyHandler;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.Locale;
 
 /**
  * The only RDP-facing boundary for WingMan control.
@@ -143,16 +144,50 @@ public final class WingManFlightAdapter {
 
     public boolean armAttack(MCH_EntityAircraft aircraft, double x, double y, double z,
                              double attackRadius, UUID targetId) {
+        return armAttack(aircraft, x, y, z, attackRadius, targetId, "");
+    }
+
+    public boolean armAttack(MCH_EntityAircraft aircraft, double x, double y, double z,
+                             double attackRadius, UUID targetId, String weaponPriority) {
         if (aircraft == null || !aircraft.isUAV()) return false;
         WingmanEntry entry = WingmanRegistry.get(aircraft.getUniqueID());
         if (entry == null || entry.mission == null) return false;
         entry.attackMode = WingmanEntry.ATK_AUTO;
+        selectAttackWeapon(aircraft, weaponPriority);
         entry.currentAutoTarget = targetId;
         entry.autoTargetX = x;
         entry.autoTargetY = y;
         entry.autoTargetZ = z;
         appendAttackNode(entry, attackRadius);
         return true;
+    }
+
+    private int selectAttackWeapon(MCH_EntityAircraft aircraft, String priority) {
+        if (aircraft == null || aircraft.getWeapons() == null) return -1;
+        MCH_WeaponSet[] weapons = aircraft.getWeapons();
+        if (priority != null && !priority.trim().isEmpty()) {
+            String[] names = priority.split(",");
+            for (String requested : names) {
+                String wanted = requested.trim().toLowerCase(Locale.ROOT);
+                for (int i = 0; i < weapons.length; i++) {
+                    MCH_WeaponSet weapon = weapons[i];
+                    if (weapon != null && weapon.getName() != null
+                            && weapon.getName().toLowerCase(Locale.ROOT).equals(wanted)
+                            && (weapon.getAmmo() > 0 || weapon.getAmmoReserve() > 0)) {
+                        aircraft.updateWeaponID(0, i);
+                        return i;
+                    }
+                }
+            }
+        }
+        for (int i = 0; i < weapons.length; i++) {
+            MCH_WeaponSet weapon = weapons[i];
+            if (weapon != null && (weapon.getAmmo() > 0 || weapon.getAmmoReserve() > 0)) {
+                aircraft.updateWeaponID(0, i);
+                return i;
+            }
+        }
+        return -1;
     }
 
     public boolean armSquareStrike(MCH_EntityAircraft aircraft, SquareStrikePlan plan,

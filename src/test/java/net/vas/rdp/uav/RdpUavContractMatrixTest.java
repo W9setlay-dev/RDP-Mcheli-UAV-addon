@@ -19,6 +19,8 @@ import net.vas.rdp.uav.target.TargetSpec;
 import net.vas.rdp.uav.profile.UavExecutionProfile;
 import net.vas.rdp.uav.profile.UavVehicleProfile;
 import net.vas.rdp.uav.profile.UavVehicleProfiles;
+import net.vas.rdp.uav.swarm.*;
+import net.vas.rdp.uav.persistence.RDPUavSwarmWorldData;
 import org.junit.Test;
 
 import java.util.Arrays;
@@ -150,6 +152,37 @@ public class RdpUavContractMatrixTest {
         assertTrue(profile.supportsLongRangeLock());
         assertTrue(profile.getDetectionRange() > profile.getLockRange());
         assertTrue(profile.getLockRange() > profile.getMissionExecutionRange());
+    }
+
+    @Test
+    public void swarmMembersAreDeterministicAndPersistable() {
+        UUID owner = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        UUID first = UUID.fromString("00000000-0000-0000-0000-000000000002");
+        UUID second = UUID.fromString("00000000-0000-0000-0000-000000000003");
+        SwarmRecord swarm = new SwarmRecord(UUID.randomUUID(), owner, "recon");
+        swarm.add(new SwarmMember(second, "LONG_RANGE_REUSABLE_UAV", true, true));
+        swarm.add(new SwarmMember(first, "ONE_WAY", false, true));
+        assertEquals(first, swarm.getMembers().get(0).getAircraftId());
+        assertEquals(0, swarm.getMembers().get(0).getSlot().getIndex());
+        assertEquals(1, swarm.getMembers().get(1).getSlot().getIndex());
+        assertEquals(first, swarm.referenceMember());
+        swarm.setLeadership(SwarmLeadership.DESIGNATED_LEADER);
+        swarm.setDesignatedLeader(second);
+        assertEquals(second, swarm.referenceMember());
+    }
+
+    @Test
+    public void swarmAllocatorHonorsCapabilitiesAndOperatorOverride() {
+        SwarmRecord swarm = new SwarmRecord(UUID.randomUUID(), UUID.randomUUID(), "ops");
+        SwarmMember observer = new SwarmMember(UUID.randomUUID(), "ONE_WAY", false, false);
+        SwarmMember payload = new SwarmMember(UUID.randomUUID(), "REUSABLE_UAV", true, true);
+        payload.setOperatorControlled(true);
+        swarm.add(observer);
+        swarm.add(payload);
+        assertEquals(0, new SwarmTaskAllocator().suitable(swarm,
+                SwarmTask.POINT_OBSERVATION, 8).size());
+        assertEquals(0, new SwarmTaskAllocator().suitable(swarm,
+                SwarmTask.ESCORT, 8).size());
     }
 
     @Test

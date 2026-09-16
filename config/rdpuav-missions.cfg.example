@@ -11,6 +11,11 @@ max_search_radius=1024
 automatic_missions_enabled=false
 allow_player_abort=true
 
+# Square strike geometry is a reusable-UAV mission only. Point/entity attack
+# remains the correct behavior for ONE_WAY FPV/kamikaze aircraft.
+# These values are consumed by native WingMan route generation.
+# See rdp-uav-square-strike.cfg in the instance config directory.
+
 # The addon recognizes these aircraft as kamikaze-capable only when the
 # installed McHeli aircraft definition also has a self-destructing weapon.
 kamikaze_aircraft=switchblade,shahed136

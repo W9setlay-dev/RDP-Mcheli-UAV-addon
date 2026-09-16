@@ -60,12 +60,22 @@ public final class RDPMission {
         if (nextState == null || tick < lastUpdateTick) {
             throw new IllegalArgumentException("Invalid mission transition");
         }
+        if (isTerminal() && nextState == state) {
+            return;
+        }
         if (!state.canTransitionTo(nextState)) {
-            throw new IllegalStateException("Mission is terminal");
+            throw new IllegalStateException("Invalid mission transition "
+                    + state + " -> " + nextState + " for " + missionId);
         }
         state = nextState;
         lastUpdateTick = tick;
         queued = false;
+    }
+
+    public boolean isTerminal() {
+        return state == MissionState.COMPLETE || state == MissionState.ABORTED
+                || state == MissionState.FAILED
+                || state == MissionState.KAMIKADZE_DETONATED;
     }
 
     public void lockTarget(UUID targetId, long tick) {
@@ -113,6 +123,13 @@ public final class RDPMission {
             throw new IllegalArgumentException("Failure reason is required");
         }
 
+        if (isTerminal()) {
+            if (state == MissionState.FAILED) {
+                return;
+            }
+            throw new IllegalStateException("Cannot fail terminal mission " + missionId
+                    + " in state " + state);
+        }
         this.failureReason = reason;
         transitionTo(MissionState.FAILED, tick);
     }

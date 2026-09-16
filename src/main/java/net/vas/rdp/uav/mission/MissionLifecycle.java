@@ -185,8 +185,12 @@ public final class MissionLifecycle {
                     && mission.getState() != MissionState.PARKING) {
                 if (!flight.requestReturn(aircraft, "RDP_LOW_FUEL")) {
                     fail(world, mission, "LOW_FUEL_RETURN_REJECTED", tick);
-                } else {
+                } else if (!mission.isTerminal()) {
                     mission.transitionTo(MissionState.RETURNING, tick);
+                } else {
+                    RdpUavDebug.debug("Lifecycle",
+                            "mission {} became terminal during return request; stopping update state={}",
+                            mission.getMissionId(), mission.getState());
                 }
                 dirty = true;
                 continue;
@@ -317,6 +321,7 @@ public final class MissionLifecycle {
 
     private boolean updateMission(World world, RDPMission mission, MCH_EntityAircraft aircraft,
                                   Target target, long tick) {
+        if (mission.isTerminal()) return false;
         WingmanEntry entry = flight.getEntry(aircraft);
         if (entry == null) {
             RdpUavDebug.debug("Lifecycle", "mission {} WingMan entry missing age={}",
@@ -337,6 +342,7 @@ public final class MissionLifecycle {
             }
         }
         if (flight.isParked(aircraft) && mission.getState() != MissionState.RETURNING) {
+            if (mission.isTerminal()) return false;
             fail(world, mission, "WINGMAN_TERMINATED_BEFORE_RETURN", tick);
             return true;
         }
@@ -399,11 +405,23 @@ public final class MissionLifecycle {
                 }
                 if (mission.isAttack()) {
                     if (mission.getMissionType() == MissionType.SQUARE_STRIKE) {
+                        UavVehicleProfile squareProfile = profile(aircraft);
+                        if (!squareProfile.isReusable()) {
+                            fail(world, mission, "SQUARE_STRIKE_REQUIRES_REUSABLE_UAV", tick);
+                            return true;
+                        }
+                        double squareAltitude = squareProfile.getExecutionAltitude() > 0.0D
+                                ? squareProfile.getExecutionAltitude()
+                                : target.y + net.vas.rdp.uav.flight.SquareStrikeConfig.altitudeOffset;
                         net.vas.rdp.uav.flight.SquareStrikePlan plan =
                                 new net.vas.rdp.uav.flight.SquareStrikePlan(
-                                        target.x, Math.max(target.y + 32.0D, aircraft.posY),
-                                target.z, mission.getSearchRadius(), mission.getSearchRadius(), 0.0D,
-                                Math.max(8.0D, mission.getSearchRadius() / 4.0D),
+                                        target.x,
+                                Math.max(net.vas.rdp.uav.flight.SquareStrikeConfig.minimumAltitude,
+                                        squareAltitude),
+                                target.z, mission.getSearchRadius(), mission.getSearchRadius(),
+                                net.vas.rdp.uav.flight.SquareStrikeConfig.headingDegrees,
+                                Math.max(1.0D, mission.getSearchRadius()
+                                        * net.vas.rdp.uav.flight.SquareStrikeConfig.passSpacingFactor),
                                 mission.getObservationDistance(), 1);
                         if (!flight.armSquareStrike(aircraft, plan, mission.getTargetId())) {
                             fail(world, mission, "WINGMAN_SQUARE_STRIKE_REJECTED", tick);
@@ -413,7 +431,8 @@ public final class MissionLifecycle {
                         return true;
                     }
                     if (!flight.armAttack(aircraft, target.x, target.y, target.z,
-                            mission.getObservationDistance(), mission.getTargetId())) {
+                            mission.getObservationDistance(), mission.getTargetId(),
+                            profile(aircraft).getAttackWeaponPriority())) {
                         fail(world, mission, "WINGMAN_ATTACK_ARM_REJECTED", tick);
                     } else {
                         mission.transitionTo(MissionState.ATTACK_TARGET, tick);

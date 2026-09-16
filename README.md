@@ -365,6 +365,29 @@ not a universal mission classification.
 `LONG_RANGE_REUSABLE_UAV` adds separate `detectionRange`, `lockRange`, and
 `missionExecutionRange` settings. Detection selects eligible candidates,
 locking uses authoritative 3D distance and UUID continuity, and mission
-execution remains gated by the smaller execution range. The reference MQ-9
+execution remains gated by the smaller execution range.
+Square strike is deliberately restricted to reusable UAV profiles. ONE_WAY
+FPV/Shahed-style aircraft use the point/entity attack path and must not be
+sent through a repeating square route. Square altitude, heading, and pass
+spacing are configured in `rdp-uav-square-strike.cfg`; the command coordinates
+are the requested area center, not a hardcoded aircraft placement. The reference MQ-9
 configuration can therefore establish a lock before reaching the target area
 while holding its configured altitude.
+
+## Swarm orchestration
+
+Swarms are server-authoritative persisted aggregates over existing aircraft and
+missions. A swarm owns membership, roles, formation metadata, leadership policy,
+and degraded/partial status; `MissionManager` still owns aircraft assignment,
+target claims, mission queues, and lifecycle, while WingMan remains the only
+flight controller. Members are keyed by the authoritative aircraft UUID, so
+mixed `ONE_WAY`, `REUSABLE_UAV`, and long-range profiles can coexist without
+McHeliCE type or display-name checks.
+
+Commands are validated on the server: `/rdpuav swarm create <name>`, `add`,
+`remove`, `pause`, `resume`, `reform <formation>`, `disband`, and `status`.
+Telemetry is bounded and sent at the configured swarm update cadence. Formation
+geometry is an objective/slot description only; it never teleports aircraft or
+competes with WingMan. Operator-controlled members are excluded from automatic
+allocation. Capability filtering and stable UUID ordering provide deterministic
+task candidates.

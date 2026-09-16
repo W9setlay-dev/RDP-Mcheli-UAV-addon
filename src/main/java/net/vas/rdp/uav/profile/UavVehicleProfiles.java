@@ -56,9 +56,11 @@ public final class UavVehicleProfiles {
             String terminalPayload = config.getString("terminalPayloadBehavior", category,
                     executionProfile == UavExecutionProfile.ONE_WAY ? "SELF_DESTRUCT" : "NONE",
                     "Terminal payload behavior; this does not create a payload.");
+            String attackWeaponPriority = config.getString("attackWeaponPriority", category, "",
+                    "Comma-separated McHeli weapon names, in preferred conventional-attack order.");
             UavVehicleProfile profile = new UavVehicleProfile(executionProfile, altitude,
                     minimum, maximum, tolerance, holding, terminalPayload,
-                    detectionRange, lockRange, missionExecutionRange);
+                    detectionRange, lockRange, missionExecutionRange, attackWeaponPriority);
             profiles.put(definition, profile);
             String aliases = config.getString("aliases", category, "",
                     "Comma-separated McHeli definition names using this profile.");
@@ -91,6 +93,8 @@ public final class UavVehicleProfiles {
                     "Allow reusable UAV holding/orbit behavior.");
             config.getString("terminalPayloadBehavior", category, i == 2 ? "NONE" : "SELF_DESTRUCT",
                     "Terminal payload behavior; this does not create a payload.");
+            config.getString("attackWeaponPriority", category, "",
+                    "Comma-separated McHeli weapon names, in preferred conventional-attack order.");
             config.getFloat("detectionRange", category, i == 2 ? 2048F : 256F,
                     1F, 4096F, "Target detection range.");
             config.getFloat("lockRange", category, i == 2 ? 1536F : 256F,

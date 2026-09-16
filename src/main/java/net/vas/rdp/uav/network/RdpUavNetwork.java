@@ -43,6 +43,7 @@ public final class RdpUavNetwork {
                 TargetTelemetry.class, 7, Side.CLIENT);
         CHANNEL.registerMessage(ServerSquareStrikeHandler.class, SquareStrike.class, 8, Side.SERVER);
         CHANNEL.registerMessage(ServerAiTargetLockHandler.class, AiTargetLock.class, 9, Side.SERVER);
+        CHANNEL.registerMessage(ClientSwarmTelemetryHandler.class, SwarmTelemetry.class, 11, Side.CLIENT);
     }
 
     public static void openMissionControl(EntityPlayerMP player) {
@@ -96,6 +97,43 @@ public final class RdpUavNetwork {
 
     public static void syncTargetTelemetry(EntityPlayerMP player) {
         CHANNEL.sendTo(TargetTelemetry.from(player), player);
+    }
+
+    public static void syncSwarmTelemetry(EntityPlayerMP player) {
+        net.vas.rdp.uav.swarm.SwarmRecord selected = null;
+        for (net.vas.rdp.uav.swarm.SwarmRecord swarm :
+                net.vas.rdp.uav.persistence.RDPUavSwarmWorldData.get(player.world)
+                        .getRepository().snapshot()) {
+            if (player.getUniqueID().equals(swarm.getOwnerId())) { selected = swarm; break; }
+        }
+        if (selected != null) CHANNEL.sendTo(SwarmTelemetry.from(selected), player);
+    }
+
+    public static final class SwarmTelemetry implements IMessage {
+        private String id = "", name = "", state = "", formation = "", leader = "";
+        private int members;
+        public static SwarmTelemetry from(net.vas.rdp.uav.swarm.SwarmRecord swarm) {
+            SwarmTelemetry value = new SwarmTelemetry();
+            value.id = swarm.getSwarmId().toString(); value.name = swarm.getName();
+            value.state = swarm.getState().name(); value.formation = swarm.getFormation().name();
+            value.leader = String.valueOf(swarm.referenceMember()); value.members = swarm.getMembers().size();
+            return value;
+        }
+        public void fromBytes(ByteBuf buffer) {
+            id = readString(buffer); name = readString(buffer); state = readString(buffer);
+            formation = readString(buffer); leader = readString(buffer); members = buffer.readUnsignedByte();
+        }
+        public void toBytes(ByteBuf buffer) {
+            writeString(buffer, id); writeString(buffer, name); writeString(buffer, state);
+            writeString(buffer, formation); writeString(buffer, leader);
+            buffer.writeByte(Math.min(255, Math.max(0, members)));
+        }
+    }
+
+    public static final class ClientSwarmTelemetryHandler implements IMessageHandler<SwarmTelemetry, IMessage> {
+        public IMessage onMessage(SwarmTelemetry message, MessageContext context) {
+            return null;
+        }
     }
 
     public static final class OpenMissionControl implements IMessage {

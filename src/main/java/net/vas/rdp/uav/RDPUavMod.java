@@ -19,6 +19,8 @@ public final class RDPUavMod {
     public static final String MOD_ID = "rdpuav";
     private static final MissionManager MISSIONS = new MissionManager();
     private static final MissionLifecycle LIFECYCLE = new MissionLifecycle(MISSIONS);
+    private static final net.vas.rdp.uav.swarm.SwarmManager SWARMS =
+            new net.vas.rdp.uav.swarm.SwarmManager();
     private static final net.vas.rdp.uav.ai.AiTaskingService AI =
             new net.vas.rdp.uav.ai.AiTaskingService(MISSIONS);
 
@@ -27,7 +29,9 @@ public final class RDPUavMod {
         RdpUavDebug.load(event.getModConfigurationDirectory());
         net.vas.rdp.uav.energy.UavEnergyConfig.load(event.getModConfigurationDirectory());
         net.vas.rdp.uav.profile.UavVehicleProfiles.load(event.getModConfigurationDirectory());
+        net.vas.rdp.uav.swarm.SwarmConfig.load(event.getModConfigurationDirectory());
         net.vas.rdp.uav.flight.KamikazeConfig.load(event.getModConfigurationDirectory());
+        net.vas.rdp.uav.flight.SquareStrikeConfig.load(event.getModConfigurationDirectory());
     }
 
     @Mod.EventHandler
@@ -58,6 +62,10 @@ public final class RDPUavMod {
         return AI;
     }
 
+    public static net.vas.rdp.uav.swarm.SwarmManager swarms() {
+        return SWARMS;
+    }
+
     private static final class ServerTickHandler {
         @SubscribeEvent
         public void onWorldTick(TickEvent.WorldTickEvent event) {
@@ -65,11 +73,15 @@ public final class RDPUavMod {
                 return;
             }
             LIFECYCLE.tick(event.world);
+            if (event.world.getTotalWorldTime() % net.vas.rdp.uav.swarm.SwarmConfig.updateIntervalTicks == 0L) {
+                SWARMS.reconcile(event.world);
+            }
                 if (event.world.getTotalWorldTime() % 5L == 0L
                         && event.world.getMinecraftServer() != null) {
                     for (EntityPlayer player : event.world.playerEntities) {
                         if (player instanceof EntityPlayerMP) {
                             RdpUavNetwork.syncTargetTelemetry((EntityPlayerMP) player);
+                            RdpUavNetwork.syncSwarmTelemetry((EntityPlayerMP) player);
                         }
                     }
                 }
