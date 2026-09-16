@@ -45,3 +45,6 @@ terminalPayloadBehavior=NONE
 detectionRange=2048
 lockRange=1536
 missionExecutionRange=64
+# Vehicle profiles also accept bounded native routing envelopes:
+# oneWaySpeed=0 (native McHeli default; no projectile steering is emulated)
+# attackEnvelope=64 (passed to the native WingMan ATTACK node)

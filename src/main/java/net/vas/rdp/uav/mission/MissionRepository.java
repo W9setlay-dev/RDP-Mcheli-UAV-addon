@@ -37,4 +37,8 @@ public final class MissionRepository {
     public synchronized void clear() {
         missions.clear();
     }
+
+    public synchronized boolean remove(UUID missionId) {
+        return missionId != null && missions.remove(missionId) != null;
+    }
 }

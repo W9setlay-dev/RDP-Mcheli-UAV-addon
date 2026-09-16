@@ -17,6 +17,9 @@ public final class SwarmRecord {
     private UUID designatedLeader;
     private SwarmResult result = SwarmResult.AWAITING_OPERATOR;
     private SearchPattern searchPattern = SearchPattern.GRID;
+    private SwarmMissionState missionState = SwarmMissionState.IDLE;
+    private SwarmLockState lockState = SwarmLockState.CLEAR;
+    private SwarmOperatorState operatorState = SwarmOperatorState.UNASSIGNED;
 
     public SwarmRecord(UUID swarmId, UUID ownerId, String name) {
         if (swarmId == null || ownerId == null || name == null || name.trim().isEmpty()) {
@@ -77,6 +80,12 @@ public final class SwarmRecord {
     public void setSearchPattern(SearchPattern value) { if (value != null) searchPattern = value; }
     public UUID getDesignatedLeader() { return designatedLeader; }
     public void setDesignatedLeader(UUID value) { designatedLeader = value; }
+    public SwarmMissionState getMissionState() { return missionState; }
+    public void setMissionState(SwarmMissionState value) { if (value != null) missionState = value; }
+    public SwarmLockState getLockState() { return lockState; }
+    public void setLockState(SwarmLockState value) { if (value != null) lockState = value; }
+    public SwarmOperatorState getOperatorState() { return operatorState; }
+    public void setOperatorState(SwarmOperatorState value) { if (value != null) operatorState = value; }
 
     public UUID referenceMember() {
         if (members.isEmpty() || leadership == SwarmLeadership.NO_SINGLE_LEADER) return null;

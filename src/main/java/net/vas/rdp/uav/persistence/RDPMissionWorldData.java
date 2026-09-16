@@ -40,6 +40,12 @@ public final class RDPMissionWorldData extends WorldSavedData {
         markDirty();
     }
 
+    public boolean remove(java.util.UUID missionId) {
+        boolean removed = repository.remove(missionId);
+        if (removed) markDirty();
+        return removed;
+    }
+
     public void restoreQueued(net.vas.rdp.uav.mission.MissionQueue queue) {
         for (RDPMission mission : repository.snapshot()) {
             if (mission.isQueued() && !queue.contains(mission)) queue.enqueue(mission);

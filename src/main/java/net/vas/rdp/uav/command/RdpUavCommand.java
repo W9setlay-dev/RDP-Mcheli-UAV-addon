@@ -408,9 +408,9 @@ public final class RdpUavCommand extends CommandBase {
         try {
             net.vas.rdp.uav.profile.UavVehicleProfile vehicleProfile =
                     UavVehicleProfiles.forAircraft(aircraft.getAcInfo().name);
-            if (!vehicleProfile.isReusable()) {
-                throw new IllegalArgumentException(
-                        "square strike requires a reusable UAV profile; use point/entity attack for one-way UAVs");
+            if (vehicleProfile.getExecutionProfile()
+                    == net.vas.rdp.uav.profile.UavExecutionProfile.UNKNOWN) {
+                throw new IllegalArgumentException("UAV definition has no configured execution profile");
             }
             double x = Double.parseDouble(args[2]);
             double y = Double.parseDouble(args[3]);

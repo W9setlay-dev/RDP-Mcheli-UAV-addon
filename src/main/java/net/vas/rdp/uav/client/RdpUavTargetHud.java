@@ -78,6 +78,13 @@ public final class RdpUavTargetHud {
                 + (telemetry.outOfRange ? "  OUT OF RANGE" : ""), x, y + 102,
                 telemetry.outOfRange ? 0xFFFF5555 : 0xFFFFFFFF);
         int detailY = y + 112;
+        font.drawStringWithShadow("CONF: " + String.format(java.util.Locale.ROOT, "%.2f", telemetry.confidence)
+                + "  VEL: " + String.format(java.util.Locale.ROOT, "%.1f,%.1f,%.1f",
+                telemetry.velocityX, telemetry.velocityY, telemetry.velocityZ), x, detailY, 0xFFFFFFFF);
+        font.drawStringWithShadow("BEARING: " + String.format(java.util.Locale.ROOT, "%.1f", telemetry.bearing)
+                + "  ELEV: " + String.format(java.util.Locale.ROOT, "%.1f", telemetry.elevation)
+                + "  MARKER: " + telemetry.markerState, x, detailY + 10, 0xFFFFFFFF);
+        detailY += 20;
         if (!telemetry.failureReason.isEmpty()) {
             font.drawStringWithShadow("FAILURE: " + telemetry.failureReason, x, detailY, 0xFFFF5555);
             detailY += 10;
@@ -167,6 +174,9 @@ public final class RdpUavTargetHud {
         public final String wingmanNode;
         public final int dimension;
         public final boolean outOfRange;
+        public double velocityX, velocityY, velocityZ, confidence, bearing, elevation;
+        public boolean visible;
+        public String lifecycle, markerState;
         public final double x, y, z, distance;
 
         public Telemetry(boolean active, boolean hasPosition, String missionId, String aircraftType,
@@ -210,6 +220,21 @@ public final class RdpUavTargetHud {
             this.dimension = dimension;
             this.outOfRange = outOfRange;
             this.x = x; this.y = y; this.z = z; this.distance = distance;
+            this.velocityX = this.velocityY = this.velocityZ = 0.0D;
+            this.confidence = hasPosition ? 1.0D : 0.0D;
+            this.bearing = this.elevation = 0.0D;
+            this.visible = hasPosition;
+            this.lifecycle = "NONE";
+            this.markerState = hasPosition ? "CONTACT" : "HIDDEN";
+        }
+
+        public void setRichTelemetry(double vx, double vy, double vz, double confidence,
+                                     double bearing, double elevation, boolean visible,
+                                     String lifecycle, String markerState) {
+            this.velocityX = vx; this.velocityY = vy; this.velocityZ = vz;
+            this.confidence = confidence; this.bearing = bearing; this.elevation = elevation;
+            this.visible = visible; this.lifecycle = lifecycle == null ? "NONE" : lifecycle;
+            this.markerState = markerState == null ? "HIDDEN" : markerState;
         }
     }
 }

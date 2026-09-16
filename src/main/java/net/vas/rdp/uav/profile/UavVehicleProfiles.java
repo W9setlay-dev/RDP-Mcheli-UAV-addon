@@ -58,9 +58,14 @@ public final class UavVehicleProfiles {
                     "Terminal payload behavior; this does not create a payload.");
             String attackWeaponPriority = config.getString("attackWeaponPriority", category, "",
                     "Comma-separated McHeli weapon names, in preferred conventional-attack order.");
+            double oneWaySpeed = number(config.getFloat("oneWaySpeed", category, 0F, 0F, 64F,
+                    "Optional native WingMan speed envelope; zero keeps the aircraft definition default."));
+            double attackEnvelope = number(config.getFloat("attackEnvelope", category, 64F, 1F, 4096F,
+                    "Maximum attack-node envelope passed to native WingMan."));
             UavVehicleProfile profile = new UavVehicleProfile(executionProfile, altitude,
                     minimum, maximum, tolerance, holding, terminalPayload,
-                    detectionRange, lockRange, missionExecutionRange, attackWeaponPriority);
+                    detectionRange, lockRange, missionExecutionRange, attackWeaponPriority,
+                    oneWaySpeed, attackEnvelope);
             profiles.put(definition, profile);
             String aliases = config.getString("aliases", category, "",
                     "Comma-separated McHeli definition names using this profile.");
@@ -95,6 +100,10 @@ public final class UavVehicleProfiles {
                     "Terminal payload behavior; this does not create a payload.");
             config.getString("attackWeaponPriority", category, "",
                     "Comma-separated McHeli weapon names, in preferred conventional-attack order.");
+            config.getFloat("oneWaySpeed", category, 0F, 0F, 64F,
+                    "Optional native WingMan speed envelope; zero keeps the aircraft definition default.");
+            config.getFloat("attackEnvelope", category, 64F, 1F, 4096F,
+                    "Maximum attack-node envelope passed to native WingMan.");
             config.getFloat("detectionRange", category, i == 2 ? 2048F : 256F,
                     1F, 4096F, "Target detection range.");
             config.getFloat("lockRange", category, i == 2 ? 1536F : 256F,

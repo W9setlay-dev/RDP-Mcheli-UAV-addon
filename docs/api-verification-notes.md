@@ -51,6 +51,18 @@
 
 ## Unsupported or uncertain operations
 
+- McHeliCE 1.5.1 exposes native `MCH_WeaponSet.use(...)`, predicted impact
+  helpers, and WingMan target coordinates, but no projectile steering or
+  per-projectile target UUID API.  RDP therefore uses native WingMan attack
+  nodes and bounded moving-target coordinate updates only; it does not
+  replace projectile physics.
+- No stable native camera/seat projection API was present in the verified jar.
+  The client HUD remains marker-only when projection is unavailable.
+- `MissionNode` has no speed field and `WingmanEntry` has no speed setter in
+  McHeliCE 1.5.1.  The configured one-way speed is consequently a bounded
+  policy value retained for future native support; dispatch never writes
+  aircraft motion or simulates speed outside WingMan.
+
 - exact structure-model destruction (for example specific parasite nests) is not yet a first-class mission type
 - dynamic military or bandit role semantics are not yet implemented as a validated runtime feature
 - direct hostile-vehicle targeting is still conceptual and should be implemented only after a world-facing validation step
@@ -58,3 +70,11 @@
 ## Test method decision
 
 The project uses dependency-free Java tests to validate mission-state transitions, target selection, persistence, and queue logic. Real root-tier McHeli behavior still requires a live 1.12.2 Forge client/server runtime.
+## Rework safety boundaries
+
+The addon now keeps target filtering server-authoritative: vehicle-classified
+contacts are not hostile candidates, and deeply ground-embedded contacts are
+rejected according to `rdp-uav-targets.cfg`. The policy only rejects a
+contact; it never teleports or otherwise mutates entities. One-way attack
+missions terminate with `ONE_WAY_TARGET_MISSED` when their locked contact
+disappears rather than retaining a native loiter route indefinitely.

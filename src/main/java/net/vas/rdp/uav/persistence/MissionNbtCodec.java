@@ -44,6 +44,8 @@ public final class MissionNbtCodec {
         tag.setInteger("dimension", mission.getDimension());
         tag.setBoolean("queued", mission.isQueued());
         tag.setString("recoveryPolicy", mission.getRecoveryPolicy());
+        tag.setBoolean("destructiveAuthorized", mission.isDestructiveAuthorized());
+        tag.setBoolean("paused", mission.isPaused());
         return tag;
     }
 
@@ -75,6 +77,8 @@ public final class MissionNbtCodec {
         mission.setDimension(tag.getInteger("dimension"));
         mission.setQueued(tag.hasKey("queued") && tag.getBoolean("queued"));
         if (tag.hasKey("recoveryPolicy")) mission.setRecoveryPolicy(tag.getString("recoveryPolicy"));
+        mission.setDestructiveAuthorized(tag.getBoolean("destructiveAuthorized"));
+        mission.setPaused(tag.getBoolean("paused"));
         return mission;
     }
 }

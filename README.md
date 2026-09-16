@@ -86,7 +86,7 @@ handed to WingMan through the adapter.
 | `A` | Authorize attack | Requires owner, operator, `TARGET_LOCKED`, live target, and a valid WingMan attack route |
 | `N` | Kamikaze/nose-dive | Explicit operator action; server requires a supported aircraft, target, payload, and route |
 | `H` | Fire SelfDestruct payload | Requires operator control, supported aircraft, destructive weapon, and ammunition |
-| `L` | Exact target lock | Locks only the loaded entity/vehicle under the crosshair; no destructive payload is implied |
+| `L` | Exact target lock | Locks only a loaded, hostile, non-vehicle contact under the crosshair; no destructive payload is implied |
 | `J` | Clear target lock | Requests lock cancellation and normal WingMan recovery |
 | `X` | Abort selected mission | Requires a server-owned mission and releases the aircraft after aborting |
 | `F` | Refresh missions | Requests a server-filtered snapshot; it does not mutate mission state |
@@ -105,6 +105,10 @@ not cause an automatic kamikaze dive. Kamikaze remains an explicit operator
 action through the mission controls. Manual AI targets are resolved from
 loaded entities at any distance inside the mission's 5000-block envelope, so
 they are not incorrectly rejected by the old 256-block acquisition search.
+Long-range/reusable profiles, including MQ-9, additionally require explicit
+destructive authorization before any kamikaze route. One-way/FPV square
+strikes are supported and use their configured terminal payload behavior
+(default self-destruct), while reusable square strikes return to base.
 
 For a survival-safe point attack, look at a block or structure from the
 piloted UAV and run `/rdpuav mission attack-point`. The server ray-traces the
@@ -373,6 +377,13 @@ spacing are configured in `rdp-uav-square-strike.cfg`; the command coordinates
 are the requested area center, not a hardcoded aircraft placement. The reference MQ-9
 configuration can therefore establish a lock before reaching the target area
 while holding its configured altitude.
+
+Entity missions use one server-side contact tracker keyed by entity UUID. A
+missed update marks the same contact `LOST` and eventually `EXPIRED`; it never
+silently transfers tracking to a nearby entity. The tracker retains last-known
+position, velocity, confidence, dimension, and timestamps. McHeliCE's
+technical vehicle type does not select this policy; the configured UAV profile
+does.
 
 ## Swarm orchestration
 

@@ -1,0 +1,6 @@
+# Copy to the Forge config directory as rdp-uav-targets.cfg.
+[safety]
+# Reject contacts whose feet are buried in solid ground.
+rejectDeeplyEmbedded=true
+# Maximum tolerated depth below the supporting block top.
+maximumEmbeddedDepth=1.5

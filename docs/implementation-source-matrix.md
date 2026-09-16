@@ -22,6 +22,8 @@ This matrix records the source-of-truth classification for currently known missi
 | diagnostics | CUSTOM_ADDON_LOGIC | `RdpUavDebug` | Verbose logging is custom addon instrumentation | `RdpUavDebug`, logger usage in lifecycle |
 | swarm coordination | EXISTING_PROJECT_LOGIC | `MissionManager`, `AircraftAssignmentRegistry` | Multi-UAV coordination is still modeled as assignment and queue logic, not a full swarm planner | `AircraftAssignmentRegistry`, `MissionManager` |
 | reusable external logic | MCHELI_NATIVE / WINGMAN_ADAPTER | McHeli classes and WingMan entries | The addon should not duplicate real flight or weapon logic | Project docs and adapter boundary |
+| contact telemetry | MCHELI_NATIVE + CUSTOM_ADDON_LOGIC | `ContactTracker`, `ContactSnapshot`, native entity identity | UUID continuity, bounded velocity and lifecycle are addon state; flight remains native | `MissionLifecycle.reacquire(...)`, `RdpUavTargetHud` |
+| weapon guidance | WINGMAN_ADAPTER | `WingmanEntry.currentAutoTarget`, `autoTargetX/Y/Z`, `MissionNode.attack` | McHeliCE has no verified projectile steering API; native attack routing is authoritative | `WingManFlightAdapter.updateTargetGuidance(...)` |
 
 ## Unresolved classification items
 

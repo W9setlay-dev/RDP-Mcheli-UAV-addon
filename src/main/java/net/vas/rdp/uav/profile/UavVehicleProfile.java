@@ -12,6 +12,8 @@ public final class UavVehicleProfile {
     private final double lockRange;
     private final double missionExecutionRange;
     private final String attackWeaponPriority;
+    private final double oneWaySpeed;
+    private final double attackEnvelope;
 
     public UavVehicleProfile(UavExecutionProfile executionProfile, double executionAltitude,
                              double minimumExecutionAltitude, double maximumExecutionAltitude,
@@ -30,7 +32,7 @@ public final class UavVehicleProfile {
         this(executionProfile, executionAltitude, minimumExecutionAltitude,
                 maximumExecutionAltitude, altitudeTolerance, holdingEnabled,
                 terminalPayloadBehavior, detectionRange, lockRange,
-                missionExecutionRange, "");
+                missionExecutionRange, "", 0, 64);
     }
 
     public UavVehicleProfile(UavExecutionProfile executionProfile, double executionAltitude,
@@ -39,6 +41,18 @@ public final class UavVehicleProfile {
                              String terminalPayloadBehavior, double detectionRange,
                              double lockRange, double missionExecutionRange,
                              String attackWeaponPriority) {
+        this(executionProfile, executionAltitude, minimumExecutionAltitude, maximumExecutionAltitude,
+                altitudeTolerance, holdingEnabled, terminalPayloadBehavior, detectionRange, lockRange,
+                missionExecutionRange, attackWeaponPriority, 0, 64);
+    }
+
+    public UavVehicleProfile(UavExecutionProfile executionProfile, double executionAltitude,
+                             double minimumExecutionAltitude, double maximumExecutionAltitude,
+                             double altitudeTolerance, boolean holdingEnabled,
+                             String terminalPayloadBehavior, double detectionRange,
+                             double lockRange, double missionExecutionRange,
+                             String attackWeaponPriority, double oneWaySpeed,
+                             double attackEnvelope) {
         if (executionProfile == null || executionAltitude < 0 || minimumExecutionAltitude < 0
                 || maximumExecutionAltitude < minimumExecutionAltitude
                 || altitudeTolerance < 0 || detectionRange <= 0 || lockRange <= 0
@@ -57,6 +71,9 @@ public final class UavVehicleProfile {
         this.lockRange = lockRange;
         this.missionExecutionRange = missionExecutionRange;
         this.attackWeaponPriority = attackWeaponPriority == null ? "" : attackWeaponPriority.trim();
+        if (oneWaySpeed < 0 || attackEnvelope <= 0) throw new IllegalArgumentException("Invalid UAV envelope");
+        this.oneWaySpeed = oneWaySpeed;
+        this.attackEnvelope = attackEnvelope;
     }
 
     public boolean isReusable() {
@@ -77,4 +94,7 @@ public final class UavVehicleProfile {
     public double getLockRange() { return lockRange; }
     public double getMissionExecutionRange() { return missionExecutionRange; }
     public String getAttackWeaponPriority() { return attackWeaponPriority; }
+    /** Zero means use the native WingMan/default speed for this airframe. */
+    public double getOneWaySpeed() { return oneWaySpeed; }
+    public double getAttackEnvelope() { return attackEnvelope; }
 }

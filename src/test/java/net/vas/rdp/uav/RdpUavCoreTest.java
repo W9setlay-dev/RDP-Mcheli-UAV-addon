@@ -10,6 +10,8 @@ import net.vas.rdp.uav.mission.MissionState;
 import net.vas.rdp.uav.mission.MissionType;
 import net.vas.rdp.uav.mission.RDPMission;
 import net.vas.rdp.uav.persistence.MissionNbtCodec;
+import net.vas.rdp.uav.profile.UavExecutionProfile;
+import net.vas.rdp.uav.profile.UavVehicleProfile;
 import net.vas.rdp.uav.target.TargetLock;
 import net.vas.rdp.uav.target.TargetPriority;
 import net.vas.rdp.uav.target.TargetSelector;
@@ -212,6 +214,20 @@ public class RdpUavCoreTest {
         assertEquals(MissionNode.Type.FLY_TO, nodes.get(4).type);
         assertEquals(MissionNode.Type.ATTACK, nodes.get(5).type);
         assertEquals(MissionNode.Type.ATTACK, nodes.get(8).type);
+    }
+
+    @Test
+    public void oneWaySquareStrikeKeepsConfigurableGeometryAndTerminalPayload() {
+        UavVehicleProfile oneWay = new UavVehicleProfile(
+                UavExecutionProfile.ONE_WAY, 0, 0, 4096, 0, false, "SELF_DESTRUCT");
+        SquareStrikePlan plan = new SquareStrikePlan(
+                100, 140, -50, 80, 60, 0, 20, 30, 2);
+
+        assertFalse(oneWay.isReusable());
+        assertEquals("SELF_DESTRUCT", oneWay.getTerminalPayloadBehavior());
+        assertEquals(9, plan.createNodes().size());
+        assertEquals(80D, plan.getMaxX() - plan.getMinX(), 0D);
+        assertEquals(60D, plan.getMaxZ() - plan.getMinZ(), 0D);
     }
 
     @Test

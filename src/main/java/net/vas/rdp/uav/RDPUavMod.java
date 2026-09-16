@@ -20,7 +20,7 @@ public final class RDPUavMod {
     private static final MissionManager MISSIONS = new MissionManager();
     private static final MissionLifecycle LIFECYCLE = new MissionLifecycle(MISSIONS);
     private static final net.vas.rdp.uav.swarm.SwarmManager SWARMS =
-            new net.vas.rdp.uav.swarm.SwarmManager();
+            new net.vas.rdp.uav.swarm.SwarmManager(MISSIONS);
     private static final net.vas.rdp.uav.ai.AiTaskingService AI =
             new net.vas.rdp.uav.ai.AiTaskingService(MISSIONS);
 
@@ -30,6 +30,7 @@ public final class RDPUavMod {
         net.vas.rdp.uav.energy.UavEnergyConfig.load(event.getModConfigurationDirectory());
         net.vas.rdp.uav.profile.UavVehicleProfiles.load(event.getModConfigurationDirectory());
         net.vas.rdp.uav.swarm.SwarmConfig.load(event.getModConfigurationDirectory());
+        net.vas.rdp.uav.target.TargetPolicy.load(event.getModConfigurationDirectory());
         net.vas.rdp.uav.flight.KamikazeConfig.load(event.getModConfigurationDirectory());
         net.vas.rdp.uav.flight.SquareStrikeConfig.load(event.getModConfigurationDirectory());
     }
@@ -64,6 +65,28 @@ public final class RDPUavMod {
 
     public static net.vas.rdp.uav.swarm.SwarmManager swarms() {
         return SWARMS;
+    }
+
+    public static net.vas.rdp.uav.target.ContactSnapshot contact(java.util.UUID targetId) {
+        return LIFECYCLE.contact(targetId);
+    }
+
+    public static boolean cycleContact(net.minecraft.world.World world,
+                                       com.norwood.mcheli.aircraft.MCH_EntityAircraft aircraft,
+                                       boolean next) {
+        return LIFECYCLE.cycleContact(world, aircraft, next);
+    }
+
+    public static boolean cycleContact(net.minecraft.world.World world,
+                                       com.norwood.mcheli.aircraft.MCH_EntityAircraft aircraft,
+                                       net.minecraft.entity.player.EntityPlayer operator,
+                                       boolean next) {
+        return LIFECYCLE.cycleContact(world, aircraft, operator, next);
+    }
+
+    public static boolean clearContact(net.minecraft.world.World world,
+                                       com.norwood.mcheli.aircraft.MCH_EntityAircraft aircraft) {
+        return LIFECYCLE.clearContact(world, aircraft);
     }
 
     private static final class ServerTickHandler {

@@ -529,6 +529,14 @@ heading, and pass spacing are loaded from `rdp-uav-square-strike.cfg`; the
 requested coordinates identify the area center and are never treated as a
 hardcoded aircraft placement.
 
+`ContactTracker` is the server-side contact-history boundary. `TargetResolver`
+only performs bounded live-world queries. `ContactSnapshot` is immutable and
+contains UUID, registry identity, dimension, position history, velocity,
+distance, confidence, visibility, timestamps, and lifecycle state. A missing
+entity marks the same UUID `LOST` during the grace period and then `EXPIRED`;
+it never substitutes a different nearby entity. `MissionLifecycle` updates
+this authority and telemetry projects it for the presentation-only HUD.
+
 Never infer API signatures from online examples when the installed jar is
 available. Verify the exact binary with `javap` or a source-compatible compile.
 

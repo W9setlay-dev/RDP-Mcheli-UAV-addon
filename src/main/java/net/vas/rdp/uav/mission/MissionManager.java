@@ -115,4 +115,8 @@ public final class MissionManager {
     public boolean acceptQueuedMission(RDPMission mission) {
         return mission != null && queue.remove(mission);
     }
+
+    public void removeQueuedMission(RDPMission mission) {
+        if (mission != null) queue.remove(mission);
+    }
 }

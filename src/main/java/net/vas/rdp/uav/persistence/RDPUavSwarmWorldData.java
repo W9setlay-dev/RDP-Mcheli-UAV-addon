@@ -41,6 +41,12 @@ public final class RDPUavSwarmWorldData extends WorldSavedData {
             catch (IllegalArgumentException ignored) { }
             try { swarm.setResult(SwarmResult.valueOf(value.getString("result"))); }
             catch (IllegalArgumentException ignored) { }
+            try { swarm.setMissionState(net.vas.rdp.uav.swarm.SwarmMissionState.valueOf(value.getString("missionState"))); }
+            catch (IllegalArgumentException ignored) { }
+            try { swarm.setLockState(net.vas.rdp.uav.swarm.SwarmLockState.valueOf(value.getString("lockState"))); }
+            catch (IllegalArgumentException ignored) { }
+            try { swarm.setOperatorState(net.vas.rdp.uav.swarm.SwarmOperatorState.valueOf(value.getString("operatorState"))); }
+            catch (IllegalArgumentException ignored) { }
             try { swarm.setSearchPattern(SearchPattern.valueOf(value.getString("search"))); }
             catch (IllegalArgumentException ignored) { }
             if (value.hasKey("leader")) swarm.setDesignatedLeader(UUID.fromString(value.getString("leader")));
@@ -70,6 +76,9 @@ public final class RDPUavSwarmWorldData extends WorldSavedData {
             value.setString("leadership", swarm.getLeadership().name());
             value.setString("formation", swarm.getFormation().name());
             value.setString("result", swarm.getResult().name());
+            value.setString("missionState", swarm.getMissionState().name());
+            value.setString("lockState", swarm.getLockState().name());
+            value.setString("operatorState", swarm.getOperatorState().name());
             value.setString("search", swarm.getSearchPattern().name());
             if (swarm.getDesignatedLeader() != null) {
                 value.setString("leader", swarm.getDesignatedLeader().toString());

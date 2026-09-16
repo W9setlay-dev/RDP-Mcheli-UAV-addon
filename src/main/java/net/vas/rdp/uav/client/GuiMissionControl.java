@@ -65,6 +65,13 @@ public final class GuiMissionControl extends GuiScreen {
         if (id != null) RdpUavNetwork.abortMission(id);
     }
 
+    public static void clearSelected() {
+        String id = selectedMissionId();
+        if (id != null) RdpUavNetwork.clearSelectedMission(id);
+    }
+
+    public static void clearAll() { RdpUavNetwork.clearAllMissions(); }
+
     public static void createReconFromField() {
         if (active != null) active.createEntityMission(false);
     }
@@ -100,6 +107,8 @@ public final class GuiMissionControl extends GuiScreen {
         buttonList.add(new GuiButton(2, right + 158, height - 28, 62, 20, "Close"));
         buttonList.add(new GuiButton(3, left, height - 54, 100, 20, "Authorize [A]"));
         buttonList.add(new GuiButton(4, left + 105, height - 54, 100, 20, "Abort [X]"));
+        buttonList.add(new GuiButton(14, left + 210, height - 54, 100, 20, "Clear selected"));
+        buttonList.add(new GuiButton(15, left + 315, height - 54, 100, 20, "Clear all"));
         buttonList.add(new GuiButton(8, right + 105, height - 54, 115, 20, "Nose-dive [N]"));
         buttonList.add(new GuiButton(5, left, height - 80, 68, 20, "Recon [R]"));
         buttonList.add(new GuiButton(6, left + 73, height - 80, 68, 20, "Attack [K]"));
@@ -148,6 +157,12 @@ public final class GuiMissionControl extends GuiScreen {
         else if (button.id == 4) confirmDangerAction("abort", new Runnable() {
             @Override public void run() { abortSelected(); }
         }, "Aborting this mission will end the active task.");
+        else if (button.id == 14) confirmDangerAction("clear-selected", new Runnable() {
+            @Override public void run() { clearSelected(); }
+        }, "Clear the selected mission record?");
+        else if (button.id == 15) confirmDangerAction("clear-all", new Runnable() {
+            @Override public void run() { clearAll(); }
+        }, "Clear all of your mission records?");
         else if (button.id == 5) createEntityMission(false);
         else if (button.id == 6) confirmDangerAction("attack", new Runnable() {
             @Override public void run() { createEntityMission(true); }

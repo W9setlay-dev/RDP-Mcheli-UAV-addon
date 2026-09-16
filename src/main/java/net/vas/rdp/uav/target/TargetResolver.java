@@ -46,6 +46,7 @@ public final class TargetResolver {
                 x + radius, y + radius, z + radius);
         for (Entity entity : world.getEntitiesWithinAABB(Entity.class, searchBox)) {
             if (entity == null || entity.isDead || entity.dimension != world.provider.getDimension()) continue;
+            if (!TargetPolicy.isSafeContact(world, entity)) continue;
             double distance = entity.getDistanceSq(x, y, z);
             if (distance > maxDistance) continue;
             ResourceLocation key = EntityList.getKey(entity);
@@ -55,7 +56,8 @@ public final class TargetResolver {
             if (specification.getMode() == TargetSelectionMode.MANUAL) {
                 matches = id.equals(specification.getRegistryId());
             } else if (TargetClassifier.isHostileNamespace(specification.getNamespace())) {
-                matches = TargetClassifier.isHostileCandidate(id);
+                matches = TargetClassifier.isHostileCandidate(id)
+                        && !TargetClassifier.isVehicleId(id);
             } else {
                 matches = id.startsWith(specification.getNamespace() + ":");
             }

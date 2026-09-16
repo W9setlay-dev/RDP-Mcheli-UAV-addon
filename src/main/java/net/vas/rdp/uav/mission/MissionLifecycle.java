@@ -3,6 +3,7 @@ package net.vas.rdp.uav.mission;
 import com.norwood.mcheli.aircraft.MCH_EntityAircraft;
 import com.norwood.mcheli.wingman.wingman.WingmanEntry;
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.entity.EntityList;
 import net.minecraft.util.math.RayTraceResult;
 import net.minecraft.util.math.Vec3d;
@@ -15,6 +16,9 @@ import net.vas.rdp.uav.target.TargetResolver;
 import net.vas.rdp.uav.profile.UavVehicleProfile;
 import net.vas.rdp.uav.profile.UavVehicleProfiles;
 import net.vas.rdp.uav.target.TargetSelectionMode;
+import net.vas.rdp.uav.target.ContactLifecycle;
+import net.vas.rdp.uav.target.ContactSnapshot;
+import net.vas.rdp.uav.target.ContactTracker;
 import net.vas.rdp.uav.flight.KamikazeImpactDetector;
 import net.vas.rdp.uav.flight.KamikazePilotOverride;
 
@@ -42,6 +46,9 @@ public final class MissionLifecycle {
     private final MissionManager manager;
     private final WingManFlightAdapter flight = new WingManFlightAdapter();
     private final TargetResolver targets = new TargetResolver();
+    private final ContactTracker contactTracker = new ContactTracker();
+    /** Operator cursor is deliberately separate from RDPMission.targetId (the mission lock). */
+    private final Map<UUID, UUID> operatorContacts = new HashMap<UUID, UUID>();
     private final Map<World, Boolean> restoredWorlds = new WeakHashMap<World, Boolean>();
     private final Map<UUID, RouteRefresh> routeRefreshes = new HashMap<UUID, RouteRefresh>();
     private Map<UUID, MCH_EntityAircraft> aircraftThisTick = new HashMap<UUID, MCH_EntityAircraft>();
@@ -73,6 +80,10 @@ public final class MissionLifecycle {
         for (int i = 0; i < count; i++) {
             RDPMission mission = manager.pollQueuedMission();
             if (mission == null) return;
+            if (mission.isPaused()) {
+                manager.enqueueQueuedMission(mission);
+                continue;
+            }
             if (mission.getDimension() != world.provider.getDimension()) {
                 RdpUavDebug.debug("Lifecycle", "mission {} deferred for dimension {} (current {})",
                         mission.getMissionId(), mission.getDimension(), world.provider.getDimension());
@@ -161,6 +172,10 @@ public final class MissionLifecycle {
         for (RDPMission mission : missions) {
             if (mission.isQueued() || terminal(mission.getState())
                     || mission.getDimension() != world.provider.getDimension()) continue;
+            if (mission.isPaused()) {
+                flight.clearGuidance(findAircraft(world, mission.getAircraftId()));
+                continue;
+            }
             if (tick - mission.getLastUpdateTick() > MISSION_TIMEOUT) {
                 fail(world, mission, mission.getState().name() + "_TIMEOUT", tick);
                 dirty = true;
@@ -209,6 +224,19 @@ public final class MissionLifecycle {
                     : reacquire(world, aircraft, mission, tick);
             if (mission.getTargetSelectionMode() != TargetSelectionMode.POINT && target == null) {
                 flight.clearGuidance(aircraft);
+                // A one-way airframe has no safe holding/reacquisition mode.
+                // End the mission deterministically instead of leaving the
+                // native route in a repeating loiter after a miss.
+                if (mission.isAttack() && mission.getMissionType() != MissionType.SQUARE_STRIKE
+                        && !profile(aircraft).isReusable()
+                        && (mission.getState() == MissionState.ATTACK_TARGET
+                        || mission.getState() == MissionState.TARGET_LOCKED
+                        || mission.getState() == MissionState.APPROACHING
+                        || mission.getState() == MissionState.KAMIKADZE_TARGET)) {
+                    fail(world, mission, "ONE_WAY_TARGET_MISSED", tick);
+                    dirty = true;
+                    continue;
+                }
                 if (mission.getState() == MissionState.SEARCHING
                         || mission.getState() == MissionState.WAITING_FOR_TARGET) {
                     if (mission.getState() == MissionState.SEARCHING) {
@@ -333,9 +361,8 @@ public final class MissionLifecycle {
             return true;
         }
         if (target != null) {
-            entry.autoTargetX = target.x;
-            entry.autoTargetY = target.y;
-            entry.autoTargetZ = target.z;
+            flight.updateTargetGuidance(aircraft, target.x, target.y, target.z,
+                    target.entity == null ? null : target.entity.getUniqueID());
             if (entry.order != null) {
                 entry.order.targetX = target.x;
                 entry.order.targetZ = target.z;
@@ -392,6 +419,8 @@ public final class MissionLifecycle {
                 UUID pilotTarget = KamikazePilotOverride.targetFor(aircraft.getUniqueID());
                 if (mission.isAttack() && target != null
                         && flight.hasSelfDestructWeaponWithAmmo(aircraft)
+                        && mission.getMissionType() != MissionType.SQUARE_STRIKE
+                        && (!profile(aircraft).isReusable() || mission.isDestructiveAuthorized())
                         && (pilotTarget == null || pilotTarget.equals(
                         target.entity == null ? null : target.entity.getUniqueID()))) {
                     if (!flight.armKamikaze(aircraft, target.x, target.y, target.z,
@@ -406,10 +435,6 @@ public final class MissionLifecycle {
                 if (mission.isAttack()) {
                     if (mission.getMissionType() == MissionType.SQUARE_STRIKE) {
                         UavVehicleProfile squareProfile = profile(aircraft);
-                        if (!squareProfile.isReusable()) {
-                            fail(world, mission, "SQUARE_STRIKE_REQUIRES_REUSABLE_UAV", tick);
-                            return true;
-                        }
                         double squareAltitude = squareProfile.getExecutionAltitude() > 0.0D
                                 ? squareProfile.getExecutionAltitude()
                                 : target.y + net.vas.rdp.uav.flight.SquareStrikeConfig.altitudeOffset;
@@ -431,7 +456,7 @@ public final class MissionLifecycle {
                         return true;
                     }
                     if (!flight.armAttack(aircraft, target.x, target.y, target.z,
-                            mission.getObservationDistance(), mission.getTargetId(),
+                            profile(aircraft).getAttackEnvelope(), mission.getTargetId(),
                             profile(aircraft).getAttackWeaponPriority())) {
                         fail(world, mission, "WINGMAN_ATTACK_ARM_REJECTED", tick);
                     } else {
@@ -454,6 +479,19 @@ public final class MissionLifecycle {
                     return true;
                 }
                 if (flight.isAttackComplete(aircraft)) {
+                    if (mission.getMissionType() == MissionType.SQUARE_STRIKE
+                            && !profile(aircraft).isReusable()) {
+                        if ("SELF_DESTRUCT".equalsIgnoreCase(
+                                profile(aircraft).getTerminalPayloadBehavior())
+                                && flight.fireSelfDestructWeapon(aircraft)) {
+                            mission.markKamikazeDetonated(tick);
+                            flight.release(aircraft);
+                            manager.release(mission);
+                            return true;
+                        }
+                        mission.fail("ONE_WAY_SQUARE_TERMINAL_PAYLOAD_UNAVAILABLE", tick);
+                        return true;
+                    }
                     mission.transitionTo(MissionState.APPROACHING, tick);
                     mission.transitionTo(MissionState.ON_TARGET, tick);
                     mission.transitionTo(MissionState.SCANNING, tick);
@@ -543,13 +581,25 @@ public final class MissionLifecycle {
         Entity current = targets.findLoaded(world, mission.getTargetId());
         UavVehicleProfile vehicleProfile = profile(aircraft);
         if (current != null && targetDistance(aircraft, Target.entity(current))
-                <= vehicleProfile.getLockRange()) return Target.entity(current);
+                <= vehicleProfile.getLockRange()) {
+            contactTracker.observe(world, current, targetDistance(aircraft, Target.entity(current)),
+                    tick, ContactLifecycle.TRACKING);
+            return Target.entity(current);
+        }
+        if (mission.getTargetId() != null) {
+            contactTracker.markLost(mission.getTargetId(), tick);
+            // A tracked identity may be reacquired, but it must never be
+            // replaced by an unrelated nearby entity after disappearing.
+            return null;
+        }
         List<TargetResolver.EntityCandidate> candidates = targets.find(world, aircraft.posX,
                 aircraft.posY, aircraft.posZ,
                 vehicleProfile.getDetectionRange(),
                 mission.getTargetSpec());
         if (candidates.isEmpty()) return null;
         Entity reacquired = candidates.get(0).getEntity();
+        contactTracker.observe(world, reacquired,
+                Math.sqrt(candidates.get(0).getDistanceSquared()), tick, ContactLifecycle.SELECTABLE);
         if (mission.getTargetId() == null) mission.reacquireTarget(reacquired.getUniqueID(), tick);
         else if (!mission.getTargetId().equals(reacquired.getUniqueID())) {
             // Manual and automatic searches may recover a moved entity, but
@@ -574,6 +624,8 @@ public final class MissionLifecycle {
         if (current != null && (mission.getTargetSelectionMode() == TargetSelectionMode.MANUAL
                 || aircraft.getDistanceSq(current) <=
                 profile(aircraft).getDetectionRange() * profile(aircraft).getDetectionRange())) {
+            contactTracker.observe(world, current, aircraft.getDistance(current),
+                    world.getTotalWorldTime(), ContactLifecycle.SELECTED);
             return Target.entity(current);
         }
         if (current != null) return null;
@@ -581,7 +633,65 @@ public final class MissionLifecycle {
                 aircraft.posY, aircraft.posZ,
                 profile(aircraft).getDetectionRange(),
                 mission.getTargetSpec());
-        return candidates.isEmpty() ? null : Target.entity(candidates.get(0).getEntity());
+        if (candidates.isEmpty()) return null;
+        Entity selected = candidates.get(0).getEntity();
+        contactTracker.observe(world, selected,
+                Math.sqrt(candidates.get(0).getDistanceSquared()), world.getTotalWorldTime(),
+                ContactLifecycle.SELECTABLE);
+        return Target.entity(selected);
+    }
+
+    public ContactSnapshot contact(UUID targetId) {
+        return contactTracker.get(targetId);
+    }
+
+    public ContactSnapshot operatorContact(MCH_EntityAircraft aircraft) {
+        return aircraft == null ? null : contactTracker.get(operatorContacts.get(aircraft.getUniqueID()));
+    }
+
+    public boolean cycleContact(World world, MCH_EntityAircraft aircraft, boolean next) {
+        return cycleContact(world, aircraft, null, next);
+    }
+
+    public boolean cycleContact(World world, MCH_EntityAircraft aircraft, EntityPlayer operator,
+                                boolean next) {
+        if (world == null || aircraft == null) return false;
+        for (RDPMission mission : RDPMissionWorldData.get(world).getRepository().snapshot()) {
+            if (!mission.getAircraftId().equals(aircraft.getUniqueID()) || mission.isTerminal()) continue;
+            UUID current = operatorContacts.get(aircraft.getUniqueID());
+            List<ContactSnapshot> available = new java.util.ArrayList<ContactSnapshot>(
+                    contactTracker.selectable());
+            if (available.isEmpty()) return false;
+            int start = -1;
+            for (int i = 0; i < available.size(); i++) {
+                if (available.get(i).getEntityId().equals(current)) { start = i; break; }
+            }
+            int offset = next ? 1 : available.size() - 1;
+            for (int i = 0; i < available.size(); i++) {
+                ContactSnapshot candidate = available.get((start < 0 ? 0 : start + offset + i)
+                        % available.size());
+                Entity entity = targets.findLoaded(world, candidate.getEntityId());
+                if (entity != null && net.vas.rdp.uav.target.TargetPolicy
+                        .isSelectableContact(world, entity, operator)) {
+                    contactTracker.select(candidate.getEntityId());
+                    operatorContacts.put(aircraft.getUniqueID(), candidate.getEntityId());
+                    return true;
+                }
+            }
+            return false;
+        }
+        return false;
+    }
+
+    public boolean clearContact(World world, MCH_EntityAircraft aircraft) {
+        if (world == null || aircraft == null) return false;
+        for (RDPMission mission : RDPMissionWorldData.get(world).getRepository().snapshot()) {
+            if (mission.getAircraftId().equals(aircraft.getUniqueID()) && !mission.isTerminal()) {
+                operatorContacts.remove(aircraft.getUniqueID());
+                return true;
+            }
+        }
+        return false;
     }
 
     private void recoverFromTargetLoss(World world, RDPMission mission,

@@ -1,6 +1,7 @@
 package net.vas.rdp.uav;
 
 import com.norwood.mcheli.wingman.mission.MissionNode;
+import io.netty.buffer.Unpooled;
 import net.minecraft.nbt.NBTTagCompound;
 import net.vas.rdp.uav.mission.AircraftAssignmentRegistry;
 import net.vas.rdp.uav.mission.MissionQueue;
@@ -16,6 +17,10 @@ import net.vas.rdp.uav.target.TargetAcquisition;
 import net.vas.rdp.uav.target.TargetPriority;
 import net.vas.rdp.uav.target.TargetSelector;
 import net.vas.rdp.uav.target.TargetSpec;
+import net.vas.rdp.uav.target.ContactLifecycle;
+import net.vas.rdp.uav.target.ContactSnapshot;
+import net.vas.rdp.uav.target.ContactTracker;
+import net.vas.rdp.uav.network.ContactSelection;
 import net.vas.rdp.uav.profile.UavExecutionProfile;
 import net.vas.rdp.uav.profile.UavVehicleProfile;
 import net.vas.rdp.uav.profile.UavVehicleProfiles;
@@ -31,6 +36,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.fail;
 
 public class RdpUavContractMatrixTest {
@@ -155,6 +161,37 @@ public class RdpUavContractMatrixTest {
     }
 
     @Test
+    public void reusableDestructiveRoutesRequireExplicitAuthorization() {
+        RDPMission mission = mission();
+        assertFalse(mission.isDestructiveAuthorized());
+        mission.authorizeDestructiveAction();
+        assertTrue(mission.isDestructiveAuthorized());
+        mission.setPaused(true);
+        assertTrue(mission.isPaused());
+    }
+
+    @Test
+    public void missionRepositoryRemovesTerminalAndActiveRecords() {
+        net.vas.rdp.uav.mission.MissionRepository repository =
+                new net.vas.rdp.uav.mission.MissionRepository();
+        RDPMission mission = mission();
+        repository.add(mission);
+        assertTrue(repository.remove(mission.getMissionId()));
+        assertNull(repository.find(mission.getMissionId()));
+        assertFalse(repository.remove(mission.getMissionId()));
+    }
+
+    @Test
+    public void manualClassificationRejectsVehiclesAndFriendlyNamespaces() {
+        assertFalse(net.vas.rdp.uav.target.TargetClassifier.isMissionRelevant(
+                "mcheli:vehicle_mq9", "hostile"));
+        assertTrue(net.vas.rdp.uav.target.TargetClassifier.isHostileCandidate(
+                "minecraft:zombie"));
+        assertFalse(net.vas.rdp.uav.target.TargetClassifier.isVehicleId(
+                "minecraft:zombie"));
+    }
+
+    @Test
     public void swarmMembersAreDeterministicAndPersistable() {
         UUID owner = UUID.fromString("00000000-0000-0000-0000-000000000001");
         UUID first = UUID.fromString("00000000-0000-0000-0000-000000000002");
@@ -183,6 +220,50 @@ public class RdpUavContractMatrixTest {
                 SwarmTask.POINT_OBSERVATION, 8).size());
         assertEquals(0, new SwarmTaskAllocator().suitable(swarm,
                 SwarmTask.ESCORT, 8).size());
+    }
+
+    @Test
+    public void contactTrackerPreservesIdentityAndLastKnownDataAcrossLoss() {
+        ContactTracker tracker = new ContactTracker(10);
+        UUID id = UUID.fromString("00000000-0000-0000-0000-000000000099");
+        tracker.observe(0, id, "hostile:target", 10, 80, 20, 40, 1,
+                ContactLifecycle.SELECTED);
+        ContactSnapshot updated = tracker.observe(0, id, "hostile:target", 14, 80, 20, 36, 3,
+                ContactLifecycle.TRACKING);
+        assertEquals(id, updated.getEntityId());
+        assertEquals(2.0D, updated.getVelocityX(), 0.0001D);
+        ContactSnapshot lost = tracker.markLost(id, 5);
+        assertNotNull(lost);
+        assertEquals(id, lost.getEntityId());
+        assertEquals(ContactLifecycle.LOST, lost.getLifecycle());
+        assertEquals(14.0D, lost.getX(), 0.0001D);
+        assertEquals(2.0D, lost.getVelocityX(), 0.0001D);
+        ContactSnapshot expired = tracker.markLost(id, 20);
+        assertEquals(ContactLifecycle.EXPIRED, expired.getLifecycle());
+        assertEquals(id, expired.getEntityId());
+    }
+
+    @Test
+    public void contactTrackerCyclesStableUuidOrder() {
+        ContactTracker tracker = new ContactTracker();
+        UUID first = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        UUID second = UUID.fromString("00000000-0000-0000-0000-000000000002");
+        tracker.observe(0, second, "hostile:b", 0, 0, 0, 2, 1, ContactLifecycle.SELECTABLE);
+        tracker.observe(0, first, "hostile:a", 0, 0, 0, 1, 1, ContactLifecycle.SELECTABLE);
+        assertEquals(first, tracker.cycle(null, true).getEntityId());
+        assertEquals(second, tracker.cycle(first, true).getEntityId());
+        assertEquals(first, tracker.cycle(second, false).getEntityId());
+    }
+
+    @Test
+    public void contactSelectionPacketRoundTripsActions() {
+        ContactSelection sent = new ContactSelection(true, false);
+        ContactSelection received = new ContactSelection();
+        io.netty.buffer.ByteBuf buffer = Unpooled.buffer();
+        sent.toBytes(buffer);
+        received.fromBytes(buffer);
+        assertTrue(received.next);
+        assertFalse(received.clear);
     }
 
     @Test

@@ -142,6 +142,31 @@ public final class WingManFlightAdapter {
         entry.autoTargetZ = aircraft.posZ;
     }
 
+    /**
+     * Updates only WingMan's native target coordinates.  A corrupt or
+     * teleported contact cannot inject an unbounded waypoint into the native
+     * controller; the update is capped to one bounded step.
+     */
+    public boolean updateTargetGuidance(MCH_EntityAircraft aircraft, double x, double y, double z,
+                                        UUID targetId) {
+        if (aircraft == null || !Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)) return false;
+        WingmanEntry entry = WingmanRegistry.get(aircraft.getUniqueID());
+        if (entry == null || entry.autoState == AutonomousState.RTB
+                || entry.autoState == AutonomousState.LANDING || entry.autoState == AutonomousState.PARKED) return false;
+        double dx = x - entry.autoTargetX, dy = y - entry.autoTargetY, dz = z - entry.autoTargetZ;
+        double length = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        double maxStep = 128.0D;
+        if (length > maxStep) {
+            double scale = maxStep / length;
+            x = entry.autoTargetX + dx * scale;
+            y = entry.autoTargetY + dy * scale;
+            z = entry.autoTargetZ + dz * scale;
+        }
+        entry.currentAutoTarget = targetId;
+        entry.autoTargetX = x; entry.autoTargetY = y; entry.autoTargetZ = z;
+        return true;
+    }
+
     public boolean armAttack(MCH_EntityAircraft aircraft, double x, double y, double z,
                              double attackRadius, UUID targetId) {
         return armAttack(aircraft, x, y, z, attackRadius, targetId, "");

@@ -13,6 +13,7 @@ import org.lwjgl.input.Keyboard;
 
 @SideOnly(Side.CLIENT)
 public final class RdpUavClientKeys {
+    private static long lastAssignmentTap;
     private static final KeyBinding OPEN_MISSION_CONTROL = new KeyBinding(
             "key.rdpuav.mission_control", Keyboard.KEY_U, "key.categories.rdpuav");
     private static final KeyBinding POINT_TASK = new KeyBinding(
@@ -35,6 +36,10 @@ public final class RdpUavClientKeys {
             "key.rdpuav.ai_target_lock", Keyboard.KEY_L, "key.categories.rdpuav");
     private static final KeyBinding CLEAR_TARGET_LOCK = new KeyBinding(
             "key.rdpuav.clear_target_lock", Keyboard.KEY_J, "key.categories.rdpuav");
+    private static final KeyBinding NEXT_CONTACT = new KeyBinding(
+            "key.rdpuav.next_contact", Keyboard.KEY_O, "key.categories.rdpuav");
+    private static final KeyBinding PREVIOUS_CONTACT = new KeyBinding(
+            "key.rdpuav.previous_contact", Keyboard.KEY_I, "key.categories.rdpuav");
 
     private RdpUavClientKeys() { }
 
@@ -50,6 +55,8 @@ public final class RdpUavClientKeys {
         ClientRegistry.registerKeyBinding(FIRE_SELF_DESTRUCT);
         ClientRegistry.registerKeyBinding(AI_TARGET_LOCK);
         ClientRegistry.registerKeyBinding(CLEAR_TARGET_LOCK);
+        ClientRegistry.registerKeyBinding(NEXT_CONTACT);
+        ClientRegistry.registerKeyBinding(PREVIOUS_CONTACT);
         net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(new RdpUavClientKeys());
     }
 
@@ -69,11 +76,21 @@ public final class RdpUavClientKeys {
         if (AUTO_ATTACK_TASK.isPressed()) GuiMissionControl.createAutoAttackFromField();
         if (REFRESH_MISSIONS.isPressed()) GuiMissionControl.requestRefresh();
         if (AUTHORIZE_SELECTED.isPressed()) GuiMissionControl.authorizeSelected();
-        if (ABORT_SELECTED.isPressed()) GuiMissionControl.abortSelected();
+        if (ABORT_SELECTED.isPressed()) {
+            long now = System.currentTimeMillis();
+            if (now - lastAssignmentTap <= net.vas.rdp.uav.flight.KamikazeConfig.doubleTapWindowMillis) {
+                GuiMissionControl.abortSelected();
+                lastAssignmentTap = 0L;
+            } else {
+                lastAssignmentTap = now;
+            }
+        }
         if (KAMIKAZE_SELECTED.isPressed()) GuiMissionControl.armKamikazeSelected();
         if (FIRE_SELF_DESTRUCT.isPressed()) RdpUavNetwork.fireSelfDestruct();
         if (AI_TARGET_LOCK.isPressed()) lockAiTarget(minecraft);
         if (CLEAR_TARGET_LOCK.isPressed()) RdpUavNetwork.clearAiTargetLock();
+        if (NEXT_CONTACT.isPressed()) RdpUavNetwork.cycleContact(true);
+        if (PREVIOUS_CONTACT.isPressed()) RdpUavNetwork.cycleContact(false);
     }
 
     private void lockAiTarget(Minecraft minecraft) {

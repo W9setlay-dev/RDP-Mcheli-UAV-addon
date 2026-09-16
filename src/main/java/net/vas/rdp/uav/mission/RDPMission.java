@@ -30,6 +30,8 @@ public final class RDPMission {
     private int dimension;
     private boolean queued = true;
     private String recoveryPolicy = "RETURN_TO_BASE";
+    private boolean destructiveAuthorized;
+    private boolean paused;
 
     public RDPMission(UUID missionId, UUID ownerId, UUID aircraftId, String aircraftType,
                       MissionType missionType, TargetSpec targetSpec, boolean attack,
@@ -77,6 +79,11 @@ public final class RDPMission {
                 || state == MissionState.FAILED
                 || state == MissionState.KAMIKADZE_DETONATED;
     }
+    public boolean isDestructiveAuthorized() { return destructiveAuthorized; }
+    public void authorizeDestructiveAction() { destructiveAuthorized = true; }
+    public void setDestructiveAuthorized(boolean value) { destructiveAuthorized = value; }
+    public boolean isPaused() { return paused; }
+    public void setPaused(boolean paused) { this.paused = paused; }
 
     public void lockTarget(UUID targetId, long tick) {
         if (targetId == null) {
