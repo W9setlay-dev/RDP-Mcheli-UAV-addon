@@ -51,11 +51,15 @@
 
 ## Unsupported or uncertain operations
 
-- McHeliCE 1.5.1 exposes native `MCH_WeaponSet.use(...)`, predicted impact
-  helpers, and WingMan target coordinates, but no projectile steering or
-  per-projectile target UUID API.  RDP therefore uses native WingMan attack
-  nodes and bounded moving-target coordinate updates only; it does not
-  replace projectile physics.
+- McHeliCE 1.5.1 exposes native `MCH_WeaponSet.use(...)`,
+  `MCH_WeaponBase.getGuidanceSystem()`, and
+  `MCH_WeaponGuidanceSystem.setTarget(Entity)`. Entity seekers use that
+  public target-before-launch contract when the weapon's current native
+  implementation exposes a guidance system. Coordinate/TV/laser weapons
+  continue through native WingMan coordinate attack nodes. RDP never writes
+  projectile motion or steers a spawned bullet itself; if the public
+  guidance system is unavailable, the seeker decision is explicitly
+  unsupported.
 - No stable native camera/seat projection API was present in the verified jar.
   The client HUD remains marker-only when projection is unavailable.
 - `MissionNode` has no speed field and `WingmanEntry` has no speed setter in
@@ -70,6 +74,19 @@
 ## Test method decision
 
 The project uses dependency-free Java tests to validate mission-state transitions, target selection, persistence, and queue logic. Real root-tier McHeli behavior still requires a live 1.12.2 Forge client/server runtime.
+
+## Guided weapon boundary
+
+`GuidedWeaponRegistry` is configuration-driven and keyed by the McHeli
+weapon-set definition and `MCH_WeaponInfo.type`. The verified native mapping is
+`aamissile`/`atmissile` entity seeker and `asmissile`/`tvmissile`
+coordinate/TV/laser. `GuidedWeaponAdapter` validates ammunition, objective form, speed policy, and
+server safety before dispatch. Entity seekers resolve the locked UUID in the
+loaded server world, assign it through the native guidance system, and invoke
+`MCH_WeaponSet.use(...)`; a missing lock is rejected as
+`GUIDED_TARGET_LOST`. Coordinate/TV/laser definitions retain WingMan's native
+coordinate behavior. It does not create, steer, teleport, or mutate
+projectiles. Unsupported definition/type/objective combinations are rejected.
 ## Rework safety boundaries
 
 The addon now keeps target filtering server-authoritative: vehicle-classified

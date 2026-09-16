@@ -352,7 +352,7 @@ public final class RdpUavCommand extends CommandBase {
                 || !RDPUavMod.missions().ensureAuthorized(aircraft, player)
                 || !RDPUavMod.missions().canAssignAircraft(aircraft.getUniqueID(), player.getUniqueID())) {
             player.sendMessage(new TextComponentString(
-                    "You must pilot an authorized, available McHeli UAV."));
+                    "You must pilot an authorized, available McHeli aircraft."));
             return;
         }
 
@@ -408,7 +408,7 @@ public final class RdpUavCommand extends CommandBase {
         try {
             net.vas.rdp.uav.profile.UavVehicleProfile vehicleProfile =
                     UavVehicleProfiles.forAircraft(aircraft.getAcInfo().name);
-            if (vehicleProfile.getExecutionProfile()
+            if (aircraft.isUAV() && vehicleProfile.getExecutionProfile()
                     == net.vas.rdp.uav.profile.UavExecutionProfile.UNKNOWN) {
                 throw new IllegalArgumentException("UAV definition has no configured execution profile");
             }

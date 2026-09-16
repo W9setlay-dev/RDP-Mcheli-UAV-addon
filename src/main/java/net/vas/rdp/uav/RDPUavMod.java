@@ -33,6 +33,7 @@ public final class RDPUavMod {
         net.vas.rdp.uav.target.TargetPolicy.load(event.getModConfigurationDirectory());
         net.vas.rdp.uav.flight.KamikazeConfig.load(event.getModConfigurationDirectory());
         net.vas.rdp.uav.flight.SquareStrikeConfig.load(event.getModConfigurationDirectory());
+        net.vas.rdp.uav.weapon.GuidedWeaponRegistry.load(event.getModConfigurationDirectory());
     }
 
     @Mod.EventHandler

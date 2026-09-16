@@ -21,6 +21,9 @@ import net.vas.rdp.uav.target.ContactSnapshot;
 import net.vas.rdp.uav.target.ContactTracker;
 import net.vas.rdp.uav.flight.KamikazeImpactDetector;
 import net.vas.rdp.uav.flight.KamikazePilotOverride;
+import net.vas.rdp.uav.weapon.GuidedStrikeObjective;
+import net.vas.rdp.uav.weapon.GuidedWeaponAdapter;
+import net.vas.rdp.uav.weapon.GuidedWeaponDecision;
 
 import java.util.Map;
 import java.util.HashMap;
@@ -45,6 +48,7 @@ public final class MissionLifecycle {
 
     private final MissionManager manager;
     private final WingManFlightAdapter flight = new WingManFlightAdapter();
+    private final GuidedWeaponAdapter guidedWeapons = new GuidedWeaponAdapter(flight);
     private final TargetResolver targets = new TargetResolver();
     private final ContactTracker contactTracker = new ContactTracker();
     /** Operator cursor is deliberately separate from RDPMission.targetId (the mission lock). */
@@ -139,6 +143,39 @@ public final class MissionLifecycle {
         }
 
         try {
+            /*
+             * WingMan deliberately controls UAVs only. A piloted/non-UAV
+             * aircraft may still release a configured guided weapon through
+             * McHeli's native weapon API; do that once the server has made
+             * the same target and ammunition checks as an autonomous route.
+             */
+            if (mission.isAttack() && !aircraft.isUAV()) {
+                GuidedStrikeObjective objective = target.entity == null
+                        ? GuidedStrikeObjective.square(mission.getMissionId(),
+                        world.provider.getDimension(), target.x, target.y, target.z, tick)
+                        : GuidedStrikeObjective.entity(mission.getMissionId(),
+                        target.entity.getUniqueID(), world.provider.getDimension(),
+                        target.x, target.y, target.z, tick);
+                objective.authorize();
+                objective.beginTracking();
+                GuidedWeaponDecision guided = guidedWeapons.arm(world, aircraft, objective,
+                        aircraftSpeed(aircraft), profile(aircraft).getAttackEnvelope(), true,
+                        profile(aircraft).getAttackWeaponPriority());
+                if (!guided.isAccepted()) {
+                    fail(world, mission, guided.getReason(), tick);
+                    return;
+                }
+                mission.transitionTo(MissionState.DISPATCHED, tick);
+                mission.transitionTo(MissionState.TAKEOFF, tick);
+                mission.transitionTo(MissionState.CRUISE, tick);
+                mission.transitionTo(MissionState.SEARCHING, tick);
+                mission.transitionTo(MissionState.TARGET_ACQUIRED, tick);
+                if (target.entity == null) mission.lockPoint(tick);
+                else mission.lockTarget(target.entity.getUniqueID(), tick);
+                mission.transitionTo(MissionState.ATTACK_TARGET, tick);
+                RDPMissionWorldData.get(world).markDirty();
+                return;
+            }
             double guidanceY = guidanceAltitude(aircraft, target.y);
             if (target.entity != null && mission.getTargetId() == null) {
                 mission.reacquireTarget(target.entity.getUniqueID(), tick);
@@ -453,6 +490,31 @@ public final class MissionLifecycle {
                         } else {
                             mission.transitionTo(MissionState.ATTACK_TARGET, tick);
                         }
+                        return true;
+                    }
+                    GuidedStrikeObjective guidedObjective = target.entity == null
+                            ? GuidedStrikeObjective.square(mission.getMissionId(),
+                            world.provider.getDimension(), target.x, target.y, target.z, tick)
+                            : GuidedStrikeObjective.entity(mission.getMissionId(),
+                            target.entity.getUniqueID(), world.provider.getDimension(),
+                            target.x, target.y, target.z, tick);
+                    guidedObjective.authorize();
+                    guidedObjective.beginTracking();
+                    GuidedWeaponDecision guided = guidedWeapons.arm(world, aircraft, guidedObjective,
+                            aircraftSpeed(aircraft), profile(aircraft).getAttackEnvelope(), true,
+                            profile(aircraft).getAttackWeaponPriority());
+                    if (guided.isAccepted()) {
+                        guidedObjective.release();
+                        mission.transitionTo(MissionState.ATTACK_TARGET, tick);
+                        return true;
+                    }
+                    if (!"NO_GUIDED_WEAPON".equals(guided.getReason())) {
+                        RdpUavDebug.debug("Lifecycle",
+                                "mission {} guided attack decision={} aircraft={} target={}",
+                                mission.getMissionId(), guided.getReason(), aircraft.getUniqueID(),
+                                formatTarget(target));
+                        if (guided.getReason().startsWith("GUIDED_HOLD_")) return false;
+                        fail(world, mission, guided.getReason(), tick);
                         return true;
                     }
                     if (!flight.armAttack(aircraft, target.x, target.y, target.z,
@@ -780,6 +842,11 @@ public final class MissionLifecycle {
         if (!profile.isReusable()) return targetY;
         return Math.max(profile.getMinimumExecutionAltitude(),
                 Math.min(profile.getMaximumExecutionAltitude(), profile.getExecutionAltitude()));
+    }
+
+    private double aircraftSpeed(MCH_EntityAircraft aircraft) {
+        return Math.sqrt(aircraft.motionX * aircraft.motionX
+                + aircraft.motionY * aircraft.motionY + aircraft.motionZ * aircraft.motionZ);
     }
 
     private UavVehicleProfile profile(MCH_EntityAircraft aircraft) {

@@ -122,6 +122,18 @@ identity; structures are safely targeted by their selected world point.
 No live weapon damage or self-destruct result is inferred by this addon;
 ordinary UAV missions are never forced into an attack.
 
+Guided weapons are selected from the server registry by exact McHeli
+definition/type. UAVs use native WingMan attack nodes for coordinate/TV
+weapons and McHeli's guidance system for entity seekers. A piloted non-UAV
+aircraft may use the same supported loaded weapon through the native
+`MCH_WeaponSet.use` boundary; unsupported definitions and objective
+combinations return deterministic rejection reasons rather than silently
+falling back to an arbitrary weapon. The release gate performs a bounded,
+10-tick cached terrain corridor check, an optional line-of-sight check, and
+configured close/high-altitude envelope checks. It never changes projectile
+velocity, projectile position, or aircraft motion. Entity seeker targets
+remain UUID-authoritative and are resolved from the live server entity.
+
 The flight adapter also exposes a validated coordinate-square strike pattern.
 It generates alternating native WingMan `flyTo` and `attack` nodes, preserving
 the real McHeli/WingMan movement and weapon boundaries. Node creation is not
@@ -287,6 +299,15 @@ disagree. `AiDecision` now also carries a bounded confidence value and a
 callers that have no sensor evidence. These are decision inputs only: WingMan
 and `MissionLifecycle` remain the authority for physical execution and mission
 state transitions.
+
+## Guided weapon boundary
+
+Copy `config/rdp-uav-guided-weapons.cfg.example` to the instance config
+directory to authorize McHeli weapon definition/type pairs. `aamissile` and
+`atmissile` are entity-seeker weapons; `asmissile` and `tvmissile` accept
+coordinate/TV/laser square objectives. Unsupported combinations are rejected
+by the server. The addon never creates or steers projectile entities; native
+McHeli/WingMan guidance remains authoritative.
 
 ## Square strike constraint boundary
 

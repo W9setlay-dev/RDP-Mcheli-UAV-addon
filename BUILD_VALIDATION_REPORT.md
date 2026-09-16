@@ -264,6 +264,7 @@ Kamikaze weapon use is the only path directly confirmed to call
 | Target lock | PARTIAL | UUID persisted in `RDPMission` | `TargetLock` is not the operative authority | Treat mission UUID/state as authoritative |
 | WingMan dispatch | FIXED | `WingManFlightAdapter`, native jar | Inert registry entries caused permanent rejection | Reclaim only inert entries |
 | Normal attack | UNVERIFIED | native attack node and WingMan handler | Node completion is not weapon/result confirmation | Do not claim live damage success |
+| Guided weapon dispatch | SOURCE-VERIFIED / LIVE-UNVERIFIED | `GuidedWeaponAdapter`, `GuidedNativeContract`, McHeliCE 1.5.1 APIs | Live seeker acquisition, trajectory, impact, and damage still require an in-game run | Entity seekers use native `setTarget` + `MCH_WeaponSet.use`; coordinate/TV weapons use native WingMan routing; incompatible combinations fail explicitly |
 | Kamikaze | PARTIAL/REAL command | `MCH_WeaponSet.use`, impact detector | Live explosion/damage is unverified | Keep server-only native fire path |
 | Square strike | PARTIAL | `SquareStrikePlan`, `MissionLimits` | Nodes are generated; effects are unverified | Keep 5000-block validation |
 | AI tasking | PARTIAL | `AiTaskingService` | Native effect remains unverified | Retain assignment checks |

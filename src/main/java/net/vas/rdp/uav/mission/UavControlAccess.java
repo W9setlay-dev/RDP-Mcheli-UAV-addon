@@ -15,7 +15,10 @@ public final class UavControlAccess {
     private UavControlAccess() { }
 
     public static boolean isOperator(MCH_EntityAircraft aircraft, EntityPlayer player) {
-        if (aircraft == null || player == null || !aircraft.isUAV()) return false;
+        if (aircraft == null || player == null) return false;
+        // A piloted McHeli aircraft is already operator-authorized through
+        // its seat. UAV stations are only relevant for remote aircraft.
+        if (!aircraft.isUAV()) return aircraft.isPilot(player);
         if (aircraft.isPilot(player)) return true;
         Entity mount = player.getRidingEntity();
         if (mount instanceof MCH_EntityUavStation) {

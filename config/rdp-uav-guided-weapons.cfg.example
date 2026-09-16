@@ -1,0 +1,43 @@
+# Copy to the Forge config directory as rdp-uav-guided-weapons.cfg.
+# Keys are McHeli MCH_WeaponSet definition/type pairs, not display names.
+[weapon.aamissile]
+type=aamissile
+behavior=ENTITY_SEEKER
+objectives=ENTITY
+maximumAircraftSpeed=0
+minimumAltitude=0
+maximumAltitude=4096
+noOrbit=true
+
+[weapon.atmissile]
+type=atmissile
+behavior=ENTITY_SEEKER
+objectives=ENTITY
+maximumAircraftSpeed=0
+minimumAltitude=0
+maximumAltitude=4096
+noOrbit=true
+
+[weapon.asmissile]
+type=asmissile
+behavior=COORDINATE_TV_LASER
+objectives=SQUARE
+maximumAircraftSpeed=0
+minimumAltitude=0
+maximumAltitude=4096
+noOrbit=true
+
+[weapon.tvmissile]
+type=tvmissile
+behavior=COORDINATE_TV_LASER
+objectives=SQUARE
+maximumAircraftSpeed=0
+minimumAltitude=0
+maximumAltitude=4096
+noOrbit=true
+
+# Unsupported combinations are rejected server-side. This registry does not
+# create projectiles, mutate projectile position/velocity, or replace McHeli
+# seeker/TV/laser code.
+# minimumAltitude/maximumAltitude bound terminal target elevation, including
+# low-altitude close support and high-altitude release profiles.

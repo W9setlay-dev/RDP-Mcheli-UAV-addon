@@ -19,11 +19,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.Locale;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * The only RDP-facing boundary for WingMan control.
  */
 public final class WingManFlightAdapter {
+    private final Set<UUID> nativeAttackCompletions = new HashSet<UUID>();
     private static final double KAMIKAZE_ATTACK_ANGLE_DEGREES = 35.0D;
     private static final double MIN_DIVE_RUN_METERS = 32.0D;
     private static final double MAX_DIVE_RUN_METERS = 160.0D;
@@ -447,6 +450,7 @@ public final class WingManFlightAdapter {
     public boolean isAttackComplete(MCH_EntityAircraft aircraft) {
         WingmanEntry entry = getEntry(aircraft);
         if (entry == null || entry.mission == null) return false;
+        if (nativeAttackCompletions.remove(aircraft.getUniqueID())) return true;
         if (entry.autoState == AutonomousState.RTB
                 || entry.autoState == AutonomousState.LANDING
                 || entry.autoState == AutonomousState.TAXI_IN
@@ -463,6 +467,11 @@ public final class WingManFlightAdapter {
         if (attackIndex < 0 || entry.missionIndex <= attackIndex) return false;
         com.norwood.mcheli.wingman.mission.MissionNode current = entry.currentNode();
         return current == null || current.type != MissionNode.Type.ATTACK;
+    }
+
+    /** Records a launch performed through a native weapon API, without touching flight physics. */
+    public void markNativeAttackComplete(MCH_EntityAircraft aircraft) {
+        if (aircraft != null) nativeAttackCompletions.add(aircraft.getUniqueID());
     }
 
     public boolean isParked(MCH_EntityAircraft aircraft) {

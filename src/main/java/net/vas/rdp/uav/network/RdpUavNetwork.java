@@ -14,6 +14,9 @@ import com.norwood.mcheli.aircraft.MCH_EntityAircraft;
 import com.norwood.mcheli.wingman.wingman.WingmanRegistry;
 import net.vas.rdp.uav.RdpUavDebug;
 import net.vas.rdp.uav.flight.KamikazePilotOverride;
+import net.vas.rdp.uav.weapon.GuidedStrikeObjective;
+import net.vas.rdp.uav.weapon.GuidedWeaponAdapter;
+import net.vas.rdp.uav.weapon.GuidedWeaponDecision;
 
 import java.util.Objects;
 
@@ -22,6 +25,8 @@ public final class RdpUavNetwork {
             new ResourceLocation(RDPUavMod.MOD_ID, "control").toString());
     private static final net.vas.rdp.uav.flight.WingManFlightAdapter FLIGHT_ADAPTER =
             new net.vas.rdp.uav.flight.WingManFlightAdapter();
+    private static final GuidedWeaponAdapter GUIDED_ADAPTER =
+            new GuidedWeaponAdapter(FLIGHT_ADAPTER);
     private static final net.vas.rdp.uav.target.TargetResolver TARGET_RESOLVER =
             new net.vas.rdp.uav.target.TargetResolver();
     private static boolean initialized;
@@ -645,10 +650,33 @@ public final class RdpUavNetwork {
                             y = target.posY;
                             z = target.posZ;
                         }
-                        if (!FLIGHT_ADAPTER.armAttack(
-                                aircraft, x, y, z, mission.getObservationDistance(), mission.getTargetId(),
+                        net.vas.rdp.uav.profile.UavVehicleProfile profile =
                                 net.vas.rdp.uav.profile.UavVehicleProfiles
-                                        .forAircraft(aircraft.getAcInfo().name).getAttackWeaponPriority())) {
+                                        .forAircraft(aircraft.getAcInfo().name);
+                        GuidedStrikeObjective objective = mission.getTargetId() == null
+                                ? GuidedStrikeObjective.square(mission.getMissionId(),
+                                player.world.provider.getDimension(), x, y, z,
+                                player.world.getTotalWorldTime())
+                                : GuidedStrikeObjective.entity(mission.getMissionId(),
+                                mission.getTargetId(), player.world.provider.getDimension(),
+                                x, y, z, player.world.getTotalWorldTime());
+                        objective.authorize();
+                        objective.beginTracking();
+                        GuidedWeaponDecision guided = GUIDED_ADAPTER.arm(player.world, aircraft,
+                                objective, Math.sqrt(aircraft.motionX * aircraft.motionX
+                                        + aircraft.motionY * aircraft.motionY
+                                        + aircraft.motionZ * aircraft.motionZ),
+                                profile.getAttackEnvelope(), true,
+                                profile.getAttackWeaponPriority());
+                        if (!guided.isAccepted() && !"NO_GUIDED_WEAPON".equals(guided.getReason())) {
+                            RdpUavDebug.debug("Network",
+                                    "mission {} guided authorize decision={} aircraft={}",
+                                    mission.getMissionId(), guided.getReason(), aircraft.getUniqueID());
+                            return;
+                        }
+                        if (!guided.isAccepted() && !FLIGHT_ADAPTER.armAttack(
+                                aircraft, x, y, z, mission.getObservationDistance(), mission.getTargetId(),
+                                profile.getAttackWeaponPriority())) {
                             return;
                         }
                         mission.transitionTo(net.vas.rdp.uav.mission.MissionState.ATTACK_TARGET,

@@ -18,7 +18,9 @@
 | production artifact build | `.\gradlew.bat build --no-daemon` | PASS | Reobfuscated addon JAR built successfully |
 | RDP instance deployment | copy rebuilt `rdp-uav-addon-0.1.0.jar` to the existing addon slot | PASS | Replaced only the existing addon JAR; debug config remains `B:enabled=false` |
 | final sequential validation and deployment | `.\gradlew.bat test --no-daemon` then `.\gradlew.bat build --no-daemon` | PASS | Tests and reobfuscated build passed sequentially; final JAR deployed and SHA-256 verified |
+| guided weapon capability and native seeker contract | `.\gradlew.bat test --no-daemon` | PASS | Verified objective compatibility, UUID continuity, native API decision handling, and explicit unsupported outcomes |
+| guided weapon live launch/seeker/impact | controlled RDP gameplay session | BLOCKED | Source and native API wiring are complete, but this environment cannot reliably drive a controlled in-game launch and observe seeker acquisition, trajectory, impact, or damage |
 
 ## Remaining risk
 
-The runtime matrix is deliberately limited to what is available in this environment. The mission system is proven as a source-level architecture, but not as a live in-game autonomous flight pipeline. The next runtime pass must verify visible fixed-wing turning, moving-target tracking, orbit behavior, and lock/clear feedback in the installed RDP instance.
+The runtime matrix is deliberately limited to what is available in this environment. The mission and guided-weapon systems are proven as source-level integrations against the local McHeliCE 1.5.1 API, but not as a live in-game autonomous flight or projectile-effects pipeline. The next runtime pass must verify visible fixed-wing turning, moving-target tracking, orbit behavior, lock/clear feedback, native seeker acquisition, terminal approach, impact, and damage in the installed RDP instance.

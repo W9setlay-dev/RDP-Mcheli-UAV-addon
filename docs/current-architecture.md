@@ -44,6 +44,16 @@ McHeliCE / WingMan / Minecraft world
 ## Flight and execution architecture
 
 - `WingManFlightAdapter` is the verified handoff boundary to WingMan.
+- `GuidedWeaponAdapter` is the separate verified McHeli guided-weapon boundary;
+  it accepts only registry-authorized ENTITY/SQUARE objectives and delegates
+  target coordinates/UUIDs to native WingMan fields.  A configured guided
+  weapon priority is required to opt into this path; otherwise conventional
+  UAV, one-way, and square-strike dispatch remains unchanged.
+- Guided release diagnostics distinguish dimension rejection, unloaded-chunk
+  and line-of-sight holds, unsupported objective/guidance, and ammunition
+  rejection. Entity-seeker target assignment is explicitly unsupported at
+  this boundary; no projectile steering or seeker state is inferred from
+  WingMan coordinates.
 - `MissionLifecycle.dispatch(...)` validates mission conditions before a dispatch is attempted.
 - `KamikazeImpactDetector` checks nose impact and proximity-detonation conditions.
 - `KamikazePilotOverride` supports explicit operator-triggered self-destruct logic.
