@@ -117,11 +117,11 @@ public final class RdpUavClientKeys {
 
     private void lockAiTarget(Minecraft minecraft) {
         if (minecraft.objectMouseOver == null || minecraft.objectMouseOver.entityHit == null) {
-            minecraft.player.sendMessage(new net.minecraft.util.text.TextComponentString(
-                    "UAV target lock: aim directly at a selectable entity."));
+            RdpUavNetwork.lockAiTarget();
             return;
         }
-        RdpUavNetwork.lockAiTarget(minecraft.objectMouseOver.entityHit.getUniqueID());
+        net.minecraft.entity.Entity target = minecraft.objectMouseOver.entityHit;
+        RdpUavNetwork.lockAiTarget(target.getUniqueID());
     }
 
     private void stabilizeSight(Minecraft minecraft) {

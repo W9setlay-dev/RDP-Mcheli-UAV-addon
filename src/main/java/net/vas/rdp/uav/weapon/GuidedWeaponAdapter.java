@@ -57,6 +57,27 @@ public final class GuidedWeaponAdapter {
                                     GuidedStrikeObjective objective, double aircraftSpeed,
                                     double attackEnvelope, boolean requireLineOfSight,
                                     String weaponPriority) {
+        return arm(world, aircraft, objective, aircraftSpeed, attackEnvelope,
+                requireLineOfSight, weaponPriority, false);
+    }
+
+    /**
+     * Launches directly from a validated reusable-aircraft firing envelope.
+     * This deliberately bypasses WingMan's aircraft attack route; McHeli
+     * remains authoritative for projectile creation and guidance.
+     */
+    public GuidedWeaponDecision armDirect(World world, MCH_EntityAircraft aircraft,
+                                          GuidedStrikeObjective objective, double aircraftSpeed,
+                                          double attackEnvelope, boolean requireLineOfSight,
+                                          String weaponPriority) {
+        return arm(world, aircraft, objective, aircraftSpeed, attackEnvelope,
+                requireLineOfSight, weaponPriority, true);
+    }
+
+    private GuidedWeaponDecision arm(World world, MCH_EntityAircraft aircraft,
+                                     GuidedStrikeObjective objective, double aircraftSpeed,
+                                     double attackEnvelope, boolean requireLineOfSight,
+                                     String weaponPriority, boolean directLaunch) {
         if (world == null) {
             return GuidedWeaponDecision.reject("GUIDED_SAFETY_CONTEXT_REQUIRED");
         }
@@ -105,7 +126,7 @@ public final class GuidedWeaponAdapter {
             return decision;
         }
         boolean armed;
-        if (aircraft.isUAV()) {
+        if (aircraft.isUAV() && !directLaunch) {
             armed = flight.armAttack(aircraft, objective.getX(), objective.getY(),
                     objective.getZ(), attackEnvelope, objective.getContactId(), decision.getWeapon());
         } else {
@@ -115,7 +136,8 @@ public final class GuidedWeaponAdapter {
         MissileGuidanceController.authorize(aircraft.getUniqueID(), decision.getWeapon(), objective);
         RdpUavDebug.debug("Guidance", "aircraft={} weapon={} owner=AI objective={} launch={}",
                 aircraft.getUniqueID(), decision.getWeapon(), objective.getType(),
-                aircraft.isUAV() ? "WINGMAN" : "NATIVE");
+                aircraft.isUAV() && !directLaunch ? "WINGMAN" : "NATIVE_DIRECT");
+        if (directLaunch) flight.markNativeAttackComplete(aircraft);
         if (aircraft.isUAV()) return decision;
         return GuidedWeaponDecision.accept(decision.getWeapon());
     }

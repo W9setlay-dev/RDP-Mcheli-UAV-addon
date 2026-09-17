@@ -58,7 +58,7 @@ public enum MissionState {
             case TARGET_LOCKED: return next == APPROACHING || next == ATTACK_TARGET
                     || next == KAMIKADZE_TARGET || next == LOST;
             case ATTACK_TARGET: return next == APPROACHING || next == ON_TARGET
-                    || next == RETURNING;
+                    || next == RETURNING || next == KAMIKADZE_TARGET;
             case KAMIKADZE_TARGET: return next == ON_TARGET || next == RETURNING
                     || next == KAMIKADZE_DETONATED;
             case APPROACHING: return next == ON_TARGET || next == LOST;

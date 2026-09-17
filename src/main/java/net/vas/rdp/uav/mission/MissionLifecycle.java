@@ -444,9 +444,21 @@ public final class MissionLifecycle {
             }
         }
         if (flight.isParked(aircraft) && mission.getState() != MissionState.RETURNING) {
+            if (mission.isAttack() && profile(aircraft).isReusable()
+                    && mission.getState() == MissionState.ATTACK_TARGET
+                    && flight.isAttackComplete(aircraft)) {
+                mission.transitionTo(MissionState.APPROACHING, tick);
+                mission.transitionTo(MissionState.ON_TARGET, tick);
+                mission.transitionTo(MissionState.SCANNING, tick);
+                return true;
+            }
             if (mission.isAttack() && !profile(aircraft).isReusable() && target != null) {
                 if (withinMissionExecutionRange(aircraft, target, mission)
                         && flight.fireSelfDestructWeapon(aircraft)) {
+                    if (!armKamikazeTerminalState(mission, target, tick)) {
+                        fail(world, mission, "KAMIKAZE_TERMINAL_STATE_REJECTED", tick);
+                        return true;
+                    }
                     mission.markKamikazeDetonated(tick);
                     manager.release(mission);
                     return true;
@@ -525,7 +537,8 @@ public final class MissionLifecycle {
                     return true;
                 }
                 if (mission.isAttack()) {
-                    if (mission.getMissionType() == MissionType.SQUARE_STRIKE) {
+                    if (mission.getMissionType() == MissionType.SQUARE_STRIKE
+                            && !profile(aircraft).isReusable()) {
                         UavVehicleProfile squareProfile = profile(aircraft);
                         double squareAltitude = squareProfile.getExecutionAltitude() > 0.0D
                                 ? squareProfile.getExecutionAltitude()
@@ -556,7 +569,12 @@ public final class MissionLifecycle {
                             target.x, target.y, target.z, tick);
                     guidedObjective.authorize();
                     guidedObjective.beginTracking();
-                    GuidedWeaponDecision guided = guidedWeapons.arm(world, aircraft, guidedObjective,
+                    boolean directReusableLaunch = profile(aircraft).isReusable();
+                    GuidedWeaponDecision guided = directReusableLaunch
+                            ? guidedWeapons.armDirect(world, aircraft, guidedObjective,
+                            aircraftSpeed(aircraft), profile(aircraft).getAttackEnvelope(), true,
+                            profile(aircraft).getAttackWeaponPriority())
+                            : guidedWeapons.arm(world, aircraft, guidedObjective,
                             aircraftSpeed(aircraft), profile(aircraft).getAttackEnvelope(), true,
                             profile(aircraft).getAttackWeaponPriority());
                     if (guided.isAccepted()) {
@@ -571,6 +589,12 @@ public final class MissionLifecycle {
                                 formatTarget(target));
                         if (guided.getReason().startsWith("GUIDED_HOLD_")) return false;
                         defer(world, mission, guided.getReason(), MissionState.REPLAN, tick);
+                        return true;
+                    }
+                    if (profile(aircraft).isReusable()
+                            && mission.getMissionType() == MissionType.SQUARE_STRIKE) {
+                        defer(world, mission, "REUSABLE_UAV_GUIDED_WEAPON_REQUIRED",
+                                MissionState.REPLAN, tick);
                         return true;
                     }
                     if (!flight.armAttack(aircraft, target.x, target.y, target.z,
@@ -603,11 +627,16 @@ public final class MissionLifecycle {
                         if ("SELF_DESTRUCT".equalsIgnoreCase(
                                 profile(aircraft).getTerminalPayloadBehavior())
                                 && flight.fireSelfDestructWeapon(aircraft)) {
+                            if (!armKamikazeTerminalState(mission, target, tick)) {
+                                fail(world, mission, "KAMIKAZE_TERMINAL_STATE_REJECTED", tick);
+                                return true;
+                            }
                             mission.markKamikazeDetonated(tick);
                             flight.release(aircraft);
                             manager.release(mission);
                             return true;
                         }
+
                         mission.fail("ONE_WAY_SQUARE_TERMINAL_PAYLOAD_UNAVAILABLE", tick);
                         return true;
                     }
@@ -678,6 +707,33 @@ public final class MissionLifecycle {
                 return false;
             default:
                 return false;
+        }
+    }
+
+    private boolean armKamikazeTerminalState(RDPMission mission, Target target, long tick) {
+        if (mission == null || target == null) return false;
+        switch (mission.getState()) {
+        case SEARCHING:
+            mission.transitionTo(MissionState.TARGET_ACQUIRED, tick);
+            if (target.entity == null) mission.lockPoint(tick);
+            else mission.lockTarget(target.entity.getUniqueID(), tick);
+            mission.transitionTo(MissionState.KAMIKADZE_TARGET, tick);
+            return true;
+        case TARGET_ACQUIRED:
+            if (target.entity == null) mission.lockPoint(tick);
+            else mission.lockTarget(target.entity.getUniqueID(), tick);
+            mission.transitionTo(MissionState.KAMIKADZE_TARGET, tick);
+            return true;
+        case TARGET_LOCKED:
+            mission.transitionTo(MissionState.KAMIKADZE_TARGET, tick);
+            return true;
+        case ATTACK_TARGET:
+            mission.transitionTo(MissionState.KAMIKADZE_TARGET, tick);
+            return true;
+        case KAMIKADZE_TARGET:
+            return true;
+        default:
+            return false;
         }
     }
 

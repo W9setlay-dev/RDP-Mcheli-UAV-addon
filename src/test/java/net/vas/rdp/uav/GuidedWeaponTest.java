@@ -8,6 +8,7 @@ import net.vas.rdp.uav.weapon.GuidedStrikeObjective;
 import net.vas.rdp.uav.weapon.GuidedTerminalProfile;
 import net.vas.rdp.uav.weapon.GuidedWeaponCapability;
 import net.vas.rdp.uav.weapon.GuidedWeaponRegistry;
+import org.junit.Assert;
 import org.junit.Test;
 
 import java.util.EnumSet;
@@ -85,6 +86,7 @@ public class GuidedWeaponTest {
         GuidedWeaponRegistry.register(capability);
         GuidedWeaponCapability resolved = GuidedWeaponRegistry.find("agm-65", "asmissile");
         assertEquals(capability, resolved);
+        Assert.assertNotNull(resolved);
         assertTrue(resolved.supports(GuidedObjectiveType.SQUARE));
         GuidedWeaponRegistry.clear();
     }

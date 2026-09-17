@@ -485,7 +485,8 @@ public class RdpUavContractMatrixTest {
                     || next == MissionState.KAMIKADZE_TARGET
                     || next == MissionState.LOST;
             case ATTACK_TARGET: return next == MissionState.APPROACHING
-                    || next == MissionState.ON_TARGET || next == MissionState.RETURNING;
+                    || next == MissionState.ON_TARGET || next == MissionState.RETURNING
+                    || next == MissionState.KAMIKADZE_TARGET;
             case KAMIKADZE_TARGET: return next == MissionState.ON_TARGET
                     || next == MissionState.RETURNING
                     || next == MissionState.KAMIKADZE_DETONATED;

@@ -277,7 +277,8 @@ public final class GuiMissionControl extends GuiScreen {
             status = "Target lock requested for " + hit.entityHit.getName() + ".";
             return;
         }
-        status = "No entity under crosshair. Use Clear lock [5] to request recovery.";
+        RdpUavNetwork.lockAiTarget();
+        status = "No crosshair contact; highest-priority valid contact fallback requested.";
     }
 
     private void createEntityMission(boolean attack) {
