@@ -4,3 +4,6 @@
 rejectDeeplyEmbedded=true
 # Maximum tolerated depth below the supporting block top.
 maximumEmbeddedDepth=1.5
+[filter]
+# Include hostile military/bandit vehicles in searches and locks.
+allowHostileVehicles=true

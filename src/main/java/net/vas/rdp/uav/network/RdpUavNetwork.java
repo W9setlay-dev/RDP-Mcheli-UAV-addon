@@ -756,6 +756,7 @@ public final class RdpUavNetwork {
                             y = target.posY;
                             z = target.posZ;
                         }
+                        assert aircraft.getAcInfo() != null;
                         net.vas.rdp.uav.profile.UavVehicleProfile profile =
                                 net.vas.rdp.uav.profile.UavVehicleProfiles
                                         .forAircraft(aircraft.getAcInfo().name);
@@ -802,44 +803,42 @@ public final class RdpUavNetwork {
             implements IMessageHandler<KamikazeAttack, IMessage> {
         public IMessage onMessage(final KamikazeAttack message, MessageContext context) {
             final EntityPlayerMP player = context.getServerHandler().player;
-            player.getServer().addScheduledTask(new Runnable() {
-                public void run() {
-                    try {
-                        java.util.UUID id = java.util.UUID.fromString(message.missionId);
-                        net.vas.rdp.uav.mission.RDPMission mission =
-                                net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
-                                        .getRepository().find(id);
-                        if (mission == null || !mission.isAttack()
-                                || !player.getUniqueID().equals(mission.getOwnerId())
-                                || mission.getState() != net.vas.rdp.uav.mission.MissionState.TARGET_LOCKED) return;
-                        MCH_EntityAircraft aircraft = null;
-                        for (net.minecraft.entity.Entity entity : player.world.loadedEntityList) {
-                            if (entity instanceof MCH_EntityAircraft
-                                    && mission.getAircraftId().equals(entity.getUniqueID())) {
-                                aircraft = (MCH_EntityAircraft) entity;
-                                break;
-                            }
+            Objects.requireNonNull(player.getServer()).addScheduledTask(() -> {
+                try {
+                    java.util.UUID id = java.util.UUID.fromString(message.missionId);
+                    net.vas.rdp.uav.mission.RDPMission mission =
+                            net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
+                                    .getRepository().find(id);
+                    if (mission == null || !mission.isAttack()
+                            || !player.getUniqueID().equals(mission.getOwnerId())
+                            || mission.getState() != net.vas.rdp.uav.mission.MissionState.TARGET_LOCKED) return;
+                    MCH_EntityAircraft aircraft = null;
+                    for (net.minecraft.entity.Entity entity : player.world.loadedEntityList) {
+                        if (entity instanceof MCH_EntityAircraft
+                                && mission.getAircraftId().equals(entity.getUniqueID())) {
+                            aircraft = (MCH_EntityAircraft) entity;
+                            break;
                         }
-                        if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, player)) return;
-                        double x = mission.getTargetSpec().getX();
-                        double y = mission.getTargetSpec().getY();
-                        double z = mission.getTargetSpec().getZ();
-                        if (mission.getTargetId() != null) {
-                            net.minecraft.entity.Entity target = TARGET_RESOLVER.findLoaded(player.world, mission.getTargetId());
-                            if (target == null) return;
-                            x = target.posX; y = target.posY; z = target.posZ;
-                        }
-                        if (!FLIGHT_ADAPTER.armKamikaze(aircraft, x, y, z,
-                                mission.getObservationDistance(), mission.getTargetId())) return;
-                        // Reusable and long-range airframes may only enter a
-                        // destructive route through this operator-authenticated request.
-                        mission.authorizeDestructiveAction();
-                        mission.transitionTo(net.vas.rdp.uav.mission.MissionState.KAMIKADZE_TARGET,
-                                player.world.getTotalWorldTime());
-                        net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world).markDirty();
-                        sendMissionData(player);
-                    } catch (IllegalArgumentException ignored) {
                     }
+                    if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, player)) return;
+                    double x = mission.getTargetSpec().getX();
+                    double y = mission.getTargetSpec().getY();
+                    double z = mission.getTargetSpec().getZ();
+                    if (mission.getTargetId() != null) {
+                        net.minecraft.entity.Entity target = TARGET_RESOLVER.findLoaded(player.world, mission.getTargetId());
+                        if (target == null) return;
+                        x = target.posX; y = target.posY; z = target.posZ;
+                    }
+                    if (!FLIGHT_ADAPTER.armKamikaze(aircraft, x, y, z,
+                            mission.getObservationDistance(), mission.getTargetId())) return;
+                    // Reusable and long-range airframes may only enter a
+                    // destructive route through this operator-authenticated request.
+                    mission.authorizeDestructiveAction();
+                    mission.transitionTo(net.vas.rdp.uav.mission.MissionState.KAMIKADZE_TARGET,
+                            player.world.getTotalWorldTime());
+                    net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world).markDirty();
+                    sendMissionData(player);
+                } catch (IllegalArgumentException ignored) {
                 }
             });
             return null;
@@ -885,7 +884,7 @@ public final class RdpUavNetwork {
                             ? "rdpuav mission attack-point"
                             : "rdpuav mission create " + message.target
                                     + (message.attack ? " attack" : "");
-                    player.getServer().getCommandManager().executeCommand(player, command);
+                    Objects.requireNonNull(player.getServer()).getCommandManager().executeCommand(player, command);
                 }
             });
             return null;
@@ -906,7 +905,7 @@ public final class RdpUavNetwork {
                         return;
                     }
 
-                    player.getServer().getCommandManager().executeCommand(player,
+                    Objects.requireNonNull(player.getServer()).getCommandManager().executeCommand(player,
                             "rdpuav mission square " + message.parameters);
                 }
             });

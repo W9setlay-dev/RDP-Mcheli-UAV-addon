@@ -23,9 +23,9 @@ public final class FormationGeometry {
                 case GRID: x = col * spacing; z = row * spacing; break;
                 case RING:
                 case ORBIT:
-                    double angle = 2D * Math.PI * i / Math.max(1, count);
-                    x = Math.cos(angle) * spacing * Math.max(1, count) / 2D;
-                    z = Math.sin(angle) * spacing * Math.max(1, count) / 2D;
+                    double angle = 2D * Math.PI * i / count;
+                    x = Math.cos(angle) * spacing * count / 2D;
+                    z = Math.sin(angle) * spacing * count / 2D;
                     break;
                 case CUSTOM:
                 case LINE:

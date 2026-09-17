@@ -22,6 +22,7 @@ public final class RDPMissionWorldData extends WorldSavedData {
 
     public static RDPMissionWorldData get(World world) {
         MapStorage storage = world.getMapStorage();
+        assert storage != null;
         RDPMissionWorldData data = (RDPMissionWorldData) storage.getOrLoadData(
                 RDPMissionWorldData.class, DATA_NAME);
         if (data == null) {

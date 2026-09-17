@@ -203,6 +203,26 @@ public class RdpUavContractMatrixTest {
     }
 
     @Test
+    public void recoveryOnlyFailsAfterConfiguredBudgetIsExhausted() {
+        RDPMission mission = mission();
+        mission.transitionTo(MissionState.DISPATCHED, 1);
+        mission.transitionTo(MissionState.TAKEOFF, 2);
+        for (int attempt = 1; attempt <= 5; attempt++) {
+            MissionState recovery = attempt % 2 == 0
+                    ? MissionState.EXECUTION_STALLED : MissionState.WAITING_FOR_WORLD;
+            assertTrue(mission.defer("TRANSIENT_" + attempt, recovery, attempt + 2));
+            if (recovery != MissionState.REPLAN) {
+                mission.transitionTo(MissionState.REPLAN, attempt + 3);
+            }
+        }
+        assertFalse(mission.isTerminal());
+        assertFalse(mission.defer("TRANSIENT_FINAL",
+                MissionState.EXECUTION_STALLED, 20));
+        assertEquals(MissionState.FAILED, mission.getState());
+        assertTrue(mission.getFailureReason().endsWith("RECOVERY_EXHAUSTED"));
+    }
+
+    @Test
     public void longRangeProfileSeparatesDetectionLockAndExecutionRanges() {
         UavVehicleProfile profile = new UavVehicleProfile(
                 UavExecutionProfile.LONG_RANGE_REUSABLE_UAV, 250, 200, 320,
@@ -242,6 +262,10 @@ public class RdpUavContractMatrixTest {
                 "minecraft:zombie"));
         assertFalse(net.vas.rdp.uav.target.TargetClassifier.isVehicleId(
                 "minecraft:zombie"));
+        assertTrue(net.vas.rdp.uav.target.TargetClassifier.isHostileVehicle(
+                "mcheli:bandit_vehicle"));
+        assertFalse(net.vas.rdp.uav.target.TargetClassifier.isHostileVehicle(
+                "mcheli:mq9"));
     }
 
     @Test

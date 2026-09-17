@@ -37,9 +37,18 @@ public final class MissionRunner {
         if (handler == null) return;
         Long entered = enteredAt.get(mission.getMissionId());
         if (entered != null && tick - entered > handler.timeoutTicks()) {
-            mission.fail(mission.getState().name() + "_TIMEOUT", tick);
-            handler.onExit(mission);
-            manager.release(mission);
+            // A timeout is evidence that the current execution attempt is
+            // stalled, not proof that the mission is impossible.  RDPMission
+            // owns the bounded retry budget and only transitions to FAILED
+            // after that budget is exhausted.
+            MissionState recoveryState = mission.getState() == MissionState.EXECUTION_STALLED
+                    ? MissionState.REPLAN : MissionState.EXECUTION_STALLED;
+            mission.defer(mission.getState().name() + "_TIMEOUT", recoveryState, tick);
+            enteredAt.put(mission.getMissionId(), tick);
+            if (mission.isTerminal()) {
+                handler.onExit(mission);
+                manager.release(mission);
+            }
             return;
         }
         handler.onUpdate(mission, tick);

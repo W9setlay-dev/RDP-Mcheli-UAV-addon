@@ -3,13 +3,8 @@ package net.vas.rdp.uav.target;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityList;
 import net.minecraft.world.World;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.List;
+
+import java.util.*;
 
 /** Single authoritative contact state for one server mission lifecycle. */
 public final class ContactTracker {
@@ -26,7 +21,7 @@ public final class ContactTracker {
     public ContactSnapshot observe(World world, Entity entity, double distance, long tick,
                                    ContactLifecycle requestedState) {
         if (world == null || entity == null || entity.isDead) return null;
-        String registry = EntityList.getKey(entity) == null ? "" : EntityList.getKey(entity).toString();
+        String registry = EntityList.getKey(entity) == null ? "" : Objects.requireNonNull(EntityList.getKey(entity)).toString();
         return observe(world.provider.getDimension(), entity.getUniqueID(), registry,
                 entity.posX, entity.posY, entity.posZ, distance, tick, requestedState);
     }

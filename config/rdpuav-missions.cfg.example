@@ -33,6 +33,13 @@ profile=ONE_WAY
 aliases=shahed136,shahed-136
 terminalPayloadBehavior=SELF_DESTRUCT
 
+[vehicle.fpvdrone]
+profile=ONE_WAY
+aliases=fpv,fpv-drone,fpv_drone
+altitudeTolerance=4
+holdingEnabled=false
+terminalPayloadBehavior=SELF_DESTRUCT
+
 [vehicle.mq9]
 profile=LONG_RANGE_REUSABLE_UAV
 aliases=mq-9,mq_9,reaper,predator

@@ -52,10 +52,10 @@ public final class MissionLifecycle {
     private final TargetResolver targets = new TargetResolver();
     private final ContactTracker contactTracker = new ContactTracker();
     /** Operator cursor is deliberately separate from RDPMission.targetId (the mission lock). */
-    private final Map<UUID, UUID> operatorContacts = new HashMap<UUID, UUID>();
-    private final Map<World, Boolean> restoredWorlds = new WeakHashMap<World, Boolean>();
-    private final Map<UUID, RouteRefresh> routeRefreshes = new HashMap<UUID, RouteRefresh>();
-    private Map<UUID, MCH_EntityAircraft> aircraftThisTick = new HashMap<UUID, MCH_EntityAircraft>();
+    private final Map<UUID, UUID> operatorContacts = new HashMap<>();
+    private final Map<World, Boolean> restoredWorlds = new WeakHashMap<>();
+    private final Map<UUID, RouteRefresh> routeRefreshes = new HashMap<>();
+    private Map<UUID, MCH_EntityAircraft> aircraftThisTick = new HashMap<>();
 
     public MissionLifecycle(MissionManager manager) {
         if (manager == null) throw new IllegalArgumentException("Mission manager is required");
@@ -461,11 +461,14 @@ public final class MissionLifecycle {
         switch (mission.getState()) {
         case SEARCHING:
             UavVehicleProfile vehicleProfile = profile(aircraft);
-            if (vehicleProfile.supportsLongRangeLock() && target.entity != null
-                    && targetDistance(aircraft, target) <= vehicleProfile.getLockRange()) {
-                mission.transitionTo(MissionState.TARGET_ACQUIRED, tick);
-                mission.lockTarget(target.entity.getUniqueID(), tick);
-                return true;
+            if (vehicleProfile.supportsLongRangeLock()) {
+                assert target != null;
+                if (target.entity != null
+                        && targetDistance(aircraft, target) <= vehicleProfile.getLockRange()) {
+                    mission.transitionTo(MissionState.TARGET_ACQUIRED, tick);
+                    mission.lockTarget(target.entity.getUniqueID(), tick);
+                    return true;
+                }
             }
             if (!atTarget(aircraft, target, mission)
                     || !flight.hasReachedRoutePoint(aircraft)) return false;
@@ -492,11 +495,7 @@ public final class MissionLifecycle {
                     return true;
                 }
                 UUID pilotTarget = KamikazePilotOverride.targetFor(aircraft.getUniqueID());
-                if (mission.isAttack() && target != null
-                        && flight.hasSelfDestructWeaponWithAmmo(aircraft)
-                        && mission.getMissionType() != MissionType.SQUARE_STRIKE
-                        && (!profile(aircraft).isReusable() || mission.isDestructiveAuthorized())
-                        && (pilotTarget == null || pilotTarget.equals(
+                if (mission.isAttack() && flight.hasSelfDestructWeaponWithAmmo(aircraft) && mission.getMissionType() != MissionType.SQUARE_STRIKE && (!profile(aircraft).isReusable() || mission.isDestructiveAuthorized()) && (pilotTarget == null || pilotTarget.equals(
                         target.entity == null ? null : target.entity.getUniqueID()))) {
                     if (!flight.armKamikaze(aircraft, target.x, target.y, target.z,
                             mission.getObservationDistance(),

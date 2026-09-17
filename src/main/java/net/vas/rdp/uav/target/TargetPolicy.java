@@ -8,10 +8,12 @@ import net.minecraft.world.World;
 import net.minecraftforge.common.config.Configuration;
 
 import java.io.File;
+import java.util.Objects;
 
 /** Server-side contact safety policy.  It never moves or mutates an entity. */
 public final class TargetPolicy {
     public static boolean rejectDeeplyEmbedded = true;
+    public static boolean allowHostileVehicles = true;
     public static double maximumEmbeddedDepth = 1.5D;
 
     private TargetPolicy() { }
@@ -21,6 +23,8 @@ public final class TargetPolicy {
         config.load();
         rejectDeeplyEmbedded = config.getBoolean("rejectDeeplyEmbedded", "safety",
                 rejectDeeplyEmbedded, "Reject contacts whose feet are deeply inside solid ground.");
+        allowHostileVehicles = config.getBoolean("allowHostileVehicles", "filter",
+                allowHostileVehicles, "Allow hostile military/bandit vehicles as selectable contacts.");
         maximumEmbeddedDepth = config.getFloat("maximumEmbeddedDepth", "safety",
                 (float) maximumEmbeddedDepth, 0.1F, 16F,
                 "Maximum tolerated distance below the supporting block top.");
@@ -42,8 +46,8 @@ public final class TargetPolicy {
         if (!isSafeContact(world, entity)) return false;
         if (entity instanceof EntityPlayer
                 && operator != null && operator.isOnSameTeam(entity)) return false;
-        String id = EntityList.getKey(entity) == null ? "" : EntityList.getKey(entity).toString();
+        String id = EntityList.getKey(entity) == null ? "" : Objects.requireNonNull(EntityList.getKey(entity)).toString();
         return TargetClassifier.isHostileCandidate(id)
-                || TargetClassifier.isHostileVehicle(id);
+                || (allowHostileVehicles && TargetClassifier.isHostileVehicle(id));
     }
 }

@@ -1,0 +1,20 @@
+# Per-profile swarm limits. The global maximumSize is the hard ceiling.
+
+[swarm]
+maximumSize=8
+updateIntervalTicks=10
+memberTimeoutTicks=100
+degradedThreshold=1
+
+[profiles]
+ONE_WAYMaximumSize=4
+REUSABLE_UAVMaximumSize=8
+LONG_RANGE_REUSABLE_UAVMaximumSize=4
+
+[formation]
+horizontalSpacing=16
+verticalSpacing=10
+
+[safety]
+minimumHorizontalSeparation=8
+minimumVerticalSeparation=6

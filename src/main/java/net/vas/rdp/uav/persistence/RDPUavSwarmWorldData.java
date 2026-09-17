@@ -16,6 +16,7 @@ public final class RDPUavSwarmWorldData extends WorldSavedData {
     public RDPUavSwarmWorldData(String name) { super(name); }
     public static RDPUavSwarmWorldData get(World world) {
         MapStorage storage = world.getMapStorage();
+        assert storage != null;
         RDPUavSwarmWorldData data = (RDPUavSwarmWorldData) storage.getOrLoadData(
                 RDPUavSwarmWorldData.class, DATA_NAME);
         if (data == null) {

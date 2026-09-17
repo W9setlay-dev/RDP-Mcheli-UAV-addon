@@ -30,7 +30,7 @@ noOrbit=true
 [weapon.tvmissile]
 type=tvmissile
 behavior=COORDINATE_TV_LASER
-objectives=SQUARE
+objectives=ENTITY,SQUARE
 maximumAircraftSpeed=0
 minimumAltitude=0
 maximumAltitude=4096

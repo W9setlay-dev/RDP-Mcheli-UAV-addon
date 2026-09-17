@@ -63,6 +63,20 @@ public class GuidedWeaponTest {
     }
 
     @Test
+    public void asmissileNativeTypeAcceptsMaverickSquareObjective() {
+        GuidedWeaponRegistry.clear();
+        GuidedWeaponCapability capability = new GuidedWeaponCapability("asmissile",
+                "asmissile", GuidedNativeBehavior.COORDINATE_BALLISTIC,
+                EnumSet.of(GuidedObjectiveType.SQUARE),
+                new GuidedTerminalProfile(0, true));
+        GuidedWeaponRegistry.register(capability);
+        GuidedWeaponCapability resolved = GuidedWeaponRegistry.find("agm-65", "asmissile");
+        assertEquals(capability, resolved);
+        assertTrue(resolved.supports(GuidedObjectiveType.SQUARE));
+        GuidedWeaponRegistry.clear();
+    }
+
+    @Test
     public void objectiveMustBeAuthorizedBeforeReleaseBoundary() {
         GuidedStrikeObjective objective = GuidedStrikeObjective.square(UUID.randomUUID(), 0,
                 1, 2, 3, 0);
