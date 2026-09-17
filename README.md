@@ -165,10 +165,15 @@ into a UAV-like entity hunter. `tvmissile` can use the verified coordinate/TV
 AI handoff for an authorized objective. AI ownership overrides camera input
 only while the mission is active; abort/takeover clears the addon assignment
 and returns control to McHeli's native player guidance where supported.
-Obstacle avoidance is not universal: native seekers keep McHeli's own seeker
-behavior, while coordinate/TV paths only receive bounded terrain/corridor
-checks and scoped waypoint handling. No projectile teleportation or arbitrary
-velocity replacement is performed.
+Obstacle avoidance is best-effort and weapon-family specific. Native seekers
+keep McHeli's own seeker behavior. ASM and TV coordinate paths use a fixed
+budget of terrain samples and a small set of temporary lateral/climb/descent
+native target offsets when the direct corridor is blocked; the offset expires
+and the original objective is reacquired. Unloaded terrain is treated
+conservatively and a `NATIVE_AVOIDANCE_UNAVAILABLE` result is reported when
+no safe candidate exists. This is not a guarantee against every geometry or
+turn-rate limitation. No projectile teleportation or arbitrary velocity
+replacement is performed.
 
 Aircraft and projectile guidance are separate missions. WingMan controls only
 the carrier route, altitude, terminal approach, hold, or return. After McHeli
@@ -182,9 +187,11 @@ ASM/Maverick missions retain the native McHeli Maverick flight mechanic; a
 square objective changes the validated launch solution, not the projectile
 physics. Gravity-defined weapons such as AGM-154-style payloads use a
 calculated bearing/elevation/release solution and the normal McHeli firing
-API. If native post-launch avoidance or coordinate control is unavailable,
-the mission reports an explicit unsupported/avoidance reason instead of
-claiming success or entering an unexplained `EXECUTION_STALLED` loop.
+API. If native post-launch avoidance or coordinate control is unavailable, the
+mission reports an explicit unsupported/avoidance reason instead of claiming
+success or entering an unexplained `EXECUTION_STALLED` loop. `AVOIDANCE_ACTIVE`
+means only that a temporary native coordinate objective is being supplied;
+McHeli still owns movement, gravity, collision, fuses, and impact.
 
 The GUI displays current key names from Minecraft's Controls bindings, not the
 original defaults, so rebinding is reflected immediately. `Unbound` is shown

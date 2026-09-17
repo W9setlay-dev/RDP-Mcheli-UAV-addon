@@ -7,6 +7,7 @@ package net.vas.rdp.uav.weapon;
 public enum ProjectileGuidanceState {
     ASSIGNED,
     NATIVE_GUIDANCE_ACTIVE,
+    AVOIDANCE_ACTIVE,
     TARGET_LOST,
     OBSTACLE_UNAVAILABLE,
     IMPACTED,

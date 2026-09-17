@@ -32,6 +32,10 @@ public final class ProjectileGuidanceMission {
         transition(ProjectileGuidanceState.NATIVE_GUIDANCE_ACTIVE, "NATIVE_GUIDANCE_ACTIVE");
     }
 
+    public void avoidanceActive() {
+        transition(ProjectileGuidanceState.AVOIDANCE_ACTIVE, "AVOIDANCE_ACTIVE");
+    }
+
     public void targetLost() {
         transition(ProjectileGuidanceState.TARGET_LOST, "GUIDED_TARGET_LOST");
     }

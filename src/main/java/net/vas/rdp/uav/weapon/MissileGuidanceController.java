@@ -16,14 +16,19 @@ import net.vas.rdp.uav.RdpUavDebug;
 
 /**
  * Server-side objective handoff for missiles whose native implementations
- * expose coordinate fields and setMotion. The controller never teleports a
- * projectile and never changes gravity, collision, fuse, or impact handling.
+ * expose coordinate fields. The controller never teleports a projectile,
+ * writes projectile motion, or changes gravity, collision, fuse, or impact.
  */
 public final class MissileGuidanceController {
     private static final Map<UUID, Assignment> ASSIGNMENTS = new HashMap<UUID, Assignment>();
     private static final Map<UUID, ProjectileGuidanceMission> PROJECTILES =
             new HashMap<UUID, ProjectileGuidanceMission>();
+    private static final Map<UUID, AvoidancePlan> AVOIDANCE_PLANS =
+            new HashMap<UUID, AvoidancePlan>();
     private static final int MAX_ROUTE_SAMPLES = 12;
+    private static final int MAX_AVOIDANCE_CANDIDATES = 8;
+    private static final double AVOIDANCE_OFFSET = 4.0D;
+    private static final long AVOIDANCE_PLAN_TICKS = 10L;
 
     private MissileGuidanceController() { }
 
@@ -95,6 +100,7 @@ public final class MissileGuidanceController {
         }
         synchronized (MissileGuidanceController.class) {
             PROJECTILES.keySet().retainAll(liveProjectiles);
+            AVOIDANCE_PLANS.keySet().retainAll(liveProjectiles);
         }
     }
 
@@ -128,14 +134,26 @@ public final class MissileGuidanceController {
                 return;
             }
         }
-        if (!corridorClear(world, missile, x, y, z)) {
+        AimPoint aim = chooseAimPoint(world, missile, x, y, z);
+        if (aim == null) {
             projectile.obstacleUnavailable();
             RdpUavDebug.debug("Guidance",
-                    "aircraft={} projectile={} native obstacle avoidance unavailable weapon={}",
+                    "aircraft={} projectile={} avoidance no safe candidate weapon={}",
                     missile.shootingAircraft == null ? null
                             : missile.shootingAircraft.getUniqueID(),
                     missile.getUniqueID(), assignment.weapon);
             return;
+        }
+        x = aim.x;
+        y = aim.y;
+        z = aim.z;
+        if (aim.avoiding) {
+            projectile.avoidanceActive();
+            RdpUavDebug.debug("Guidance",
+                    "aircraft={} projectile={} native avoidance candidate=({}, {}, {})",
+                    missile.shootingAircraft == null ? null
+                            : missile.shootingAircraft.getUniqueID(),
+                    missile.getUniqueID(), x, y, z);
         }
         if (missile instanceof MCH_EntityTvMissile) {
             MCH_EntityTvMissile tv = (MCH_EntityTvMissile) missile;
@@ -175,21 +193,117 @@ public final class MissileGuidanceController {
         return GuidedNativeBehavior.ENTITY_SEEKER;
     }
 
+    private static AimPoint chooseAimPoint(World world, MCH_EntityBaseBullet missile,
+                                           double x, double y, double z) {
+        if (!(missile instanceof MCH_EntityTvMissile)
+                && !(missile instanceof MCH_EntityASMissile)) {
+            // McHeli's native seeker owns these families. Do not reject or
+            // redirect them based on an addon corridor approximation.
+            return new AimPoint(x, y, z, false);
+        }
+        AvoidancePlan existing = AVOIDANCE_PLANS.get(missile.getUniqueID());
+        long now = world.getTotalWorldTime();
+        if (existing != null && now <= existing.expiresAt
+                && corridorClear(world, missile, existing.x, existing.y, existing.z)) {
+            return new AimPoint(existing.x, existing.y, existing.z, true);
+        }
+        AVOIDANCE_PLANS.remove(missile.getUniqueID());
+        if (corridorClear(world, missile, x, y, z)) {
+            return new AimPoint(x, y, z, false);
+        }
+        double dx = x - missile.posX;
+        double dz = z - missile.posZ;
+        double horizontal = Math.sqrt(dx * dx + dz * dz);
+        if (horizontal < 0.001D) {
+            dx = 1.0D;
+            dz = 0.0D;
+            horizontal = 1.0D;
+        }
+        double leftX = -dz / horizontal;
+        double leftZ = dx / horizontal;
+        double[][] offsets = {
+                {leftX, 0.0D, leftZ},
+                {-leftX, 0.0D, -leftZ},
+                {0.0D, 1.0D, 0.0D},
+                {0.0D, -1.0D, 0.0D},
+                {leftX, 1.0D, leftZ},
+                {-leftX, 1.0D, -leftZ},
+                {leftX, -1.0D, leftZ},
+                {-leftX, -1.0D, -leftZ}
+        };
+        AimPoint best = null;
+        double bestScore = Double.MAX_VALUE;
+        for (int i = 0; i < Math.min(MAX_AVOIDANCE_CANDIDATES, offsets.length); i++) {
+            double candidateX = x + offsets[i][0] * AVOIDANCE_OFFSET;
+            double candidateY = Math.max(1.0D, y + offsets[i][1] * AVOIDANCE_OFFSET);
+            double candidateZ = z + offsets[i][2] * AVOIDANCE_OFFSET;
+            if (!corridorClear(world, missile, candidateX, candidateY, candidateZ)
+                    || !corridorClear(world, candidateX, candidateY, candidateZ, x, y, z)) {
+                continue;
+            }
+            double deviation = Math.abs(candidateX - x) + Math.abs(candidateY - y)
+                    + Math.abs(candidateZ - z);
+            double score = deviation + Math.abs(candidateY - missile.posY) * 0.25D;
+            if (score < bestScore) {
+                bestScore = score;
+                best = new AimPoint(candidateX, candidateY, candidateZ, true);
+            }
+        }
+        if (best != null) {
+            AVOIDANCE_PLANS.put(missile.getUniqueID(),
+                    new AvoidancePlan(best.x, best.y, best.z, now + AVOIDANCE_PLAN_TICKS));
+        }
+        return best;
+    }
+
     private static boolean corridorClear(World world, MCH_EntityBaseBullet missile,
                                          double x, double y, double z) {
-        double dx = x - missile.posX;
-        double dy = y - missile.posY;
-        double dz = z - missile.posZ;
+        return corridorClear(world, missile.posX, missile.posY, missile.posZ, x, y, z);
+    }
+
+    private static boolean corridorClear(World world, double startX, double startY, double startZ,
+                                         double x, double y, double z) {
+        double dx = x - startX;
+        double dy = y - startY;
+        double dz = z - startZ;
         for (int i = 1; i <= MAX_ROUTE_SAMPLES; i++) {
             double f = i / (double) MAX_ROUTE_SAMPLES;
             net.minecraft.util.math.BlockPos sample = new net.minecraft.util.math.BlockPos(
-                    missile.posX + dx * f, missile.posY + dy * f, missile.posZ + dz * f);
+                    startX + dx * f, startY + dy * f, startZ + dz * f);
             if (!world.isBlockLoaded(sample)
                     || world.getBlockState(sample).getMaterial().blocksMovement()) {
                 return false;
             }
         }
         return true;
+    }
+
+    private static final class AimPoint {
+        private final double x;
+        private final double y;
+        private final double z;
+        private final boolean avoiding;
+
+        private AimPoint(double x, double y, double z, boolean avoiding) {
+            this.x = x;
+            this.y = y;
+            this.z = z;
+            this.avoiding = avoiding;
+        }
+    }
+
+    private static final class AvoidancePlan {
+        private final double x;
+        private final double y;
+        private final double z;
+        private final long expiresAt;
+
+        private AvoidancePlan(double x, double y, double z, long expiresAt) {
+            this.x = x;
+            this.y = y;
+            this.z = z;
+            this.expiresAt = expiresAt;
+        }
     }
 
     private static Entity find(World world, UUID id) {
