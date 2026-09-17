@@ -80,8 +80,8 @@ public class GuidedWeaponTest {
     }
 
     @Test
-    public void tvLaserIsExplicitlyRejectedForAiButBallisticCoordinateIsAllowed() {
-        assertTrue(!GuidedNativeContract.supportsAiGuidance(
+    public void tvLaserIsSupportedForAiOverrideAndBallisticCoordinateIsAllowed() {
+        assertTrue(GuidedNativeContract.supportsAiGuidance(
         GuidedNativeBehavior.COORDINATE_TV_LASER));
         assertTrue(GuidedNativeContract.supportsAiGuidance(
         GuidedNativeBehavior.COORDINATE_BALLISTIC));

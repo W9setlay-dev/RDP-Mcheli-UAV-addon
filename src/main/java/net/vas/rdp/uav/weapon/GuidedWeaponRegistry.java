@@ -25,7 +25,7 @@ public final class GuidedWeaponRegistry {
         register(config, "asmissile", "asmissile", GuidedNativeBehavior.COORDINATE_BALLISTIC,
                 "SQUARE", 0.0D, true);
         register(config, "tvmissile", "tvmissile", GuidedNativeBehavior.COORDINATE_TV_LASER,
-                "SQUARE", 0.0D, true);
+                "ENTITY,SQUARE", 0.0D, true);
         for (String category : config.getCategoryNames()) {
             if (!category.startsWith("weapon.") || isBuiltIn(category.substring("weapon.".length()))) {
                 continue;

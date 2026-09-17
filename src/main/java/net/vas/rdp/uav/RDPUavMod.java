@@ -97,6 +97,7 @@ public final class RDPUavMod {
                 return;
             }
             LIFECYCLE.tick(event.world);
+            net.vas.rdp.uav.weapon.MissileGuidanceController.tick(event.world);
             if (event.world.getTotalWorldTime() % net.vas.rdp.uav.swarm.SwarmConfig.updateIntervalTicks == 0L) {
                 SWARMS.reconcile(event.world);
             }

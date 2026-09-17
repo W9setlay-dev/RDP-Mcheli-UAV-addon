@@ -90,6 +90,7 @@ public final class GuidedWeaponAdapter {
             if (!fireNativeEntitySeeker(aircraft, decision.getWeapon(), target)) {
                 return GuidedWeaponDecision.reject("NATIVE_SEEKER_LAUNCH_REJECTED");
             }
+            MissileGuidanceController.authorize(aircraft.getUniqueID(), decision.getWeapon(), objective);
             flight.markNativeAttackComplete(aircraft);
             return decision;
         }
@@ -101,6 +102,7 @@ public final class GuidedWeaponAdapter {
             armed = fireNativeCoordinateWeapon(aircraft, decision.getWeapon(), objective);
         }
         if (!armed) return GuidedWeaponDecision.reject("NATIVE_WINGMAN_REJECTED");
+        MissileGuidanceController.authorize(aircraft.getUniqueID(), decision.getWeapon(), objective);
         if (aircraft.isUAV()) return decision;
         return GuidedWeaponDecision.accept(decision.getWeapon());
     }

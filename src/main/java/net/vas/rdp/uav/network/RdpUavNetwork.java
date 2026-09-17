@@ -597,9 +597,12 @@ public final class RdpUavNetwork {
                         }
                         mission.transitionTo(net.vas.rdp.uav.mission.MissionState.ABORTED,
                                 player.world.getTotalWorldTime());
+                        net.vas.rdp.uav.weapon.MissileGuidanceController.abort(mission.getAircraftId());
                         for (net.minecraft.entity.Entity entity : player.world.loadedEntityList) {
                             if (entity instanceof MCH_EntityAircraft
                                     && mission.getAircraftId().equals(entity.getUniqueID())) {
+                                net.vas.rdp.uav.weapon.MissileGuidanceController.abort(
+                                        mission.getAircraftId());
                                 FLIGHT_ADAPTER.release((MCH_EntityAircraft) entity);
                                 break;
                             }

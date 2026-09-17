@@ -26,12 +26,9 @@ public final class GuidedNativeContract {
         return nativeApiAvailable ? "OK" : "UNSUPPORTED_SEEKER_TARGET_ASSIGNMENT";
     }
 
-    /**
-     * McHeliCE TV/laser missiles take their terminal point from the native
-     * camera/laser path. No verified server-side AI handoff exists.
-     */
     public static boolean supportsAiGuidance(GuidedNativeBehavior behavior) {
         return behavior == GuidedNativeBehavior.ENTITY_SEEKER
-                || behavior == GuidedNativeBehavior.COORDINATE_BALLISTIC;
+                || behavior == GuidedNativeBehavior.COORDINATE_BALLISTIC
+                || behavior == GuidedNativeBehavior.COORDINATE_TV_LASER;
     }
 }

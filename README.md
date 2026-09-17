@@ -315,11 +315,16 @@ state transitions.
 ## Guided weapon boundary
 
 Copy `config/rdp-uav-guided-weapons.cfg.example` to the instance config
-directory to authorize McHeli weapon definition/type pairs. `aamissile` and
-`atmissile` are entity-seeker weapons; `asmissile` and `tvmissile` accept
-coordinate/TV/laser square objectives. Unsupported combinations are rejected
-by the server. The addon never creates or steers projectile entities; native
-McHeli/WingMan guidance remains authoritative.
+directory to authorize McHeli weapon definition/type pairs. `aamissile` and `atmissile` are entity-seeker weapons; `asmissile` and
+`tvmissile` accept coordinate/TV/laser entity or square objectives when their
+capability is configured. During an authorized active mission, TV missiles use
+server-owned AI guidance even if the player is viewing the missile camera.
+Abort removes the AI ownership and returns to native player guidance where
+McHeli supports it. `asmissile` pursuit uses bounded server-side 3D obstacle
+sampling and replanning toward the configured square; it preserves McHeli
+gravity, collision, fuse, damage, and impact behavior. Unsupported runtime
+or objective combinations are rejected explicitly, and temporary blocked or
+unloaded routes remain recoverable rather than becoming immediate failures.
 
 ## Square strike constraint boundary
 
