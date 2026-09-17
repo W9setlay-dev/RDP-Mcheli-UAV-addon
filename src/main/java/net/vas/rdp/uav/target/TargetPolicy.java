@@ -43,7 +43,7 @@ public final class TargetPolicy {
         if (entity instanceof EntityPlayer
                 && operator != null && operator.isOnSameTeam(entity)) return false;
         String id = EntityList.getKey(entity) == null ? "" : EntityList.getKey(entity).toString();
-        return !TargetClassifier.isVehicleId(id)
-                && TargetClassifier.isHostileCandidate(id);
+        return TargetClassifier.isHostileCandidate(id)
+                || TargetClassifier.isHostileVehicle(id);
     }
 }

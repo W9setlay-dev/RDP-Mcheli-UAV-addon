@@ -46,7 +46,7 @@ public enum MissionState {
             return true;
         }
         switch (this) {
-            case PLANNED: return next == DISPATCHED;
+            case PLANNED: return next == DISPATCHED || next == WAITING_FOR_TARGET;
             case DISPATCHED: return next == TAXI || next == TAKEOFF;
             case TAXI: return next == TAKEOFF;
             case TAKEOFF: return next == CRUISE;

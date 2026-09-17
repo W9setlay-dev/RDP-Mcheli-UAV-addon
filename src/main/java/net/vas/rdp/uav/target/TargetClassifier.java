@@ -5,34 +5,27 @@ import java.util.HashSet;
 import java.util.Set;
 
 public final class TargetClassifier {
-    private static final Set<String> HOSTILE_PREFIXES = new HashSet<String>(Arrays.asList(
+    private static final Set<String> HOSTILE_PREFIXES = new HashSet<>(Arrays.asList(
             "minecraft:creeper",
             "minecraft:skeleton",
-            "minecraft:stray",
             "minecraft:spider",
             "minecraft:zombie",
             "minecraft:husk",
-            "minecraft:drowned",
             "minecraft:witch",
             "minecraft:enderman",
             "minecraft:slime",
             "minecraft:blaze",
             "minecraft:ghast",
             "minecraft:wither_skeleton",
-            "minecraft:evocation_illager",
-            "minecraft:vindicator",
-            "minecraft:pillager",
-            "minecraft:ravager",
             "srparasites:",
+            "srmonstress:",
+            "gtfo_craft:",
             "lycanitesmobs:",
             "scp:",
             "techguns:",
-            "mcheli:",
             "modularwarfare:",
             "cgm:",
-            "immersiveengineering:",
-            "advancedrocketry:",
-            "minecraft:iron_golem"));
+            "advancedrocketry:"));
 
     private TargetClassifier() { }
 
@@ -55,8 +48,8 @@ public final class TargetClassifier {
     public static boolean isHostileCandidate(String registryId) {
         if (registryId == null || registryId.trim().isEmpty()) return false;
         String normalizedId = registryId.trim().toLowerCase(java.util.Locale.ROOT);
-        // Aircraft, trucks and other vehicles are contacts, not hostile
-        // personnel.  Keep this guard before the broad mod-prefix rules.
+        // Vehicle contacts are admitted by the explicit hostile-vehicle
+        // policy below, not by the generic personnel filter.
         if (isVehicleId(normalizedId)) return false;
         for (String prefix : HOSTILE_PREFIXES) {
             if (normalizedId.equals(prefix) || normalizedId.startsWith(prefix)) {
@@ -66,20 +59,19 @@ public final class TargetClassifier {
         return normalizedId.contains("bandit")
                 || normalizedId.contains("soldier")
                 || normalizedId.contains("military")
-                || normalizedId.contains("hostile")
+                || normalizedId.contains("attack")
                 || normalizedId.contains("enemy")
                 || normalizedId.contains("scout")
                 || normalizedId.contains("raider")
                 || normalizedId.contains("guard")
-                || normalizedId.contains("drone");
+                || normalizedId.contains("drone")
+                || normalizedId.contains("turret");
     }
 
     public static boolean isVehicleId(String registryId) {
         if (registryId == null) return false;
         String id = registryId.trim().toLowerCase(java.util.Locale.ROOT);
-        return id.contains("vehicle") || id.contains("truck") || id.contains("car")
-                || id.contains("tank") || id.contains("transport") || id.contains("jeep")
-                || id.contains("aircraft") || id.contains("plane") || id.contains("helicopter");
+        return id.contains("mcheli");
     }
 
     public static String classify(String registryId) {
@@ -88,12 +80,11 @@ public final class TargetClassifier {
         }
         String normalizedId = registryId.trim().toLowerCase(java.util.Locale.ROOT);
         if (normalizedId.contains("bandit") || normalizedId.contains("military")
-                || normalizedId.contains("soldier") || normalizedId.contains("guard")) {
+                || normalizedId.contains("soldier") || normalizedId.contains("guard")
+                || normalizedId.contains("turret")) {
             return "MILITARY";
         }
-        if (isVehicleId(normalizedId) || normalizedId.contains("vehicle") || normalizedId.contains("truck")
-                || normalizedId.contains("car") || normalizedId.contains("tank")
-                || normalizedId.contains("transport") || normalizedId.contains("jeep")) {
+        if (isVehicleId(normalizedId) || normalizedId.contains("mcheli")) {
             return "VEHICLE";
         }
         if (normalizedId.contains("drone") || normalizedId.contains("scout")
@@ -108,10 +99,16 @@ public final class TargetClassifier {
 
     public static int threatScore(String registryId) {
         String classification = classify(registryId);
-        if ("MILITARY".equals(classification)) return 120;
-        if ("VEHICLE".equals(classification)) return 100;
-        if ("SCOUT".equals(classification)) return 85;
-        if ("HOSTILE".equals(classification)) return 70;
+        switch (classification) {
+            case "MILITARY":
+                return 120;
+            case "VEHICLE":
+                return 100;
+            case "SCOUT":
+                return 85;
+            case "HOSTILE":
+                return 70;
+        }
         return 0;
     }
 
@@ -123,5 +120,12 @@ public final class TargetClassifier {
             return isHostileCandidate(registryId);
         }
         return registryId.toLowerCase(java.util.Locale.ROOT).startsWith(normalizedNamespace + ":");
+    }
+
+    public static boolean isHostileVehicle(String registryId) {
+        if (!isVehicleId(registryId)) return false;
+        String id = registryId.toLowerCase(java.util.Locale.ROOT);
+        return id.contains("bandit") || id.contains("military") || id.contains("enemy")
+                || id.contains("hostile") || id.contains("raider") || id.contains("pirate");
     }
 }

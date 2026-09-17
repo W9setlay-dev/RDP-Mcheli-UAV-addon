@@ -114,6 +114,16 @@ public class RdpUavContractMatrixTest {
             assertTrue(!mission.isTerminal());
         }
 
+        @Test
+        public void plannedMissionMayWaitForSpecificEntityTarget() {
+            RDPMission mission = mission();
+            assertTrue(mission.defer("TARGET_NOT_AVAILABLE",
+                    MissionState.WAITING_FOR_TARGET, 1));
+            assertEquals(MissionState.WAITING_FOR_TARGET, mission.getState());
+            assertFalse(mission.isTerminal());
+            assertEquals("TARGET_NOT_AVAILABLE", mission.getRecoveryReason());
+        }
+
     @Test
     public void assignmentReleaseCannotBeHijackedByAnotherMission() {
         UUID aircraft = UUID.randomUUID();
@@ -158,6 +168,38 @@ public class RdpUavContractMatrixTest {
         assertEquals("SELF_DESTRUCT", oneWay.getTerminalPayloadBehavior());
         assertEquals(UavExecutionProfile.UNKNOWN,
                 UavVehicleProfiles.forAircraft("unconfigured-definition").getExecutionProfile());
+    }
+
+    @Test
+    public void fpvProfileIsExplicitlyOneWayAndDoesNotFallThroughToUnknown() {
+        UavVehicleProfile profile = UavVehicleProfiles.forAircraft("fpv-drone");
+        assertEquals(UavExecutionProfile.ONE_WAY, profile.getExecutionProfile());
+        assertEquals("SELF_DESTRUCT", profile.getTerminalPayloadBehavior());
+        assertTrue(profile.getAttackEnvelope() > 0D);
+    }
+
+    @Test
+    public void transientAttackFailureUsesRecoveryUntilBudgetIsExhausted() {
+        RDPMission mission = mission();
+        mission.transitionTo(MissionState.DISPATCHED, 1);
+        mission.transitionTo(MissionState.TAKEOFF, 2);
+        assertTrue(mission.defer("WINGMAN_DISPATCH_REJECTED",
+                MissionState.EXECUTION_STALLED, 3));
+        assertFalse(mission.isTerminal());
+        assertEquals(MissionState.EXECUTION_STALLED, mission.getState());
+    }
+
+    @Test
+    public void opticsLockSeparatesAreaAndEntityModes() {
+        net.vas.rdp.uav.target.OpticsLock lock = new net.vas.rdp.uav.target.OpticsLock();
+        lock.area(10, 64, 20, 1);
+        assertEquals(net.vas.rdp.uav.target.OpticsLock.Mode.AREA, lock.getMode());
+        UUID id = UUID.randomUUID();
+        lock.entity(id, 12, 65, 22, 2);
+        assertEquals(net.vas.rdp.uav.target.OpticsLock.Mode.ENTITY, lock.getMode());
+        assertEquals(id, lock.getEntityId());
+        lock.clear();
+        assertEquals(net.vas.rdp.uav.target.OpticsLock.Mode.NONE, lock.getMode());
     }
 
     @Test
@@ -374,7 +416,8 @@ public class RdpUavContractMatrixTest {
                     && state != MissionState.KAMIKADZE_DETONATED;
         }
         switch (state) {
-            case PLANNED: return next == MissionState.DISPATCHED;
+            case PLANNED: return next == MissionState.DISPATCHED
+                    || next == MissionState.WAITING_FOR_TARGET;
             case DISPATCHED: return next == MissionState.TAXI || next == MissionState.TAKEOFF;
             case TAXI: return next == MissionState.TAKEOFF;
             case TAKEOFF: return next == MissionState.CRUISE;

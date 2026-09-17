@@ -34,6 +34,8 @@ public final class RdpUavClientKeys {
             "key.rdpuav.fire_self_destruct", Keyboard.KEY_H, "key.categories.rdpuav");
     private static final KeyBinding AI_TARGET_LOCK = new KeyBinding(
             "key.rdpuav.ai_target_lock", Keyboard.KEY_L, "key.categories.rdpuav");
+    private static final KeyBinding SIGHT_STABILIZATION = new KeyBinding(
+            "key.rdpuav.sight_stabilization", Keyboard.KEY_G, "key.categories.rdpuav");
     private static final KeyBinding CLEAR_TARGET_LOCK = new KeyBinding(
             "key.rdpuav.clear_target_lock", Keyboard.KEY_J, "key.categories.rdpuav");
     private static final KeyBinding NEXT_CONTACT = new KeyBinding(
@@ -54,6 +56,7 @@ public final class RdpUavClientKeys {
         ClientRegistry.registerKeyBinding(KAMIKAZE_SELECTED);
         ClientRegistry.registerKeyBinding(FIRE_SELF_DESTRUCT);
         ClientRegistry.registerKeyBinding(AI_TARGET_LOCK);
+        ClientRegistry.registerKeyBinding(SIGHT_STABILIZATION);
         ClientRegistry.registerKeyBinding(CLEAR_TARGET_LOCK);
         ClientRegistry.registerKeyBinding(NEXT_CONTACT);
         ClientRegistry.registerKeyBinding(PREVIOUS_CONTACT);
@@ -88,6 +91,7 @@ public final class RdpUavClientKeys {
         if (KAMIKAZE_SELECTED.isPressed()) GuiMissionControl.armKamikazeSelected();
         if (FIRE_SELF_DESTRUCT.isPressed()) RdpUavNetwork.fireSelfDestruct();
         if (AI_TARGET_LOCK.isPressed()) lockAiTarget(minecraft);
+        if (SIGHT_STABILIZATION.isPressed()) stabilizeSight(minecraft);
         if (CLEAR_TARGET_LOCK.isPressed()) RdpUavNetwork.clearAiTargetLock();
         if (NEXT_CONTACT.isPressed()) RdpUavNetwork.cycleContact(true);
         if (PREVIOUS_CONTACT.isPressed()) RdpUavNetwork.cycleContact(false);
@@ -96,6 +100,15 @@ public final class RdpUavClientKeys {
     private void lockAiTarget(Minecraft minecraft) {
         if (minecraft.objectMouseOver != null && minecraft.objectMouseOver.entityHit != null) {
             RdpUavNetwork.lockAiTarget(minecraft.objectMouseOver.entityHit.getUniqueID());
+        }
+    }
+
+    private void stabilizeSight(Minecraft minecraft) {
+        if (minecraft.objectMouseOver != null
+                && minecraft.objectMouseOver.typeOfHit == net.minecraft.util.math.RayTraceResult.Type.BLOCK) {
+            net.minecraft.util.math.BlockPos pos = minecraft.objectMouseOver.getBlockPos();
+            if (pos != null) RdpUavNetwork.stabilizeArea(pos.getX() + 0.5D,
+                    pos.getY() + 1.0D, pos.getZ() + 0.5D);
         }
     }
 }

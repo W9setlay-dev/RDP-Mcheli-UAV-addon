@@ -52,6 +52,8 @@ public final class RdpUavNetwork {
         CHANNEL.registerMessage(ServerContactSelectionHandler.class, ContactSelection.class, 12, Side.SERVER);
         CHANNEL.registerMessage(ServerClearMissionsHandler.class, ClearMissions.class, 13, Side.SERVER);
         CHANNEL.registerMessage(ServerReturnToBaseHandler.class, ReturnToBase.class, 14, Side.SERVER);
+        CHANNEL.registerMessage(AiTargetLock.ServerAreaLockHandler.class,
+                AiTargetLock.AreaLock.class, 15, Side.SERVER);
     }
 
     public static void openMissionControl(EntityPlayerMP player) {
@@ -109,6 +111,12 @@ public final class RdpUavNetwork {
 
     public static void clearAiTargetLock() {
         CHANNEL.sendToServer(new AiTargetLock(null, true));
+    }
+
+    public static void stabilizeArea(double x, double y, double z) {
+        if (Double.isFinite(x) && Double.isFinite(y) && Double.isFinite(z)) {
+            CHANNEL.sendToServer(new AiTargetLock.AreaLock(x, y, z, false));
+        }
     }
 
     public static void cycleContact(boolean next) {
@@ -307,6 +315,52 @@ public final class RdpUavNetwork {
         public AiTargetLock(java.util.UUID targetId, boolean clear) {
             this.targetId = targetId == null ? "" : targetId.toString();
             this.clear = clear;
+        }
+
+        public static final class AreaLock implements IMessage {
+            private double x, y, z;
+            private boolean clear;
+            public AreaLock() { }
+            public AreaLock(double x, double y, double z, boolean clear) {
+                this.x = x; this.y = y; this.z = z; this.clear = clear;
+            }
+            public void fromBytes(ByteBuf buffer) {
+                x = buffer.readDouble(); y = buffer.readDouble(); z = buffer.readDouble();
+                clear = buffer.readBoolean();
+            }
+            public void toBytes(ByteBuf buffer) {
+                buffer.writeDouble(x).writeDouble(y).writeDouble(z).writeBoolean(clear);
+            }
+        }
+
+        public static final class ServerAreaLockHandler
+                implements IMessageHandler<AreaLock, IMessage> {
+            public IMessage onMessage(final AreaLock message, MessageContext context) {
+                final EntityPlayerMP player = context.getServerHandler().player;
+                Objects.requireNonNull(player.getServer()).addScheduledTask(new Runnable() {
+                    public void run() {
+                        MCH_EntityAircraft aircraft =
+                                net.vas.rdp.uav.mission.UavControlAccess.findControlledAircraft(player);
+                        if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, player)
+                                || !RDPUavMod.missions().ensureAuthorized(aircraft, player)) {
+                            player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                    "UAV area lock rejected: operator authorization is required."));
+                            return;
+                        }
+                        if (message.clear || !Double.isFinite(message.x)
+                                || !Double.isFinite(message.y) || !Double.isFinite(message.z)) {
+                            player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                    "UAV area lock rejected: invalid ground coordinate."));
+                            return;
+                        }
+                        player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                String.format(java.util.Locale.ROOT,
+                                        "UAV sight stabilization locked at %.1f %.1f %.1f.",
+                                        message.x, message.y, message.z)));
+                    }
+                });
+                return null;
+            }
         }
         public void fromBytes(ByteBuf buffer) {
             targetId = readString(buffer);
@@ -920,6 +974,12 @@ public final class RdpUavNetwork {
                                 || aircraft.getAcInfo() == null) {
                             player.sendMessage(new net.minecraft.util.text.TextComponentString(
                                     "UAV target lock rejected: target is unavailable."));
+                            return;
+                        }
+                        if (!net.vas.rdp.uav.target.TargetPolicy.isSelectableContact(
+                                player.world, target, player)) {
+                            player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                    "UAV target lock rejected: target filter excludes this contact."));
                             return;
                         }
                         if (RDPUavMod.missions().assignedMission(aircraft.getUniqueID()) != null) {

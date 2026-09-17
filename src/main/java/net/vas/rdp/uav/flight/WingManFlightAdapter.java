@@ -63,7 +63,10 @@ public final class WingManFlightAdapter {
 
         List<MissionNode> nodes = new ArrayList<>();
         nodes.add(MissionNode.flyTo(x, y, z));
-        if (orbitTicks > 0) {
+        // Attack routes must reach the target immediately.  A long loiter
+        // before the attack node made one-way aircraft appear to orbit
+        // forever while the mission controller waited for completion.
+        if (orbitTicks > 0 && !attack) {
             nodes.add(MissionNode.loiter(orbitTicks));
         }
 

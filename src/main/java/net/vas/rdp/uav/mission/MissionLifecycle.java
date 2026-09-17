@@ -1,6 +1,7 @@
 package net.vas.rdp.uav.mission;
 
 import com.norwood.mcheli.aircraft.MCH_EntityAircraft;
+import com.norwood.mcheli.helicopter.MCH_EntityHeli;
 import com.norwood.mcheli.wingman.wingman.WingmanEntry;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.EntityPlayer;
@@ -134,7 +135,7 @@ public final class MissionLifecycle {
         double dispatchRange = Math.max(mission.getMissionRangeLimit(),
                 profile(aircraft).getDetectionRange());
         if (aircraft.getDistance(target.x, target.y, target.z) > dispatchRange) {
-            fail(world, mission, "OUT_OF_RANGE", tick);
+            defer(world, mission, "OUT_OF_RANGE_REPLAN", MissionState.REPLAN, tick);
             return;
         }
 
@@ -158,7 +159,11 @@ public final class MissionLifecycle {
                         aircraftSpeed(aircraft), profile(aircraft).getAttackEnvelope(), true,
                         profile(aircraft).getAttackWeaponPriority());
                 if (!guided.isAccepted()) {
-                    fail(world, mission, guided.getReason(), tick);
+                    if ("NO_GUIDED_WEAPON".equals(guided.getReason())) {
+                        fail(world, mission, guided.getReason(), tick);
+                    } else {
+                        defer(world, mission, guided.getReason(), MissionState.REPLAN, tick);
+                    }
                     return;
                 }
                 mission.transitionTo(MissionState.DISPATCHED, tick);
@@ -185,15 +190,17 @@ public final class MissionLifecycle {
             // before the mission reports acquisition or arms an attack.
             if (!flight.dispatch(aircraft, target.x, guidanceY, target.z,
                     mission.getObservationDistance(), 200, mission.isAttack(), mission.getTargetId())) {
-                fail(world, mission, "WINGMAN_DISPATCH_REJECTED", tick);
+                defer(world, mission, "WINGMAN_DISPATCH_REJECTED",
+                        MissionState.EXECUTION_STALLED, tick);
             } else {
                 LOGGER.info("Mission {} dispatched aircraft {} type={} target={} at tick {}",
                         mission.getMissionId(), aircraft.getUniqueID(), mission.getAircraftType(),
                         formatTarget(target), tick);
             }
         } catch (RuntimeException failure) {
-            fail(world, mission, failure.getMessage() == null
-                    ? "MISSION_DISPATCH_FAILED" : failure.getMessage(), tick);
+            defer(world, mission, failure.getMessage() == null
+                ? "MISSION_DISPATCH_RETRY_REQUIRED" : failure.getMessage(),
+                MissionState.EXECUTION_STALLED, tick);
         }
         RDPMissionWorldData.get(world).markDirty();
     }
@@ -245,7 +252,8 @@ public final class MissionLifecycle {
                 // Low fuel is reported to the operator; autonomous mission
                 // logic must never initiate RTB.  The player can explicitly
                 // request native return through the GUI or command.
-                fail(world, mission, "LOW_FUEL_OPERATOR_RTB_REQUIRED", tick);
+                defer(world, mission, "LOW_FUEL_OPERATOR_RTB_REQUIRED",
+                        MissionState.RECOVERING, tick);
                 dirty = true;
                 continue;
             }
@@ -516,7 +524,8 @@ public final class MissionLifecycle {
                                         * net.vas.rdp.uav.flight.SquareStrikeConfig.passSpacingFactor),
                                 mission.getObservationDistance(), 1);
                         if (!flight.armSquareStrike(aircraft, plan, mission.getTargetId())) {
-                            fail(world, mission, "WINGMAN_SQUARE_STRIKE_REJECTED", tick);
+                            defer(world, mission, "WINGMAN_SQUARE_STRIKE_REJECTED",
+                                    MissionState.EXECUTION_STALLED, tick);
                         } else {
                             mission.transitionTo(MissionState.ATTACK_TARGET, tick);
                         }
@@ -544,13 +553,14 @@ public final class MissionLifecycle {
                                 mission.getMissionId(), guided.getReason(), aircraft.getUniqueID(),
                                 formatTarget(target));
                         if (guided.getReason().startsWith("GUIDED_HOLD_")) return false;
-                        fail(world, mission, guided.getReason(), tick);
+                        defer(world, mission, guided.getReason(), MissionState.REPLAN, tick);
                         return true;
                     }
                     if (!flight.armAttack(aircraft, target.x, target.y, target.z,
                             profile(aircraft).getAttackEnvelope(), mission.getTargetId(),
                             profile(aircraft).getAttackWeaponPriority())) {
-                        fail(world, mission, "WINGMAN_ATTACK_ARM_REJECTED", tick);
+                        defer(world, mission, "WINGMAN_ATTACK_ARM_REJECTED",
+                                MissionState.EXECUTION_STALLED, tick);
                     } else {
                         mission.transitionTo(MissionState.ATTACK_TARGET, tick);
                     }
@@ -814,8 +824,9 @@ public final class MissionLifecycle {
         if (target == null || decision == MissionSafety.RouteDecision.HOLD_AND_REEVALUATE) return;
         UUID aircraftId = aircraft.getUniqueID();
         RouteRefresh previous = routeRefreshes.get(aircraftId);
-        boolean orbit = decision == MissionSafety.RouteDecision.OFFSET_ORBIT
-                || decision == MissionSafety.RouteDecision.SAFE_SIDE_APPROACH;
+        boolean orbit = !mission.isAttack()
+                && (decision == MissionSafety.RouteDecision.OFFSET_ORBIT
+                || decision == MissionSafety.RouteDecision.SAFE_SIDE_APPROACH);
         boolean moved = previous == null
                 || previous.distanceSquared(target.x, target.y, target.z) >= 16.0D;
         boolean due = previous == null
@@ -859,7 +870,16 @@ public final class MissionLifecycle {
 
     private double guidanceAltitude(MCH_EntityAircraft aircraft, double targetY) {
         UavVehicleProfile profile = profile(aircraft);
-        if (!profile.isReusable()) return targetY;
+        if (!profile.isReusable()) {
+            // FPV helicopters need a small, bounded standoff height before
+            // their terminal dive.  Sending the raw target Y to native
+            // WingMan makes a ground target look like an unlimited descent/
+            // climb correction for helicopter flight models.
+            if (aircraft instanceof MCH_EntityHeli) {
+                return Math.max(targetY + 8.0D, profile.getMinimumExecutionAltitude());
+            }
+            return targetY;
+        }
         return Math.max(profile.getMinimumExecutionAltitude(),
                 Math.min(profile.getMaximumExecutionAltitude(), profile.getExecutionAltitude()));
     }

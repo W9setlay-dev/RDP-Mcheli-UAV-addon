@@ -57,7 +57,7 @@ public final class TargetResolver {
                 matches = id.equals(specification.getRegistryId());
             } else if (TargetClassifier.isHostileNamespace(specification.getNamespace())) {
                 matches = TargetClassifier.isHostileCandidate(id)
-                        && !TargetClassifier.isVehicleId(id);
+                        || TargetClassifier.isHostileVehicle(id);
             } else {
                 matches = id.startsWith(specification.getNamespace() + ":");
             }

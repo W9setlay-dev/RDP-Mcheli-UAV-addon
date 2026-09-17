@@ -31,7 +31,8 @@ public final class SwarmManager {
     public boolean addMember(World world, UUID owner, UUID swarmId, SwarmMember member) {
         SwarmRecord record = find(world, swarmId);
         if (!owns(record, owner) || member == null) return false;
-        if (record.getMembers().size() >= SwarmConfig.maximumSize) return false;
+        if (record.getMembers().size() >= Math.min(SwarmConfig.maximumSize,
+                SwarmConfig.maximumForProfile(member.getProfile()))) return false;
         record.add(member);
         RDPUavSwarmWorldData.get(world).markDirty();
         return true;

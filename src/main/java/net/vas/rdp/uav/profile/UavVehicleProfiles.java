@@ -9,7 +9,7 @@ import java.util.Map;
 /** Explicit McHeli definition to RDP execution-policy mapping. */
 public final class UavVehicleProfiles {
     private static final Map<String, UavVehicleProfile> profiles =
-            new HashMap<String, UavVehicleProfile>();
+            new HashMap<>();
     private static final UavVehicleProfile UNKNOWN = new UavVehicleProfile(
             UavExecutionProfile.UNKNOWN, 0, 0, buildLimit(), 0, false, "NONE",
             256, 256, 64);
@@ -48,7 +48,7 @@ public final class UavVehicleProfiles {
                     executionProfile == UavExecutionProfile.LONG_RANGE_REUSABLE_UAV ? 1536F : 256F,
                     1F, 4096F, "Authoritative target-lock range."));
             double missionExecutionRange = number(config.getFloat("missionExecutionRange", category,
-                    executionProfile == UavExecutionProfile.LONG_RANGE_REUSABLE_UAV ? 64F : 64F,
+                    64F,
                     1F, 4096F, "Mission execution range."));
             boolean holding = config.getBoolean("holdingEnabled", category,
                     reusable,
@@ -77,26 +77,26 @@ public final class UavVehicleProfiles {
     }
 
     private static void ensureDefaults(Configuration config) {
-        String[] names = {"switchblade", "shahed136", "mq9"};
-        String[] profile = {"ONE_WAY", "ONE_WAY", "LONG_RANGE_REUSABLE_UAV"};
-        String[] aliases = {"switchblade", "shahed136,shahed-136", "mq-9,mq_9,reaper,predator"};
+        String[] names = {"switchblade", "shahed136", "fpvdrone", "mq9"};
+        String[] profile = {"ONE_WAY", "ONE_WAY", "ONE_WAY", "LONG_RANGE_REUSABLE_UAV"};
+        String[] aliases = {"switchblade", "shahed136,shahed-136", "fpv,fpv-drone,fpv_drone", "mq-9,mq_9,reaper,predator"};
         for (int i = 0; i < names.length; i++) {
             String category = "vehicle." + names[i];
             config.getString("profile", category, profile[i],
                     "RDP execution profile: ONE_WAY or REUSABLE_UAV.");
             config.getString("aliases", category, aliases[i],
                     "Comma-separated McHeli definition names using this profile.");
-            config.getFloat("executionAltitude", category, i == 2 ? 250F : 0F,
+            config.getFloat("executionAltitude", category, i == 3 ? 250F : 0F,
                     0F, 4096F, "Preferred execution altitude.");
-            config.getFloat("minimumExecutionAltitude", category, i == 2 ? 200F : 0F,
+            config.getFloat("minimumExecutionAltitude", category, i == 3 ? 200F : 0F,
                     0F, 4096F, "Minimum reusable-UAV altitude.");
-            config.getFloat("maximumExecutionAltitude", category, i == 2 ? 320F : 4096F,
+            config.getFloat("maximumExecutionAltitude", category, i == 3 ? 320F : 4096F,
                     0F, 4096F, "Maximum execution altitude.");
-            config.getFloat("altitudeTolerance", category, i == 2 ? 15F : 0F,
+            config.getFloat("altitudeTolerance", category, i == 3 ? 15F : 4F,
                     0F, 512F, "Execution-altitude tolerance.");
-            config.getBoolean("holdingEnabled", category, i == 2,
+            config.getBoolean("holdingEnabled", category, i == 3,
                     "Allow reusable UAV holding/orbit behavior.");
-            config.getString("terminalPayloadBehavior", category, i == 2 ? "NONE" : "SELF_DESTRUCT",
+            config.getString("terminalPayloadBehavior", category, i == 3 ? "NONE" : "SELF_DESTRUCT",
                     "Terminal payload behavior; this does not create a payload.");
             config.getString("attackWeaponPriority", category, "",
                     "Comma-separated McHeli weapon names, in preferred conventional-attack order.");
@@ -104,9 +104,9 @@ public final class UavVehicleProfiles {
                     "Optional native WingMan speed envelope; zero keeps the aircraft definition default.");
             config.getFloat("attackEnvelope", category, 64F, 1F, 4096F,
                     "Maximum attack-node envelope passed to native WingMan.");
-            config.getFloat("detectionRange", category, i == 2 ? 2048F : 256F,
+            config.getFloat("detectionRange", category, i == 3 ? 2048F : 256F,
                     1F, 4096F, "Target detection range.");
-            config.getFloat("lockRange", category, i == 2 ? 1536F : 256F,
+            config.getFloat("lockRange", category, i == 3 ? 1536F : 256F,
                     1F, 4096F, "Authoritative target-lock range.");
             config.getFloat("missionExecutionRange", category, 64F,
                     1F, 4096F, "Mission execution range.");
@@ -115,6 +115,12 @@ public final class UavVehicleProfiles {
 
     public static UavVehicleProfile forAircraft(String definition) {
         UavVehicleProfile profile = profiles.get(normalize(definition));
+        if (profile == null && ("fpvdrone".equals(normalize(definition))
+                || "fpv-drone".equals(normalize(definition))
+                || "fpv".equals(normalize(definition)))) {
+            return new UavVehicleProfile(UavExecutionProfile.ONE_WAY, 0, 0, 4096,
+                    4, false, "SELF_DESTRUCT");
+        }
         return profile == null ? UNKNOWN : profile;
     }
 

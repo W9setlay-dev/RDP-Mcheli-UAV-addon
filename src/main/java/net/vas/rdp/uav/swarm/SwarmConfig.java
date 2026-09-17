@@ -2,6 +2,8 @@ package net.vas.rdp.uav.swarm;
 
 import net.minecraftforge.common.config.Configuration;
 import java.io.File;
+import java.util.HashMap;
+import java.util.Map;
 
 public final class SwarmConfig {
     public static int maximumSize = 8;
@@ -12,6 +14,7 @@ public final class SwarmConfig {
     public static double minimumVerticalSeparation = 6D;
     public static int memberTimeoutTicks = 100;
     public static int degradedThreshold = 1;
+    private static final Map<String, Integer> profileLimits = new HashMap<String, Integer>();
     private SwarmConfig() { }
     public static void load(File dir) {
         Configuration c = new Configuration(new File(dir, "rdp-uav-swarm.cfg"));
@@ -24,6 +27,16 @@ public final class SwarmConfig {
         minimumVerticalSeparation = c.getFloat("minimumVerticalSeparation", "safety", (float) minimumVerticalSeparation, 1, 512, "Minimum vertical separation.");
         memberTimeoutTicks = c.getInt("memberTimeoutTicks", "swarm", memberTimeoutTicks, 20, 1200, "Member timeout.");
         degradedThreshold = c.getInt("degradedThreshold", "swarm", degradedThreshold, 0, 64, "Unavailable members before degraded state.");
+        profileLimits.clear();
+        for (String profile : new String[] {"ONE_WAY", "REUSABLE_UAV", "LONG_RANGE_REUSABLE_UAV"}) {
+            profileLimits.put(profile, c.getInt(profile + "MaximumSize", "profiles",
+                    maximumSize, 1, 64, "Maximum swarm members for this UAV profile."));
+        }
         if (c.hasChanged()) c.save();
+    }
+
+    public static int maximumForProfile(String profile) {
+        Integer value = profileLimits.get(profile == null ? "" : profile.toUpperCase());
+        return value == null ? maximumSize : value;
     }
 }
