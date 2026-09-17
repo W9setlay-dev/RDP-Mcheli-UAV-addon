@@ -97,10 +97,11 @@ selected/controlled mission.
 | — | Return to base | Dashboard button or `/rdpuav mission return`; explicit operator request only |
 | `K` | Refresh missions | Requests a server-filtered snapshot; it does not mutate mission state |
 
-`K`, `N`, and `H` are intentionally distinct. `K` submits an attack plan,
-`N` arms a destructive kamikaze mode after the explicit operator action, and `H` directly
-fires the validated SelfDestruct weapon. The client key names are configurable
-through Minecraft's Controls menu.
+`P` creates an attack intent, `E` authorizes it, `1` arms the explicit
+kamikaze/nose-dive mode, and `2` directly fires the validated SelfDestruct
+payload. `N` aborts the selected mission and `K` only refreshes mission data.
+The client key names are configurable through Minecraft's Controls menu; the
+GUI displays the current bindings rather than assuming these defaults.
 
 For an autonomous AI task, use `/rdpuav mission ai <namespace:id> [attack]`.
 The command evaluates the controlled, authorized UAV through the deterministic
@@ -168,6 +169,22 @@ Obstacle avoidance is not universal: native seekers keep McHeli's own seeker
 behavior, while coordinate/TV paths only receive bounded terrain/corridor
 checks and scoped waypoint handling. No projectile teleportation or arbitrary
 velocity replacement is performed.
+
+Aircraft and projectile guidance are separate missions. WingMan controls only
+the carrier route, altitude, terminal approach, hold, or return. After McHeli
+creates a missile, McHeli remains authoritative for that projectile's
+acceleration, gravity, steering, collision, terrain interaction, fuse, and
+impact. The addon never performs projectile avoidance by moving the carrier
+aircraft or player camera, and never replaces projectile motion every tick.
+
+ATGM/TV missions use only verified native target or TV coordinate inputs.
+ASM/Maverick missions retain the native McHeli Maverick flight mechanic; a
+square objective changes the validated launch solution, not the projectile
+physics. Gravity-defined weapons such as AGM-154-style payloads use a
+calculated bearing/elevation/release solution and the normal McHeli firing
+API. If native post-launch avoidance or coordinate control is unavailable,
+the mission reports an explicit unsupported/avoidance reason instead of
+claiming success or entering an unexplained `EXECUTION_STALLED` loop.
 
 The GUI displays current key names from Minecraft's Controls bindings, not the
 original defaults, so rebinding is reflected immediately. `Unbound` is shown

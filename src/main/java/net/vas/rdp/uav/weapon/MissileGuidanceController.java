@@ -4,12 +4,13 @@ import com.norwood.mcheli.weapon.MCH_EntityASMissile;
 import com.norwood.mcheli.weapon.MCH_EntityBaseBullet;
 import com.norwood.mcheli.weapon.MCH_EntityTvMissile;
 import net.minecraft.entity.Entity;
-import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.UUID;
+import java.util.Set;
 import java.util.List;
 import net.vas.rdp.uav.RdpUavDebug;
 
@@ -20,6 +21,8 @@ import net.vas.rdp.uav.RdpUavDebug;
  */
 public final class MissileGuidanceController {
     private static final Map<UUID, Assignment> ASSIGNMENTS = new HashMap<UUID, Assignment>();
+    private static final Map<UUID, ProjectileGuidanceMission> PROJECTILES =
+            new HashMap<UUID, ProjectileGuidanceMission>();
     private static final int MAX_ROUTE_SAMPLES = 12;
 
     private MissileGuidanceController() { }
@@ -45,16 +48,28 @@ public final class MissileGuidanceController {
             RdpUavDebug.debug("Guidance", "aircraft={} owner=PLAYER/native action=TAKEOVER", aircraftId);
         }
     }
-
     public static synchronized void clear(UUID aircraftId) {
-        if (aircraftId != null) ASSIGNMENTS.remove(aircraftId);
+        if (aircraftId != null) {
+            ASSIGNMENTS.remove(aircraftId);
+            java.util.Iterator<Map.Entry<UUID, ProjectileGuidanceMission>> iterator =
+                    PROJECTILES.entrySet().iterator();
+            while (iterator.hasNext()) {
+                ProjectileGuidanceMission mission = iterator.next().getValue();
+                if (aircraftId.equals(mission.getAircraftId())) {
+                    mission.abort();
+                    iterator.remove();
+                }
+            }
+        }
     }
 
     public static void tick(World world) {
         if (world == null || world.isRemote) return;
+        Set<UUID> liveProjectiles = new HashSet<UUID>();
         for (Entity entity : world.loadedEntityList) {
             if (!(entity instanceof MCH_EntityBaseBullet)) continue;
             MCH_EntityBaseBullet missile = (MCH_EntityBaseBullet) entity;
+            liveProjectiles.add(missile.getUniqueID());
             Entity shooter = missile.shootingAircraft;
             if (shooter == null) shooter = missile.shootingEntity;
             if (shooter == null) continue;
@@ -64,6 +79,8 @@ public final class MissileGuidanceController {
             }
             if (assignment == null || assignment.mode != GuidanceControlMode.AI_GUIDANCE) continue;
             if (!matches(assignment.weapon, missile)) continue;
+            ProjectileGuidanceMission projectile = projectileMission(missile, shooter, assignment);
+            projectile.nativeGuidanceActive();
             if (assignment.filter != null && assignment.objective.getType() == GuidedObjectiveType.ENTITY) {
                 Entity selected = assignment.filter.select(world, missile);
                 if (selected != null && !selected.getUniqueID().equals(assignment.objective.getContactId())) {
@@ -74,7 +91,10 @@ public final class MissileGuidanceController {
                             selected.posY, selected.posZ, world.getTotalWorldTime());
                 }
             }
-            apply(world, missile, assignment.objective);
+            apply(world, missile, assignment);
+        }
+        synchronized (MissileGuidanceController.class) {
+            PROJECTILES.keySet().retainAll(liveProjectiles);
         }
     }
 
@@ -86,7 +106,11 @@ public final class MissileGuidanceController {
     }
 
     private static void apply(World world, MCH_EntityBaseBullet missile,
-                              GuidedStrikeObjective objective) {
+                              Assignment assignment) {
+        GuidedStrikeObjective objective = assignment.objective;
+        ProjectileGuidanceMission projectile = projectileMission(missile,
+                missile.shootingAircraft == null ? missile.shootingEntity
+                        : missile.shootingAircraft, assignment);
         double x = objective.getX();
         double y = objective.getY();
         double z = objective.getZ();
@@ -95,45 +119,77 @@ public final class MissileGuidanceController {
             if (target != null) {
                 x = target.posX; y = target.posY; z = target.posZ;
                 objective.updateContact(x, y, z, world.getTotalWorldTime());
+            } else {
+                objective.loseContact();
+                projectile.targetLost();
+                RdpUavDebug.debug("Guidance", "aircraft={} projectile target lost weapon={}",
+                        missile.shootingAircraft == null ? null
+                                : missile.shootingAircraft.getUniqueID(), assignment.weapon);
+                return;
             }
         }
-        BlockPos waypoint = nextWaypoint(world, missile, x, y, z);
+        if (!corridorClear(world, missile, x, y, z)) {
+            projectile.obstacleUnavailable();
+            RdpUavDebug.debug("Guidance",
+                    "aircraft={} projectile={} native obstacle avoidance unavailable weapon={}",
+                    missile.shootingAircraft == null ? null
+                            : missile.shootingAircraft.getUniqueID(),
+                    missile.getUniqueID(), assignment.weapon);
+            return;
+        }
         if (missile instanceof MCH_EntityTvMissile) {
             MCH_EntityTvMissile tv = (MCH_EntityTvMissile) missile;
-            tv.targetPosX = waypoint.getX() + 0.5D;
-            tv.targetPosY = waypoint.getY() + 0.5D;
-            tv.targetPosZ = waypoint.getZ() + 0.5D;
-            steer(missile, tv.targetPosX, tv.targetPosY, tv.targetPosZ);
+            // These are McHeli's native TV target fields. Do not replace
+            // projectile motion; McHeli performs steering and collision.
+            tv.targetPosX = x;
+            tv.targetPosY = y;
+            tv.targetPosZ = z;
         } else if (missile instanceof MCH_EntityASMissile) {
             MCH_EntityASMissile as = (MCH_EntityASMissile) missile;
-            as.targetPosX = waypoint.getX() + 0.5D;
-            as.targetPosY = waypoint.getY() + 0.5D;
-            as.targetPosZ = waypoint.getZ() + 0.5D;
+            // ASM/Maverick retains its native flight, gravity, seeker, and
+            // impact behavior; only the native target coordinates are updated.
+            as.targetPosX = x;
+            as.targetPosY = y;
+            as.targetPosZ = z;
         }
     }
 
-    private static void steer(MCH_EntityBaseBullet missile, double x, double y, double z) {
-        double dx = x - missile.posX;
-        double dy = y - missile.posY;
-        double dz = z - missile.posZ;
-        double length = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        if (length > 0.001D) missile.setMotion(dx / length, dy / length, dz / length);
+    private static synchronized ProjectileGuidanceMission projectileMission(
+            MCH_EntityBaseBullet missile, Entity shooter, Assignment assignment) {
+        ProjectileGuidanceMission existing = PROJECTILES.get(missile.getUniqueID());
+        if (existing != null) return existing;
+        ProjectileGuidanceMission created = new ProjectileGuidanceMission(
+                missile.getUniqueID(), shooter.getUniqueID(), assignment.weapon,
+                behaviorFor(missile), assignment.objective);
+        PROJECTILES.put(missile.getUniqueID(), created);
+        return created;
     }
 
-    private static BlockPos nextWaypoint(World world, MCH_EntityBaseBullet missile,
+    private static GuidedNativeBehavior behaviorFor(MCH_EntityBaseBullet missile) {
+        if (missile instanceof MCH_EntityTvMissile) {
+            return GuidedNativeBehavior.COORDINATE_TV_LASER;
+        }
+        if (missile instanceof MCH_EntityASMissile) {
+            return GuidedNativeBehavior.COORDINATE_BALLISTIC;
+        }
+        return GuidedNativeBehavior.ENTITY_SEEKER;
+    }
+
+    private static boolean corridorClear(World world, MCH_EntityBaseBullet missile,
                                          double x, double y, double z) {
         double dx = x - missile.posX;
         double dy = y - missile.posY;
         double dz = z - missile.posZ;
         for (int i = 1; i <= MAX_ROUTE_SAMPLES; i++) {
             double f = i / (double) MAX_ROUTE_SAMPLES;
-            BlockPos sample = new BlockPos(missile.posX + dx * f, missile.posY + dy * f,
-                    missile.posZ + dz * f);
-            if (!world.isBlockLoaded(sample) || world.getBlockState(sample).getMaterial().blocksMovement()) {
-                return new BlockPos(missile.posX, missile.posY + 2.0D, missile.posZ);
+            net.minecraft.util.math.BlockPos sample = new net.minecraft.util.math.BlockPos(
+                    missile.posX + dx * f, missile.posY + dy * f, missile.posZ + dz * f);
+            if (!world.isBlockLoaded(sample)
+                    || world.getBlockState(sample).getMaterial().blocksMovement()) {
+                return false;
             }
         }
-        return new BlockPos(x, y, z);
+        return true;
     }
 
     private static Entity find(World world, UUID id) {

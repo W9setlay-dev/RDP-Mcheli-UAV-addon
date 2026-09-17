@@ -8,6 +8,8 @@ import net.vas.rdp.uav.weapon.GuidedStrikeObjective;
 import net.vas.rdp.uav.weapon.GuidedTerminalProfile;
 import net.vas.rdp.uav.weapon.GuidedWeaponCapability;
 import net.vas.rdp.uav.weapon.GuidedWeaponRegistry;
+import net.vas.rdp.uav.weapon.ProjectileGuidanceMission;
+import net.vas.rdp.uav.weapon.ProjectileGuidanceState;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -131,5 +133,39 @@ public class GuidedWeaponTest {
         GuidedTerminalProfile profile = new GuidedTerminalProfile(220, true, 2, 2048);
         assertEquals(2.0D, profile.getMinimumAltitude(), 0.0D);
         assertEquals(2048.0D, profile.getMaximumAltitude(), 0.0D);
+    }
+
+    @Test
+    public void projectileLifecycleIsIndependentFromCarrierMission() {
+        GuidedStrikeObjective objective = GuidedStrikeObjective.square(UUID.randomUUID(), 0,
+                20, 70, 30, 1);
+        objective.authorize();
+        objective.beginTracking();
+        ProjectileGuidanceMission projectile = new ProjectileGuidanceMission(
+                UUID.randomUUID(), UUID.randomUUID(), "asmissile",
+                GuidedNativeBehavior.COORDINATE_BALLISTIC, objective);
+
+        assertEquals(ProjectileGuidanceState.ASSIGNED, projectile.getState());
+        projectile.nativeGuidanceActive();
+        assertEquals(ProjectileGuidanceState.NATIVE_GUIDANCE_ACTIVE, projectile.getState());
+        projectile.impacted();
+        assertEquals(ProjectileGuidanceState.IMPACTED, projectile.getState());
+        projectile.abort();
+        assertEquals(ProjectileGuidanceState.IMPACTED, projectile.getState());
+    }
+
+    @Test
+    public void projectileObstacleCapabilityIsExplicitAndNotAFlightSubstitute() {
+        GuidedStrikeObjective objective = GuidedStrikeObjective.square(UUID.randomUUID(), 0,
+                20, 70, 30, 1);
+        objective.authorize();
+        objective.beginTracking();
+        ProjectileGuidanceMission projectile = new ProjectileGuidanceMission(
+                UUID.randomUUID(), UUID.randomUUID(), "tvmissile",
+                GuidedNativeBehavior.COORDINATE_TV_LASER, objective);
+
+        projectile.obstacleUnavailable();
+        assertEquals(ProjectileGuidanceState.OBSTACLE_UNAVAILABLE, projectile.getState());
+        assertEquals("NATIVE_AVOIDANCE_UNAVAILABLE", projectile.getReason());
     }
 }

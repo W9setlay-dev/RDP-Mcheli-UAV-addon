@@ -345,7 +345,9 @@ public final class MissionLifecycle {
                 boolean targetInRadius = target != null
                         && targetDistance(aircraft, target)
                         <= net.vas.rdp.uav.flight.KamikazeConfig.detonationRadius;
-                if (!speedReached || (!noseImpact && !targetInRadius)) {
+                boolean terminalGeometry = target != null
+                        && terminalGeometrySatisfied(aircraft, target, mission);
+                if (!speedReached || (!noseImpact && !targetInRadius) || !terminalGeometry) {
                     if (tick % 20L == 0L) {
                         RdpUavDebug.debug("Lifecycle",
                                 "mission {} kamikaze approaching aircraft={} speedReached={} targetDistance={} target={}",
@@ -932,8 +934,7 @@ public final class MissionLifecycle {
     private boolean terminalGeometrySatisfied(MCH_EntityAircraft aircraft, Target target,
                                                RDPMission mission) {
         if (aircraft == null || target == null || mission == null) return false;
-        if (mission.getMissionType() != MissionType.SQUARE_STRIKE
-                || profile(aircraft).isReusable()) return true;
+        if (profile(aircraft).isReusable()) return true;
         double dx = aircraft.posX - target.x;
         double dz = aircraft.posZ - target.z;
         double horizontal = Math.sqrt(dx * dx + dz * dz);

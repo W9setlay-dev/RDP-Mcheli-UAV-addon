@@ -988,6 +988,7 @@ public final class RdpUavNetwork {
                                     "UAV target lock rejected: target filter excludes this contact."));
                             return;
                         }
+                        assert profile != null;
                         if (target.getDistance(aircraft) > profile.getLockRange()) {
                             player.sendMessage(new net.minecraft.util.text.TextComponentString(
                                     "UAV target lock rejected: target is outside lock range."));

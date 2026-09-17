@@ -444,6 +444,7 @@ public final class RdpUavCommand extends CommandBase {
             return;
         }
         try {
+            assert aircraft.getAcInfo() != null;
             net.vas.rdp.uav.profile.UavVehicleProfile vehicleProfile =
                     UavVehicleProfiles.forAircraft(aircraft.getAcInfo().name);
             if (aircraft.isUAV() && vehicleProfile.getExecutionProfile()

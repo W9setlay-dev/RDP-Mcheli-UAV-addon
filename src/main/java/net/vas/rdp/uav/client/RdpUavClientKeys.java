@@ -47,8 +47,7 @@ public final class RdpUavClientKeys {
 
     public static String label(KeyBinding binding) {
         if (binding == null || binding.getKeyCode() == Keyboard.KEY_NONE) return "Unbound";
-        return binding.getKeyDescription() == null ? Keyboard.getKeyName(binding.getKeyCode())
-                : Keyboard.getKeyName(binding.getKeyCode());
+        return Keyboard.getKeyName(binding.getKeyCode());
     }
     public static String missionControlKey() { return label(OPEN_MISSION_CONTROL); }
     public static String pointKey() { return label(POINT_TASK); }
@@ -128,7 +127,7 @@ public final class RdpUavClientKeys {
         if (minecraft.objectMouseOver != null
                 && minecraft.objectMouseOver.typeOfHit == net.minecraft.util.math.RayTraceResult.Type.BLOCK) {
             net.minecraft.util.math.BlockPos pos = minecraft.objectMouseOver.getBlockPos();
-            if (pos != null) RdpUavNetwork.stabilizeArea(pos.getX() + 0.5D,
+            RdpUavNetwork.stabilizeArea(pos.getX() + 0.5D,
                     pos.getY() + 1.0D, pos.getZ() + 0.5D);
         }
     }

@@ -115,9 +115,10 @@ public final class UavVehicleProfiles {
 
     public static UavVehicleProfile forAircraft(String definition) {
         UavVehicleProfile profile = profiles.get(normalize(definition));
-        if (profile == null && ("fpvdrone".equals(normalize(definition))
-                || "fpv-drone".equals(normalize(definition))
-                || "fpv".equals(normalize(definition)))) {
+        String normalized = normalize(definition);
+        if (profile == null && (normalized.contains("fpv")
+                || normalized.contains("shahed")
+                || normalized.contains("switchblade"))) {
             return new UavVehicleProfile(UavExecutionProfile.ONE_WAY, 0, 0, 4096,
                     4, false, "SELF_DESTRUCT");
         }
