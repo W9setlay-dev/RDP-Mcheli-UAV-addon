@@ -189,7 +189,9 @@ public final class GuidedWeaponAdapter {
     private Entity findLoadedTarget(World world, java.util.UUID targetId) {
         if (world == null || targetId == null) return null;
         for (Entity entity : world.loadedEntityList) {
-            if (entity != null && targetId.equals(entity.getUniqueID())) return entity;
+            if (entity != null && !entity.isDead
+                    && entity.dimension == world.provider.getDimension()
+                    && targetId.equals(entity.getUniqueID())) return entity;
         }
         return null;
     }

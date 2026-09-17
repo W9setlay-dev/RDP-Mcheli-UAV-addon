@@ -114,8 +114,10 @@ they are not incorrectly rejected by the old 256-block acquisition search.
 Long-range/reusable profiles, including MQ-9, additionally require explicit
 destructive authorization before any kamikaze route. One-way/FPV square
 strikes are supported and use their configured terminal payload behavior
-(default self-destruct), while reusable square strikes remain under operator control until an explicit
-return-to-base request.
+(default self-destruct). Their requested Y coordinate is resolved against the
+loaded terrain surface, and a one-way payload cannot release while the
+aircraft is still high above that terminal plane. Reusable square strikes
+remain under operator control until an explicit return-to-base request.
 
 Temporary execution conditions are not immediate failures. Missing entities
 use `WAITING_FOR_TARGET`, unavailable world/chunks use `WAITING_FOR_WORLD`,
@@ -152,7 +154,10 @@ remain UUID-authoritative and are resolved from the live server entity.
 
 Guidance setup is therefore: select a supported loaded weapon with ammunition,
 select an allowed entity or square objective, satisfy the server lock/safety
-gates, then authorize launch. `aamissile` and `atmissile` remain native
+gates, then authorize launch. The GUI distinguishes target acquisition,
+native seeker handoff, launch confirmation, target loss, and tracking; a
+temporary missing target is reported as `WAITING_FOR_TARGET` rather than a
+generic execution stall. `aamissile` and `atmissile` remain native
 entity-seeker weapons. `asmissile` is native coordinate/ballistic guidance:
 the addon validates and submits a point/square objective but does not turn it
 into a UAV-like entity hunter. `tvmissile` can use the verified coordinate/TV
@@ -441,13 +446,14 @@ not a universal mission classification.
 `missionExecutionRange` settings. Detection selects eligible candidates,
 locking uses authoritative 3D distance and UUID continuity, and mission
 execution remains gated by the smaller execution range.
-Square strike is deliberately restricted to reusable UAV profiles. ONE_WAY
-FPV/Shahed-style aircraft use the point/entity attack path and must not be
-sent through a repeating square route. Square altitude, heading, and pass
-spacing are configured in `rdp-uav-square-strike.cfg`; the command coordinates
-are the requested area center, not a hardcoded aircraft placement. The reference MQ-9
-configuration can therefore establish a lock before reaching the target area
-while holding its configured altitude.
+Repeating square-strike passes are restricted to reusable UAV profiles.
+ONE_WAY FPV/Shahed-style aircraft use a terminal point/entity attack path
+instead: the square is a surface-resolved terminal objective, not a repeating
+orbit. Square altitude, heading, and pass spacing are configured in
+`rdp-uav-square-strike.cfg`; the command coordinates are the requested area
+center, not a hardcoded aircraft placement. The reference MQ-9 configuration
+can therefore establish a lock before reaching the target area while holding
+its configured altitude.
 
 Entity missions use one server-side contact tracker keyed by entity UUID. A
 missed update marks the same contact `LOST` and eventually `EXPIRED`; it never

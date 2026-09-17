@@ -168,10 +168,12 @@ public final class MissionLifecycle {
                     }
                     return;
                 }
-                mission.transitionTo(MissionState.DISPATCHED, tick);
-                mission.transitionTo(MissionState.TAKEOFF, tick);
-                mission.transitionTo(MissionState.CRUISE, tick);
-                mission.transitionTo(MissionState.SEARCHING, tick);
+                if (mission.getState() == MissionState.PLANNED) {
+                    mission.transitionTo(MissionState.DISPATCHED, tick);
+                    mission.transitionTo(MissionState.TAKEOFF, tick);
+                    mission.transitionTo(MissionState.CRUISE, tick);
+                    mission.transitionTo(MissionState.SEARCHING, tick);
+                }
                 mission.transitionTo(MissionState.TARGET_ACQUIRED, tick);
                 if (target.entity == null) mission.lockPoint(tick);
                 else mission.lockTarget(target.entity.getUniqueID(), tick);
@@ -195,6 +197,7 @@ public final class MissionLifecycle {
                 defer(world, mission, "WINGMAN_DISPATCH_REJECTED",
                         MissionState.EXECUTION_STALLED, tick);
             } else {
+                mission.setQueued(false);
                 LOGGER.info("Mission {} dispatched aircraft {} type={} target={} at tick {}",
                         mission.getMissionId(), aircraft.getUniqueID(), mission.getAircraftType(),
                         formatTarget(target), tick);
@@ -436,7 +439,8 @@ public final class MissionLifecycle {
             return true;
         }
         if (target != null) {
-            flight.updateTargetGuidance(aircraft, target.x, target.y, target.z,
+            double targetGuidanceY = guidanceAltitude(aircraft, target.y);
+            flight.updateTargetGuidance(aircraft, target.x, targetGuidanceY, target.z,
                     target.entity == null ? null : target.entity.getUniqueID());
             if (entry.order != null) {
                 entry.order.targetX = target.x;
@@ -454,6 +458,7 @@ public final class MissionLifecycle {
             }
             if (mission.isAttack() && !profile(aircraft).isReusable() && target != null) {
                 if (withinMissionExecutionRange(aircraft, target, mission)
+                        && terminalGeometrySatisfied(aircraft, target, mission)
                         && flight.fireSelfDestructWeapon(aircraft)) {
                     if (!armKamikazeTerminalState(mission, target, tick)) {
                         fail(world, mission, "KAMIKAZE_TERMINAL_STATE_REJECTED", tick);
@@ -537,30 +542,6 @@ public final class MissionLifecycle {
                     return true;
                 }
                 if (mission.isAttack()) {
-                    if (mission.getMissionType() == MissionType.SQUARE_STRIKE
-                            && !profile(aircraft).isReusable()) {
-                        UavVehicleProfile squareProfile = profile(aircraft);
-                        double squareAltitude = squareProfile.getExecutionAltitude() > 0.0D
-                                ? squareProfile.getExecutionAltitude()
-                                : target.y + net.vas.rdp.uav.flight.SquareStrikeConfig.altitudeOffset;
-                        net.vas.rdp.uav.flight.SquareStrikePlan plan =
-                                new net.vas.rdp.uav.flight.SquareStrikePlan(
-                                        target.x,
-                                Math.max(net.vas.rdp.uav.flight.SquareStrikeConfig.minimumAltitude,
-                                        squareAltitude),
-                                target.z, mission.getSearchRadius(), mission.getSearchRadius(),
-                                net.vas.rdp.uav.flight.SquareStrikeConfig.headingDegrees,
-                                Math.max(1.0D, mission.getSearchRadius()
-                                        * net.vas.rdp.uav.flight.SquareStrikeConfig.passSpacingFactor),
-                                mission.getObservationDistance(), 1);
-                        if (!flight.armSquareStrike(aircraft, plan, mission.getTargetId())) {
-                            defer(world, mission, "WINGMAN_SQUARE_STRIKE_REJECTED",
-                                    MissionState.EXECUTION_STALLED, tick);
-                        } else {
-                            mission.transitionTo(MissionState.ATTACK_TARGET, tick);
-                        }
-                        return true;
-                    }
                     GuidedStrikeObjective guidedObjective = target.entity == null
                             ? GuidedStrikeObjective.square(mission.getMissionId(),
                             world.provider.getDimension(), target.x, target.y, target.z, tick)
@@ -597,6 +578,12 @@ public final class MissionLifecycle {
                                 MissionState.REPLAN, tick);
                         return true;
                     }
+                    if (!profile(aircraft).isReusable()
+                            && mission.getMissionType() == MissionType.SQUARE_STRIKE) {
+                        defer(world, mission, "ONE_WAY_SQUARE_TERMINAL_PAYLOAD_REQUIRED",
+                                MissionState.REPLAN, tick);
+                        return true;
+                    }
                     if (!flight.armAttack(aircraft, target.x, target.y, target.z,
                             profile(aircraft).getAttackEnvelope(), mission.getTargetId(),
                             profile(aircraft).getAttackWeaponPriority())) {
@@ -626,6 +613,7 @@ public final class MissionLifecycle {
                             && !profile(aircraft).isReusable()) {
                         if ("SELF_DESTRUCT".equalsIgnoreCase(
                                 profile(aircraft).getTerminalPayloadBehavior())
+                                && terminalGeometrySatisfied(aircraft, target, mission)
                                 && flight.fireSelfDestructWeapon(aircraft)) {
                             if (!armKamikazeTerminalState(mission, target, tick)) {
                                 fail(world, mission, "KAMIKAZE_TERMINAL_STATE_REJECTED", tick);
@@ -939,6 +927,22 @@ public final class MissionLifecycle {
                     <= profile.getMissionExecutionRange() * profile.getMissionExecutionRange();
         }
         return targetDistance(aircraft, target) <= profile.getMissionExecutionRange();
+    }
+
+    private boolean terminalGeometrySatisfied(MCH_EntityAircraft aircraft, Target target,
+                                               RDPMission mission) {
+        if (aircraft == null || target == null || mission == null) return false;
+        if (mission.getMissionType() != MissionType.SQUARE_STRIKE
+                || profile(aircraft).isReusable()) return true;
+        double dx = aircraft.posX - target.x;
+        double dz = aircraft.posZ - target.z;
+        double horizontal = Math.sqrt(dx * dx + dz * dz);
+        double vertical = Math.abs(aircraft.posY - target.y);
+        // A point strike is terminal only at the resolved surface plane. The
+        // old 3D-radius-only gate allowed a plane to detonate while hovering
+        // tens of blocks above the square.
+        return horizontal <= Math.max(4.0D, mission.getObservationDistance())
+                && vertical <= 3.0D;
     }
 
     private double guidanceAltitude(MCH_EntityAircraft aircraft, double targetY) {
