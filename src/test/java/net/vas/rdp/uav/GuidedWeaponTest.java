@@ -31,6 +31,19 @@ public class GuidedWeaponTest {
     }
 
     @Test
+    public void authorizedObjectiveCanSwitchContactWithoutLosingGuidanceState() {
+        GuidedStrikeObjective objective = GuidedStrikeObjective.entity(UUID.randomUUID(),
+                UUID.randomUUID(), 0, 10, 80, 10, 1);
+        objective.authorize();
+        objective.beginTracking();
+        UUID replacement = UUID.randomUUID();
+        objective.switchContact(replacement, 20, 81, 20, 2);
+        assertEquals(replacement, objective.getContactId());
+        assertEquals(GuidedObjectiveState.TRACKING, objective.getState());
+        assertEquals(20.0D, objective.getX(), 0.0D);
+    }
+
+    @Test
     public void capabilityMakesUnsupportedObjectiveExplicit() {
         GuidedWeaponCapability capability = new GuidedWeaponCapability("aamissile", "aamissile",
                 GuidedNativeBehavior.ENTITY_SEEKER, EnumSet.of(GuidedObjectiveType.ENTITY),

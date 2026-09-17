@@ -7,6 +7,7 @@ import com.norwood.mcheli.weapon.MCH_WeaponSet;
 import net.vas.rdp.uav.flight.WingManFlightAdapter;
 import net.minecraft.world.World;
 import net.minecraft.entity.Entity;
+import net.vas.rdp.uav.RdpUavDebug;
 
 /**
  * The only guided-weapon boundary. It reads verified McHeli metadata and
@@ -68,12 +69,19 @@ public final class GuidedWeaponAdapter {
             return GuidedWeaponDecision.reject("NO_GUIDED_WEAPON");
         }
         GuidedWeaponDecision decision = validate(aircraft, objective, aircraftSpeed, selectedPriority);
-        if (!decision.isAccepted()) return decision;
+        if (!decision.isAccepted()) {
+            RdpUavDebug.debug("Guidance", "aircraft={} weapon={} objective={} decision={}",
+                    aircraft.getUniqueID(), selectedPriority, objective.getType(),
+                    decision.getReason());
+            return decision;
+        }
         GuidedWeaponCapability capability = capabilityFor(aircraft, decision.getWeapon());
         if (capability == null || capability.getBehavior() == GuidedNativeBehavior.UNSUPPORTED) {
             return GuidedWeaponDecision.reject("UNSUPPORTED_GUIDANCE");
         }
         if (!GuidedNativeContract.supportsAiGuidance(capability.getBehavior())) {
+            RdpUavDebug.debug("Guidance", "aircraft={} weapon={} behavior={} decision=AI_UNSUPPORTED",
+                    aircraft.getUniqueID(), decision.getWeapon(), capability.getBehavior());
             return GuidedWeaponDecision.reject("AI_TV_GUIDANCE_UNSUPPORTED");
         }
         GuidedSafetyDecision safety = GuidedSafetyPolicy.evaluate(world, aircraft, objective,
@@ -91,6 +99,8 @@ public final class GuidedWeaponAdapter {
                 return GuidedWeaponDecision.reject("NATIVE_SEEKER_LAUNCH_REJECTED");
             }
             MissileGuidanceController.authorize(aircraft.getUniqueID(), decision.getWeapon(), objective);
+            RdpUavDebug.debug("Guidance", "aircraft={} weapon={} owner=AI objective=ENTITY launch=native",
+                    aircraft.getUniqueID(), decision.getWeapon());
             flight.markNativeAttackComplete(aircraft);
             return decision;
         }
@@ -103,6 +113,9 @@ public final class GuidedWeaponAdapter {
         }
         if (!armed) return GuidedWeaponDecision.reject("NATIVE_WINGMAN_REJECTED");
         MissileGuidanceController.authorize(aircraft.getUniqueID(), decision.getWeapon(), objective);
+        RdpUavDebug.debug("Guidance", "aircraft={} weapon={} owner=AI objective={} launch={}",
+                aircraft.getUniqueID(), decision.getWeapon(), objective.getType(),
+                aircraft.isUAV() ? "WINGMAN" : "NATIVE");
         if (aircraft.isUAV()) return decision;
         return GuidedWeaponDecision.accept(decision.getWeapon());
     }

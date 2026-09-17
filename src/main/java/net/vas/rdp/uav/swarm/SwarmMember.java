@@ -11,6 +11,7 @@ public final class SwarmMember {
     private FormationSlot slot;
     private boolean available = true;
     private boolean operatorControlled;
+    private UUID assignedTarget;
 
     public SwarmMember(UUID aircraftId, String profile, boolean longRange, boolean payload) {
         if (aircraftId == null || profile == null || profile.trim().isEmpty()) {
@@ -37,4 +38,6 @@ public final class SwarmMember {
     public void setAvailable(boolean available) { this.available = available; }
     public boolean isOperatorControlled() { return operatorControlled; }
     public void setOperatorControlled(boolean value) { operatorControlled = value; }
+    public UUID getAssignedTarget() { return assignedTarget; }
+    public void setAssignedTarget(UUID target) { assignedTarget = target; }
 }

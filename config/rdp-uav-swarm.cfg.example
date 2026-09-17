@@ -1,6 +1,8 @@
 # Per-profile swarm limits. The global maximumSize is the hard ceiling.
 
 [swarm]
+# Disable swarm creation and membership changes without removing saved swarms.
+enabled=true
 maximumSize=8
 updateIntervalTicks=10
 memberTimeoutTicks=100

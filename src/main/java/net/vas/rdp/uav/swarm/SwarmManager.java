@@ -18,6 +18,9 @@ public final class SwarmManager {
     public SwarmManager() { this(null); }
     public SwarmManager(MissionManager missions) { this.missions = missions; }
     public SwarmRecord create(World world, UUID owner, String name) {
+        if (!SwarmConfig.enabled) {
+            throw new IllegalStateException("Swarm system is disabled by server configuration.");
+        }
         SwarmRecord record = new SwarmRecord(UUID.randomUUID(), owner, name);
         RDPUavSwarmWorldData.get(world).put(record);
         return record;
@@ -29,6 +32,7 @@ public final class SwarmManager {
         return record != null && owner != null && owner.equals(record.getOwnerId());
     }
     public boolean addMember(World world, UUID owner, UUID swarmId, SwarmMember member) {
+        if (!SwarmConfig.enabled) return false;
         SwarmRecord record = find(world, swarmId);
         if (!owns(record, owner) || member == null) return false;
         if (record.getMembers().size() >= Math.min(SwarmConfig.maximumSize,
@@ -62,6 +66,22 @@ public final class SwarmManager {
         SwarmRecord record = find(world, swarmId);
         if (!owns(record, owner)) return false;
         record.remove(aircraftId);
+        RDPUavSwarmWorldData.get(world).markDirty();
+        return true;
+    }
+    public boolean assignTarget(World world, UUID owner, UUID swarmId, UUID aircraftId,
+                                UUID targetId, boolean allowDuplicate) {
+        SwarmRecord record = find(world, swarmId);
+        if (!owns(record, owner) || !record.assignTarget(aircraftId, targetId, allowDuplicate)) {
+            return false;
+        }
+        RDPUavSwarmWorldData.get(world).markDirty();
+        return true;
+    }
+    public boolean releaseTarget(World world, UUID owner, UUID swarmId, UUID aircraftId) {
+        SwarmRecord record = find(world, swarmId);
+        if (!owns(record, owner)) return false;
+        record.releaseTarget(aircraftId);
         RDPUavSwarmWorldData.get(world).markDirty();
         return true;
     }

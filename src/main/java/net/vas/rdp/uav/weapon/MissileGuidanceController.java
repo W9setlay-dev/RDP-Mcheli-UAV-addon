@@ -10,6 +10,8 @@ import net.minecraft.world.World;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.List;
+import net.vas.rdp.uav.RdpUavDebug;
 
 /**
  * Server-side objective handoff for missiles whose native implementations
@@ -28,11 +30,19 @@ public final class MissileGuidanceController {
         ASSIGNMENTS.put(aircraftId, new Assignment(weapon, objective));
     }
 
+    public static synchronized void authorize(UUID aircraftId, String weapon,
+                                              GuidedStrikeObjective objective,
+                                              GuidedTargetFilter filter) {
+        if (aircraftId == null || weapon == null || objective == null) return;
+        ASSIGNMENTS.put(aircraftId, new Assignment(weapon, objective, filter));
+    }
+
     public static synchronized void abort(UUID aircraftId) {
         if (aircraftId != null) {
             Assignment assignment = ASSIGNMENTS.get(aircraftId);
             if (assignment != null) assignment.mode = GuidanceControlMode.ABORTED;
             ASSIGNMENTS.remove(aircraftId);
+            RdpUavDebug.debug("Guidance", "aircraft={} owner=PLAYER/native action=TAKEOVER", aircraftId);
         }
     }
 
@@ -54,6 +64,16 @@ public final class MissileGuidanceController {
             }
             if (assignment == null || assignment.mode != GuidanceControlMode.AI_GUIDANCE) continue;
             if (!matches(assignment.weapon, missile)) continue;
+            if (assignment.filter != null && assignment.objective.getType() == GuidedObjectiveType.ENTITY) {
+                Entity selected = assignment.filter.select(world, missile);
+                if (selected != null && !selected.getUniqueID().equals(assignment.objective.getContactId())) {
+                    RdpUavDebug.debug("Guidance", "aircraft={} objective-switch old={} new={}",
+                            shooter.getUniqueID(), assignment.objective.getContactId(),
+                            selected.getUniqueID());
+                    assignment.objective.switchContact(selected.getUniqueID(), selected.posX,
+                            selected.posY, selected.posZ, world.getTotalWorldTime());
+                }
+            }
             apply(world, missile, assignment.objective);
         }
     }
@@ -127,9 +147,13 @@ public final class MissileGuidanceController {
     private static final class Assignment {
         private final String weapon;
         private final GuidedStrikeObjective objective;
+        private final GuidedTargetFilter filter;
         private GuidanceControlMode mode = GuidanceControlMode.AI_GUIDANCE;
         private Assignment(String weapon, GuidedStrikeObjective objective) {
-            this.weapon = weapon; this.objective = objective;
+            this(weapon, objective, null);
+        }
+        private Assignment(String weapon, GuidedStrikeObjective objective, GuidedTargetFilter filter) {
+            this.weapon = weapon; this.objective = objective; this.filter = filter;
         }
     }
 }

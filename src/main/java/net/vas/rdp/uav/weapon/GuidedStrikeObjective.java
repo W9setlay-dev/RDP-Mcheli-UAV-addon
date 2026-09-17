@@ -9,7 +9,7 @@ import java.util.UUID;
 public final class GuidedStrikeObjective {
     private final UUID objectiveId;
     private final GuidedObjectiveType type;
-    private final UUID contactId;
+    private UUID contactId;
     private final int dimension;
     private double x;
     private double y;
@@ -57,6 +57,16 @@ public final class GuidedStrikeObjective {
                 || state == GuidedObjectiveState.ABORTED) {
             throw new IllegalArgumentException("Invalid contact update");
         }
+        this.x = x; this.y = y; this.z = z; this.lastContactTick = tick;
+        if (state == GuidedObjectiveState.LOST) state = GuidedObjectiveState.TRACKING;
+    }
+    public void switchContact(UUID contactId, double x, double y, double z, long tick) {
+        if (type != GuidedObjectiveType.ENTITY || contactId == null || !finite(x) || !finite(y)
+                || !finite(z) || tick < lastContactTick || state == GuidedObjectiveState.COMPLETE
+                || state == GuidedObjectiveState.ABORTED) {
+            throw new IllegalArgumentException("Invalid contact switch");
+        }
+        this.contactId = contactId;
         this.x = x; this.y = y; this.z = z; this.lastContactTick = tick;
         if (state == GuidedObjectiveState.LOST) state = GuidedObjectiveState.TRACKING;
     }

@@ -50,8 +50,35 @@ public final class SwarmRecord {
         for (int i = members.size() - 1; i >= 0; i--) {
             if (aircraftId.equals(members.get(i).getAircraftId())) members.remove(i);
         }
+
         assignSlots();
         if (members.isEmpty()) state = SwarmState.DISBANDED;
+    }
+
+    public boolean assignTarget(UUID aircraftId, UUID targetId, boolean allowDuplicate) {
+        if (aircraftId == null || targetId == null) return false;
+        SwarmMember selected = member(aircraftId);
+        if (selected == null) return false;
+        if (!allowDuplicate) {
+            for (SwarmMember member : members) {
+                if (!aircraftId.equals(member.getAircraftId())
+                        && targetId.equals(member.getAssignedTarget())) return false;
+            }
+        }
+        selected.setAssignedTarget(targetId);
+        return true;
+    }
+
+    public void releaseTarget(UUID aircraftId) {
+        SwarmMember selected = member(aircraftId);
+        if (selected != null) selected.setAssignedTarget(null);
+    }
+
+    private SwarmMember member(UUID aircraftId) {
+        for (SwarmMember member : members) {
+            if (aircraftId.equals(member.getAircraftId())) return member;
+        }
+        return null;
     }
 
     private void assignSlots() {

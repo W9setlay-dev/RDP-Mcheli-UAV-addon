@@ -146,7 +146,9 @@ public final class MissionLifecycle {
              * McHeli's native weapon API; do that once the server has made
              * the same target and ammunition checks as an autonomous route.
              */
-            if (mission.isAttack() && !aircraft.isUAV()) {
+            if (mission.isAttack() && !aircraft.isUAV()
+                    && profile(aircraft).getExecutionProfile()
+                    != net.vas.rdp.uav.profile.UavExecutionProfile.ONE_WAY) {
                 GuidedStrikeObjective objective = target.entity == null
                         ? GuidedStrikeObjective.square(mission.getMissionId(),
                         world.provider.getDimension(), target.x, target.y, target.z, tick)
@@ -442,6 +444,22 @@ public final class MissionLifecycle {
             }
         }
         if (flight.isParked(aircraft) && mission.getState() != MissionState.RETURNING) {
+            if (mission.isAttack() && !profile(aircraft).isReusable() && target != null) {
+                if (withinMissionExecutionRange(aircraft, target, mission)
+                        && flight.fireSelfDestructWeapon(aircraft)) {
+                    mission.markKamikazeDetonated(tick);
+                    manager.release(mission);
+                    return true;
+                }
+                flight.release(aircraft);
+                double routeY = guidanceAltitude(aircraft, target.y);
+                if (flight.dispatch(aircraft, target.x, routeY, target.z,
+                        mission.getObservationDistance(), 0, true,
+                        target.entity == null ? null : target.entity.getUniqueID())) {
+                    mission.transitionTo(MissionState.REPLAN, tick);
+                    return true;
+                }
+            }
             if (mission.isTerminal()) return false;
             defer(world, mission, "WINGMAN_TERMINATED_BEFORE_RETURN",
                     MissionState.EXECUTION_STALLED, tick);
@@ -495,7 +513,7 @@ public final class MissionLifecycle {
                     return true;
                 }
                 UUID pilotTarget = KamikazePilotOverride.targetFor(aircraft.getUniqueID());
-                if (mission.isAttack() && flight.hasSelfDestructWeaponWithAmmo(aircraft) && mission.getMissionType() != MissionType.SQUARE_STRIKE && (!profile(aircraft).isReusable() || mission.isDestructiveAuthorized()) && (pilotTarget == null || pilotTarget.equals(
+                if (mission.isAttack() && flight.hasSelfDestructWeaponWithAmmo(aircraft) && (!profile(aircraft).isReusable() || mission.isDestructiveAuthorized()) && (pilotTarget == null || pilotTarget.equals(
                         target.entity == null ? null : target.entity.getUniqueID()))) {
                     if (!flight.armKamikaze(aircraft, target.x, target.y, target.z,
                             mission.getObservationDistance(),
@@ -714,8 +732,8 @@ public final class MissionLifecycle {
     private Target locateTarget(World world, MCH_EntityAircraft aircraft, RDPMission mission,
                                 boolean allowAcquire) {
         if (mission.getTargetSelectionMode() == TargetSelectionMode.POINT) {
-            return Target.point(mission.getTargetSpec().getX(), mission.getTargetSpec().getY(),
-                    mission.getTargetSpec().getZ());
+            return resolvePointTarget(world, mission.getTargetSpec().getX(),
+                    mission.getTargetSpec().getY(), mission.getTargetSpec().getZ());
         }
         if (!allowAcquire) return null;
         Entity current = targets.findLoaded(world, mission.getTargetId());
@@ -877,10 +895,21 @@ public final class MissionLifecycle {
             if (aircraft instanceof MCH_EntityHeli) {
                 return Math.max(targetY + 8.0D, profile.getMinimumExecutionAltitude());
             }
+
             return targetY;
         }
         return Math.max(profile.getMinimumExecutionAltitude(),
                 Math.min(profile.getMaximumExecutionAltitude(), profile.getExecutionAltitude()));
+    }
+
+    private Target resolvePointTarget(World world, double x, double requestedY, double z) {
+        if (world == null) return Target.point(x, requestedY, z);
+        net.minecraft.util.math.BlockPos column =
+                new net.minecraft.util.math.BlockPos(x, 0, z);
+        int surfaceY = world.getHeight(column).getY();
+        double resolvedY = Math.max(requestedY, surfaceY + 1.0D
+                + net.vas.rdp.uav.flight.SquareStrikeConfig.altitudeOffset);
+        return Target.point(x, resolvedY, z);
     }
 
     private double aircraftSpeed(MCH_EntityAircraft aircraft) {

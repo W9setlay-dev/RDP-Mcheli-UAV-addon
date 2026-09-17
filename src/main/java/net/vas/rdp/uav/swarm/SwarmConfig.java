@@ -6,6 +6,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 public final class SwarmConfig {
+    public static boolean enabled = true;
     public static int maximumSize = 8;
     public static int updateIntervalTicks = 10;
     public static double horizontalSpacing = 16D;
@@ -19,6 +20,8 @@ public final class SwarmConfig {
     public static void load(File dir) {
         Configuration c = new Configuration(new File(dir, "rdp-uav-swarm.cfg"));
         c.load();
+        enabled = c.getBoolean("enabled", "swarm", enabled,
+                "Enable swarm creation and membership changes.");
         maximumSize = c.getInt("maximumSize", "swarm", maximumSize, 1, 64, "Maximum members.");
         updateIntervalTicks = c.getInt("updateIntervalTicks", "swarm", updateIntervalTicks, 1, 200, "Server update interval.");
         horizontalSpacing = c.getFloat("horizontalSpacing", "formation", (float) horizontalSpacing, 1, 512, "Formation spacing.");

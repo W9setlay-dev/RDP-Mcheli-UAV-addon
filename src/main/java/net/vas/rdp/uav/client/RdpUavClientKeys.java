@@ -15,35 +15,53 @@ import org.lwjgl.input.Keyboard;
 public final class RdpUavClientKeys {
     private static long lastAssignmentTap;
     private static final KeyBinding OPEN_MISSION_CONTROL = new KeyBinding(
-            "key.rdpuav.mission_control", Keyboard.KEY_U, "key.categories.rdpuav");
+            "key.rdpuav.mission_control", Keyboard.KEY_Q, "key.categories.rdpuav");
     private static final KeyBinding POINT_TASK = new KeyBinding(
-            "key.rdpuav.point_task", Keyboard.KEY_P, "key.categories.rdpuav");
+            "key.rdpuav.point_task", Keyboard.KEY_T, "key.categories.rdpuav");
     private static final KeyBinding RECON_TASK = new KeyBinding(
-            "key.rdpuav.recon_task", Keyboard.KEY_R, "key.categories.rdpuav");
+            "key.rdpuav.recon_task", Keyboard.KEY_O, "key.categories.rdpuav");
     private static final KeyBinding AUTO_ATTACK_TASK = new KeyBinding(
-            "key.rdpuav.auto_attack", Keyboard.KEY_K, "key.categories.rdpuav");
+            "key.rdpuav.auto_attack", Keyboard.KEY_P, "key.categories.rdpuav");
     private static final KeyBinding REFRESH_MISSIONS = new KeyBinding(
-            "key.rdpuav.refresh", Keyboard.KEY_F, "key.categories.rdpuav");
+            "key.rdpuav.refresh", Keyboard.KEY_K, "key.categories.rdpuav");
     private static final KeyBinding AUTHORIZE_SELECTED = new KeyBinding(
-            "key.rdpuav.authorize", Keyboard.KEY_A, "key.categories.rdpuav");
+            "key.rdpuav.authorize", Keyboard.KEY_E, "key.categories.rdpuav");
     private static final KeyBinding ABORT_SELECTED = new KeyBinding(
-            "key.rdpuav.abort", Keyboard.KEY_X, "key.categories.rdpuav");
+            "key.rdpuav.abort", Keyboard.KEY_N, "key.categories.rdpuav");
     private static final KeyBinding KAMIKAZE_SELECTED = new KeyBinding(
-            "key.rdpuav.kamikaze", Keyboard.KEY_N, "key.categories.rdpuav");
+            "key.rdpuav.kamikaze", Keyboard.KEY_1, "key.categories.rdpuav");
     private static final KeyBinding FIRE_SELF_DESTRUCT = new KeyBinding(
-            "key.rdpuav.fire_self_destruct", Keyboard.KEY_H, "key.categories.rdpuav");
+            "key.rdpuav.fire_self_destruct", Keyboard.KEY_2, "key.categories.rdpuav");
     private static final KeyBinding AI_TARGET_LOCK = new KeyBinding(
-            "key.rdpuav.ai_target_lock", Keyboard.KEY_L, "key.categories.rdpuav");
+            "key.rdpuav.ai_target_lock", Keyboard.KEY_3, "key.categories.rdpuav");
     private static final KeyBinding SIGHT_STABILIZATION = new KeyBinding(
-            "key.rdpuav.sight_stabilization", Keyboard.KEY_G, "key.categories.rdpuav");
+            "key.rdpuav.sight_stabilization", Keyboard.KEY_4, "key.categories.rdpuav");
     private static final KeyBinding CLEAR_TARGET_LOCK = new KeyBinding(
-            "key.rdpuav.clear_target_lock", Keyboard.KEY_J, "key.categories.rdpuav");
+            "key.rdpuav.clear_target_lock", Keyboard.KEY_5, "key.categories.rdpuav");
     private static final KeyBinding NEXT_CONTACT = new KeyBinding(
-            "key.rdpuav.next_contact", Keyboard.KEY_O, "key.categories.rdpuav");
+            "key.rdpuav.next_contact", Keyboard.KEY_6, "key.categories.rdpuav");
     private static final KeyBinding PREVIOUS_CONTACT = new KeyBinding(
-            "key.rdpuav.previous_contact", Keyboard.KEY_I, "key.categories.rdpuav");
+            "key.rdpuav.previous_contact", Keyboard.KEY_7, "key.categories.rdpuav");
 
     private RdpUavClientKeys() { }
+
+    public static String label(KeyBinding binding) {
+        if (binding == null || binding.getKeyCode() == Keyboard.KEY_NONE) return "Unbound";
+        return binding.getKeyDescription() == null ? Keyboard.getKeyName(binding.getKeyCode())
+                : Keyboard.getKeyName(binding.getKeyCode());
+    }
+    public static String missionControlKey() { return label(OPEN_MISSION_CONTROL); }
+    public static String pointKey() { return label(POINT_TASK); }
+    public static String reconKey() { return label(RECON_TASK); }
+    public static String attackKey() { return label(AUTO_ATTACK_TASK); }
+    public static String refreshKey() { return label(REFRESH_MISSIONS); }
+    public static String authorizeKey() { return label(AUTHORIZE_SELECTED); }
+    public static String abortKey() { return label(ABORT_SELECTED); }
+    public static String kamikazeKey() { return label(KAMIKAZE_SELECTED); }
+    public static String selfDestructKey() { return label(FIRE_SELF_DESTRUCT); }
+    public static String entityLockKey() { return label(AI_TARGET_LOCK); }
+    public static String areaLockKey() { return label(SIGHT_STABILIZATION); }
+    public static String clearLockKey() { return label(CLEAR_TARGET_LOCK); }
 
     public static void register() {
         ClientRegistry.registerKeyBinding(OPEN_MISSION_CONTROL);

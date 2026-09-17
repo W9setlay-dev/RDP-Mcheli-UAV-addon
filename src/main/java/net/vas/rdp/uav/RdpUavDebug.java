@@ -5,6 +5,8 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import java.io.File;
+import java.util.Locale;
+import java.util.IllegalFormatException;
 
 /**
  * Central, runtime-toggleable diagnostics for the server-side addon.
@@ -63,7 +65,7 @@ public final class RdpUavDebug {
     }
 
     public static void debug(String component, String format, Object... arguments) {
-        if (enabled) LOGGER.info("[DEBUG][{}] {}", prepend(component, arguments), format);
+        if (enabled) LOGGER.info("[DEBUG][{}] {}", component, formatMessage(format, arguments));
     }
 
     public static void warn(String component, String message) {
@@ -75,10 +77,20 @@ public final class RdpUavDebug {
                 + (configFile == null ? "<not loaded>" : configFile.getPath());
     }
 
-    private static Object[] prepend(String component, Object[] arguments) {
-        Object[] values = new Object[arguments.length + 1];
-        values[0] = component;
-        System.arraycopy(arguments, 0, values, 1, arguments.length);
-        return values;
+    private static String formatMessage(String format, Object[] arguments) {
+        if (format == null) return "";
+        if (arguments == null || arguments.length == 0) return format;
+        String value = format;
+        for (Object argument : arguments) {
+            int marker = value.indexOf("{}");
+            if (marker < 0) break;
+            String replacement = String.valueOf(argument).replace("$", "\\$");
+            value = value.substring(0, marker) + replacement + value.substring(marker + 2);
+        }
+        if (value.equals(format) && format.indexOf('%') >= 0) {
+            try { return String.format(Locale.ROOT, format, arguments); }
+            catch (IllegalFormatException ignored) { }
+        }
+        return value;
     }
 }

@@ -7,6 +7,11 @@ import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityList;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.RayTraceResult;
+import com.norwood.mcheli.aircraft.MCH_EntityAircraft;
+import com.norwood.mcheli.weapon.MCH_WeaponSet;
+import net.vas.rdp.uav.mission.UavControlAccess;
+import net.vas.rdp.uav.weapon.GuidedWeaponRegistry;
+import net.vas.rdp.uav.RdpUavDebug;
 import net.vas.rdp.uav.network.RdpUavNetwork;
 import net.vas.rdp.uav.target.TargetClassifier;
 import java.io.IOException;
@@ -25,6 +30,10 @@ public final class GuiMissionControl extends GuiScreen {
     private GuiTextField filterField;
     private String status = "";
     private String pendingDangerAction;
+    private boolean uavMode;
+    private boolean guidedMode;
+    private String guidanceSummary = "No controlled aircraft";
+    private String lastMode = "";
 
     public GuiMissionControl() { active = this; }
 
@@ -103,6 +112,7 @@ public final class GuiMissionControl extends GuiScreen {
     }
 
     private void rebuildButtons() {
+        refreshMode();
         buttonList.clear();
         int left = width / 2 - 220;
         int right = width / 2 + 15;
@@ -113,17 +123,36 @@ public final class GuiMissionControl extends GuiScreen {
         buttonList.add(new GuiButton(1, left + 67, height - 28, 62, 20, help ? "Dashboard" : "Help"));
         buttonList.add(new GuiButton(2, right, height - 28, 62, 20, "Close"));
         buttonList.add(new GuiButton(16, right + 67, height - 28, 115, 20, "Return to base"));
-        buttonList.add(new GuiButton(3, left, height - 54, 100, 20, "Authorize [A]"));
-        buttonList.add(new GuiButton(4, left + 105, height - 54, 100, 20, "Abort [X]"));
-        buttonList.add(new GuiButton(13, right, height - 54, 100, 20, "Clear lock [J]"));
-        buttonList.add(new GuiButton(8, right + 105, height - 54, 115, 20, "Nose-dive [N]"));
-        buttonList.add(new GuiButton(14, left, height - 80, 100, 20, "Clear selected"));
-        buttonList.add(new GuiButton(15, left + 105, height - 80, 100, 20, "Clear all"));
-        buttonList.add(new GuiButton(9, right, height - 80, 100, 20, "Square strike"));
-        buttonList.add(new GuiButton(10, right + 105, height - 80, 115, 20, "Lock crosshair [L]"));
-        buttonList.add(new GuiButton(5, left, height - 106, 64, 20, "Recon [R]"));
-        buttonList.add(new GuiButton(6, left + 70, height - 106, 64, 20, "Attack [K]"));
-        buttonList.add(new GuiButton(7, left + 140, height - 106, 65, 20, "Point [P]"));
+        if (uavMode) {
+            buttonList.add(new GuiButton(3, left, height - 54, 100, 20,
+                    "Authorize [" + RdpUavClientKeys.authorizeKey() + "]"));
+            buttonList.add(new GuiButton(4, left + 105, height - 54, 100, 20,
+                    "Abort [" + RdpUavClientKeys.abortKey() + "]"));
+            buttonList.add(new GuiButton(13, right, height - 54, 100, 20,
+                    "Clear lock [" + RdpUavClientKeys.clearLockKey() + "]"));
+            buttonList.add(new GuiButton(8, right + 105, height - 54, 115, 20,
+                    "Nose-dive [" + RdpUavClientKeys.kamikazeKey() + "]"));
+            buttonList.add(new GuiButton(14, left, height - 80, 100, 20, "Clear selected"));
+            buttonList.add(new GuiButton(15, left + 105, height - 80, 100, 20, "Clear all"));
+            buttonList.add(new GuiButton(9, right, height - 80, 100, 20, "Square strike"));
+            buttonList.add(new GuiButton(10, right + 105, height - 80, 115, 20,
+                    "Entity lock [" + RdpUavClientKeys.entityLockKey() + "]"));
+            buttonList.add(new GuiButton(5, left, height - 106, 64, 20,
+                    "Recon [" + RdpUavClientKeys.reconKey() + "]"));
+            buttonList.add(new GuiButton(6, left + 70, height - 106, 64, 20,
+                    "Attack [" + RdpUavClientKeys.attackKey() + "]"));
+            buttonList.add(new GuiButton(7, left + 140, height - 106, 65, 20,
+                    "Point [" + RdpUavClientKeys.pointKey() + "]"));
+        } else if (guidedMode) {
+            buttonList.add(new GuiButton(3, left, height - 54, 100, 20, "Guide selected"));
+            buttonList.add(new GuiButton(4, left + 105, height - 54, 100, 20, "Abort guide"));
+            buttonList.add(new GuiButton(10, right, height - 54, 110, 20,
+                    "Entity lock [" + RdpUavClientKeys.entityLockKey() + "]"));
+            buttonList.add(new GuiButton(9, right + 115, height - 54, 105, 20,
+                    "Area [" + RdpUavClientKeys.areaLockKey() + "]"));
+            buttonList.add(new GuiButton(13, left, height - 80, 100, 20, "Take player control"));
+            buttonList.add(new GuiButton(14, left + 105, height - 80, 100, 20, "Weapon details"));
+        }
         buttonList.add(new GuiButton(12, right, 64, 220, 20, filterLabel()));
         for (int i = 0, shown = 0; i < missionRows.length && shown < 11; i++) {
             if (!matchesFilter(missionRows[i])) continue;
@@ -133,7 +162,39 @@ public final class GuiMissionControl extends GuiScreen {
         }
     }
 
-    private String filterLabel() {
+    private void refreshMode() {
+            if (mc == null || mc.player == null) {
+                uavMode = false;
+                guidedMode = false;
+                guidanceSummary = "No controlled aircraft";
+                return;
+            }
+            MCH_EntityAircraft aircraft = UavControlAccess.findControlledAircraft(mc.player);
+            uavMode = aircraft != null && aircraft.isUAV();
+            guidedMode = false;
+            guidanceSummary = aircraft == null ? "No controlled aircraft" : "No supported guided weapon with ammunition";
+            if (aircraft == null || aircraft.getWeapons() == null) return;
+            for (MCH_WeaponSet weapon : aircraft.getWeapons()) {
+                if (weapon == null || weapon.getInfo() == null) continue;
+                if (GuidedWeaponRegistry.find(weapon.getName(), weapon.getInfo().type) == null) continue;
+                if (weapon.getAmmo() > 0 || weapon.getAmmoReserve() > 0) {
+                    guidedMode = true;
+                    guidanceSummary = weapon.getName() + " / " + weapon.getInfo().type
+                            + " ammo " + (weapon.getAmmo() + weapon.getAmmoReserve());
+                    break;
+                }
+                guidanceSummary = weapon.getName() + " / " + weapon.getInfo().type + " NO AMMUNITION";
+            }
+            String mode = uavMode && guidedMode ? "UAV_GUIDED"
+                    : uavMode ? "UAV" : guidedMode ? "GUIDED" : "NONE";
+            if (!mode.equals(lastMode)) {
+                lastMode = mode;
+                RdpUavDebug.debug("GUI", "mode={} aircraft={} guidance={}", mode,
+                        aircraft == null ? "none" : aircraft.getUniqueID(), guidanceSummary);
+            }
+        }
+
+        private String filterLabel() {
         return filterMode == 0 ? "Filter: ALL" : filterMode == 1 ? "Filter: ACTIVE" : "Filter: ALERTS";
     }
 
@@ -216,7 +277,7 @@ public final class GuiMissionControl extends GuiScreen {
             status = "Target lock requested for " + hit.entityHit.getName() + ".";
             return;
         }
-        status = "No entity under crosshair. Use Clear lock [J] to request recovery.";
+        status = "No entity under crosshair. Use Clear lock [5] to request recovery.";
     }
 
     private void createEntityMission(boolean attack) {
@@ -257,7 +318,11 @@ public final class GuiMissionControl extends GuiScreen {
 
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
         drawDefaultBackground();
-        drawCenteredString(fontRenderer, "RDP UAV TACTICAL OPERATOR", width / 2, 12, 0xFFFFFF);
+        refreshMode();
+        String title = uavMode && guidedMode ? "RDP UAV + GUIDED WEAPON CONTROL"
+                : uavMode ? "RDP UAV MISSION CONTROL"
+                : guidedMode ? "RDP GUIDED WEAPON CONTROL" : "RDP MISSION CONTROL";
+        drawCenteredString(fontRenderer, title, width / 2, 12, 0xFFFFFF);
         if (help) {
             drawHelp();
         } else {
@@ -268,6 +333,10 @@ public final class GuiMissionControl extends GuiScreen {
             drawString(fontRenderer, "MISSION FILTER", right, 30, 0xB0D8FF);
             if (filterField != null) filterField.drawTextBox();
             if (!status.isEmpty()) drawString(fontRenderer, status, left, 64, 0xFFCC66);
+            drawString(fontRenderer, uavMode ? "UAV MISSIONS" : "GUIDED WEAPON MODE",
+                    left, 80, 0x88FFAA);
+            if (guidedMode) drawString(fontRenderer, "PAYLOAD: " + guidanceSummary,
+                    right, 80, 0x88FFAA);
             drawMissions(left, right);
         }
         super.drawScreen(mouseX, mouseY, partialTicks);

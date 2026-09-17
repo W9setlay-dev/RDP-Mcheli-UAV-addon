@@ -29,8 +29,8 @@ This keeps the project grounded in the actual McHeliCE/WingMan mission boundary 
 
 ## Operator-triggered kamikaze run
 
-For a locked attack mission, the pilot can explicitly press `N` or use the
-`Nose-dive [N]` GUI button. The server validates ownership, pilot seat,
+For a locked attack mission, the pilot can explicitly press `1` or use the
+`Nose-dive [1]` GUI button. The server validates ownership, pilot seat,
 target lock, and supported Switchblade/Shahed aircraft before arming the
 35-degree WingMan dive approach. WingMan remains responsible for steering and
 available-speed control; the addon does not teleport the aircraft or force a
@@ -61,7 +61,7 @@ player's mission summaries from the server; select a mission and use
 `Abort selected` to safely stop a non-terminal mission, Refresh requests a new
 snapshot, and Close exits the screen. The dashboard provides an ALL/ACTIVE/ALERTS
 mission filter, free-text filtering, selected-mission details, and a live
-target-telemetry pane. `Lock crosshair [L]` sends a single-press, server-validated exact target-lock
+target-telemetry pane. `Lock crosshair [3]` sends a single-press, server-validated exact target-lock
 request for the entity or McHeli vehicle under the crosshair. `J`, or
 **Clear lock** in the dashboard, requests lock cancellation and normal WingMan
 recovery. Locking does not require a destructive weapon and does not bypass
@@ -83,18 +83,19 @@ selected/controlled mission.
 
 | Key | Action | Server-side safety boundary |
 | --- | --- | --- |
-| `U` | Open mission control | Opens the dashboard and requests only the player's mission data |
-| `P` | Point task | Sends a camera-point request; the server ray-traces and validates the controlled, authorized UAV |
-| `R` | Recon mission | Creates a non-destructive exact registry-target request |
-| `K` | Attack intent | Creates an attack mission intent; it does not arm weapons |
-| `A` | Authorize attack | Requires owner, operator, `TARGET_LOCKED`, live target, and a valid WingMan attack route |
-| `N` | Kamikaze/nose-dive | Explicit operator action; server requires a supported aircraft, target, payload, and route |
-| `H` | Fire SelfDestruct payload | Requires operator control, supported aircraft, destructive weapon, and ammunition |
-| `L` | Exact target lock | Locks only a loaded, hostile, non-vehicle contact under the crosshair; no destructive payload is implied |
-| `J` | Clear target lock | Requests lock cancellation and normal WingMan recovery |
-| `X` | Abort selected mission | Requires a server-owned mission and releases the aircraft after aborting |
+| `Q` | Open mission control | Opens the dashboard and requests only the player's mission data |
+| `T` | Point task | Sends a camera-point request; the server ray-traces and validates the controlled, authorized UAV |
+| `O` | Recon mission | Creates a non-destructive exact registry-target request |
+| `P` | Attack intent | Creates an attack mission intent; it does not arm weapons |
+| `E` | Authorize attack | Requires owner, operator, `TARGET_LOCKED`, live target, and a valid WingMan attack route |
+| `1` | Kamikaze/nose-dive | Explicit operator action; server requires a supported aircraft, target, payload, and route |
+| `2` | Fire SelfDestruct payload | Requires operator control, supported aircraft, destructive weapon, and ammunition |
+| `3` | Exact target lock | Locks only a loaded, hostile, non-vehicle contact under the crosshair; no destructive payload is implied |
+| `4` | Area/sight lock | Stabilizes the selected ground point without using underground block Y as flight altitude |
+| `5` | Clear target lock | Requests lock cancellation and normal WingMan recovery |
+| `N` | Abort selected mission | Requires a server-owned mission and releases the aircraft after aborting |
 | — | Return to base | Dashboard button or `/rdpuav mission return`; explicit operator request only |
-| `F` | Refresh missions | Requests a server-filtered snapshot; it does not mutate mission state |
+| `K` | Refresh missions | Requests a server-filtered snapshot; it does not mutate mission state |
 
 `K`, `N`, and `H` are intentionally distinct. `K` submits an attack plan,
 `N` arms a destructive kamikaze mode after the explicit operator action, and `H` directly
@@ -137,14 +138,38 @@ ordinary UAV missions are never forced into an attack.
 Guided weapons are selected from the server registry by exact McHeli
 definition/type. UAVs use native WingMan attack nodes for coordinate/TV
 weapons and McHeli's guidance system for entity seekers. A piloted non-UAV
-aircraft may use the same supported loaded weapon through the native
-`MCH_WeaponSet.use` boundary; unsupported definitions and objective
-combinations return deterministic rejection reasons rather than silently
-falling back to an arbitrary weapon. The release gate performs a bounded,
+aircraft uses the same existing mission GUI in reduced **GUIDED WEAPON
+CONTROL** mode; a UAV carrying guided weapons uses the combined UAV + payload
+layout. The GUI lists the actual weapon type, ammunition, compatible objective,
+and current native/AI ownership instead of presenting one universal missile
+mode. Unsupported definitions and objective combinations return deterministic
+rejection reasons rather than silently falling back to an arbitrary weapon.
+The release gate performs a bounded,
 10-tick cached terrain corridor check, an optional line-of-sight check, and
 configured close/high-altitude envelope checks. It never changes projectile
 velocity, projectile position, or aircraft motion. Entity seeker targets
 remain UUID-authoritative and are resolved from the live server entity.
+
+Guidance setup is therefore: select a supported loaded weapon with ammunition,
+select an allowed entity or square objective, satisfy the server lock/safety
+gates, then authorize launch. `aamissile` and `atmissile` remain native
+entity-seeker weapons. `asmissile` is native coordinate/ballistic guidance:
+the addon validates and submits a point/square objective but does not turn it
+into a UAV-like entity hunter. `tvmissile` can use the verified coordinate/TV
+AI handoff for an authorized objective. AI ownership overrides camera input
+only while the mission is active; abort/takeover clears the addon assignment
+and returns control to McHeli's native player guidance where supported.
+Obstacle avoidance is not universal: native seekers keep McHeli's own seeker
+behavior, while coordinate/TV paths only receive bounded terrain/corridor
+checks and scoped waypoint handling. No projectile teleportation or arbitrary
+velocity replacement is performed.
+
+The GUI displays current key names from Minecraft's Controls bindings, not the
+original defaults, so rebinding is reflected immediately. `Unbound` is shown
+when a key has no assignment. The server debug mode (`config/rdp-uav-debug.cfg`)
+now logs mode selection, weapon/ammunition gating, guidance ownership,
+objective switching, native launch decisions, and rejection reasons under the
+`RDP-UAV/Debug` logger.
 
 The flight adapter also exposes a validated coordinate-square strike pattern.
 It generates alternating native WingMan `flyTo` and `attack` nodes, preserving
@@ -152,6 +177,14 @@ the real McHeli/WingMan movement and weapon boundaries. Node creation is not
 treated as proof of a completed pass, weapon release, impact, or damage; a
 server mission command and live runtime verification are still required before
 this capability can be considered production-ready.
+
+Entity-seeker and TV/coordinate missions may optionally attach a server-owned
+priority filter. Rules accept exact registry IDs or namespace patterns such as
+`srparasites:*`; while the projectile is alive, a newly loaded valid contact
+with a higher rule priority can replace the current UUID objective. Manual
+fixed locks remain unchanged unless a filter is explicitly attached. `atmissile`
+is intentionally entity-only in the 1.5.1 profile: square use is rejected until
+McHeliCE exposes and verifies a native coordinate handoff for that weapon.
 
 Square strikes accept a target center at most 5000 blocks from the controlled
 UAV. The area remains bounded to 16-512 blocks, and the mission envelope uses

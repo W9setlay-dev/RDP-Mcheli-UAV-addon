@@ -59,6 +59,10 @@ public final class RDPUavSwarmWorldData extends WorldSavedData {
                         member.getBoolean("payload"));
                 item.setAvailable(member.getBoolean("available"));
                 item.setOperatorControlled(member.getBoolean("operatorControlled"));
+                if (member.hasKey("target")) {
+                    try { item.setAssignedTarget(UUID.fromString(member.getString("target"))); }
+                    catch (IllegalArgumentException ignored) { }
+                }
                 try { item.setState(SwarmMemberState.valueOf(member.getString("state"))); }
                 catch (IllegalArgumentException ignored) { }
                 swarm.add(item);
@@ -94,6 +98,9 @@ public final class RDPUavSwarmWorldData extends WorldSavedData {
                 member.setString("state", item.getState().name());
                 member.setBoolean("available", item.isAvailable());
                 member.setBoolean("operatorControlled", item.isOperatorControlled());
+                if (item.getAssignedTarget() != null) {
+                    member.setString("target", item.getAssignedTarget().toString());
+                }
                 members.appendTag(member);
             }
             value.setTag("members", members);
