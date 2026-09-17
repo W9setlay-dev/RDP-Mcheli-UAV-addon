@@ -67,6 +67,9 @@ public final class RdpUavClientKeys {
     public void onKeyInput(InputEvent.KeyInputEvent event) {
         Minecraft minecraft = Minecraft.getMinecraft();
         if (minecraft.player == null) return;
+        if (AI_TARGET_LOCK.isPressed()) lockAiTarget(minecraft);
+        if (SIGHT_STABILIZATION.isPressed()) stabilizeSight(minecraft);
+        if (CLEAR_TARGET_LOCK.isPressed()) RdpUavNetwork.clearAiTargetLock();
         MCH_EntityAircraft aircraft = net.vas.rdp.uav.mission.UavControlAccess
                 .findControlledAircraft(minecraft.player);
         if (aircraft == null) return;
@@ -90,17 +93,17 @@ public final class RdpUavClientKeys {
         }
         if (KAMIKAZE_SELECTED.isPressed()) GuiMissionControl.armKamikazeSelected();
         if (FIRE_SELF_DESTRUCT.isPressed()) RdpUavNetwork.fireSelfDestruct();
-        if (AI_TARGET_LOCK.isPressed()) lockAiTarget(minecraft);
-        if (SIGHT_STABILIZATION.isPressed()) stabilizeSight(minecraft);
-        if (CLEAR_TARGET_LOCK.isPressed()) RdpUavNetwork.clearAiTargetLock();
         if (NEXT_CONTACT.isPressed()) RdpUavNetwork.cycleContact(true);
         if (PREVIOUS_CONTACT.isPressed()) RdpUavNetwork.cycleContact(false);
     }
 
     private void lockAiTarget(Minecraft minecraft) {
-        if (minecraft.objectMouseOver != null && minecraft.objectMouseOver.entityHit != null) {
-            RdpUavNetwork.lockAiTarget(minecraft.objectMouseOver.entityHit.getUniqueID());
+        if (minecraft.objectMouseOver == null || minecraft.objectMouseOver.entityHit == null) {
+            minecraft.player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                    "UAV target lock: aim directly at a selectable entity."));
+            return;
         }
+        RdpUavNetwork.lockAiTarget(minecraft.objectMouseOver.entityHit.getUniqueID());
     }
 
     private void stabilizeSight(Minecraft minecraft) {

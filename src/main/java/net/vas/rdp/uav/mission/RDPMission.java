@@ -103,6 +103,30 @@ public final class RDPMission {
         transitionTo(MissionState.TARGET_LOCKED, tick);
     }
 
+    public void applyOperatorEntityLock(UUID targetId, long tick) {
+        if (targetId == null) throw new IllegalArgumentException("Target UUID is required");
+        if (state == MissionState.SEARCHING) {
+            transitionTo(MissionState.TARGET_ACQUIRED, tick);
+        } else if (state == MissionState.WAITING_FOR_TARGET || state == MissionState.LOST
+                || state == MissionState.REPLAN) {
+            transitionTo(MissionState.SEARCHING, tick);
+            transitionTo(MissionState.TARGET_ACQUIRED, tick);
+        } else if (state == MissionState.PLANNED) {
+            transitionTo(MissionState.WAITING_FOR_TARGET, tick);
+            transitionTo(MissionState.SEARCHING, tick);
+            transitionTo(MissionState.TARGET_ACQUIRED, tick);
+        }
+        if (state == MissionState.ATTACK_TARGET || state == MissionState.APPROACHING
+                || state == MissionState.KAMIKADZE_TARGET) {
+            this.targetId = targetId;
+            this.lastTargetId = targetId;
+            this.lastTargetTick = tick;
+            this.lastUpdateTick = tick;
+        } else {
+            lockTarget(targetId, tick);
+        }
+    }
+
     /**
      * Updates a locked entity after it was unloaded and found again.  This
      * deliberately does not change the mission state: reacquisition is a

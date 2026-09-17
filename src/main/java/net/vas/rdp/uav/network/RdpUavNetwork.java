@@ -981,9 +981,24 @@ public final class RdpUavNetwork {
                                     "UAV target lock rejected: target filter excludes this contact."));
                             return;
                         }
-                        if (RDPUavMod.missions().assignedMission(aircraft.getUniqueID()) != null) {
+                        net.vas.rdp.uav.profile.UavVehicleProfile profile =
+                                net.vas.rdp.uav.profile.UavVehicleProfiles.forAircraft(
+                                        aircraft.getAcInfo().name);
+                        if (target.getDistance(aircraft) > profile.getLockRange()) {
                             player.sendMessage(new net.minecraft.util.text.TextComponentString(
-                                    "UAV target lock rejected: aircraft already has a mission."));
+                                    "UAV target lock rejected: target is outside lock range."));
+                            return;
+                        }
+                        net.minecraft.util.math.Vec3d start = new net.minecraft.util.math.Vec3d(
+                                aircraft.posX, aircraft.posY + aircraft.getEyeHeight(), aircraft.posZ);
+                        net.minecraft.util.math.Vec3d end = new net.minecraft.util.math.Vec3d(
+                                target.posX, target.posY + target.getEyeHeight(), target.posZ);
+                        net.minecraft.util.math.RayTraceResult sight =
+                                player.world.rayTraceBlocks(start, end, false, true, false);
+                        if (sight != null && sight.typeOfHit
+                                == net.minecraft.util.math.RayTraceResult.Type.BLOCK) {
+                            player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                    "UAV target lock rejected: line of sight is blocked."));
                             return;
                         }
                         net.minecraft.util.ResourceLocation key =
@@ -993,22 +1008,34 @@ public final class RdpUavNetwork {
                                     "UAV target lock rejected: target type is unknown."));
                             return;
                         }
-                        net.vas.rdp.uav.mission.RDPMission mission =
-                                new net.vas.rdp.uav.mission.RDPMission(
-                                        java.util.UUID.randomUUID(), player.getUniqueID(),
-                                        aircraft.getUniqueID(), aircraft.getAcInfo().name,
-                                        net.vas.rdp.uav.mission.MissionType.RECONNAISSANCE,
-                                        net.vas.rdp.uav.target.TargetSpec.manual(
-                                                key.toString(),
-                                                net.vas.rdp.uav.target.TargetPriority.HIGH),
-                                        false, false, false, 5000.0D, 8.0D,
-                                        player.world.getTotalWorldTime());
-                        mission.setDimension(player.dimension);
-                        RDPUavMod.missions().create(player.world, mission);
+                        java.util.UUID assigned = RDPUavMod.missions()
+                                .assignedMission(aircraft.getUniqueID());
+                        net.vas.rdp.uav.mission.RDPMission mission = assigned == null ? null
+                                : net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
+                                .getRepository().find(assigned);
+                        if (mission == null) {
+                            mission = new net.vas.rdp.uav.mission.RDPMission(
+                                    java.util.UUID.randomUUID(), player.getUniqueID(),
+                                    aircraft.getUniqueID(), aircraft.getAcInfo().name,
+                                    net.vas.rdp.uav.mission.MissionType.RECONNAISSANCE,
+                                    net.vas.rdp.uav.target.TargetSpec.manual(
+                                            key.toString(),
+                                            net.vas.rdp.uav.target.TargetPriority.HIGH),
+                                    false, false, false, profile.getDetectionRange(), 8.0D,
+                                    player.world.getTotalWorldTime());
+                            mission.setDimension(player.dimension);
+                            RDPUavMod.missions().create(player.world, mission);
+                        } else {
+                            mission.applyOperatorEntityLock(targetId,
+                                    player.world.getTotalWorldTime());
+                        }
                         net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world).markDirty();
-                        KamikazePilotOverride.lock(aircraft.getUniqueID(), targetId);
+                        if (!profile.isReusable()) {
+                            KamikazePilotOverride.lock(aircraft.getUniqueID(), targetId);
+                        }
                         player.sendMessage(new net.minecraft.util.text.TextComponentString(
-                                "UAV target locked for reconnaissance: " + key.toString()));
+                                "UAV entity lock accepted: " + key.toString()
+                                        + (mission.isAttack() ? " (attack mission)" : " (tracking)")));
                         RdpUavDebug.debug("Network", "AI target lock accepted player={} aircraft={} target={}",
                                 player.getUniqueID(), aircraft.getUniqueID(), targetId);
                     } catch (IllegalArgumentException failure) {

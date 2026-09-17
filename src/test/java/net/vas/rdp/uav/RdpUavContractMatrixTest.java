@@ -223,6 +223,32 @@ public class RdpUavContractMatrixTest {
     }
 
     @Test
+    public void operatorEntityLockAdvancesQueuedMissionWithoutChangingIntent() {
+        RDPMission mission = mission();
+        mission.applyOperatorEntityLock(UUID.randomUUID(), 1);
+        assertEquals(MissionState.TARGET_LOCKED, mission.getState());
+        assertEquals(MissionType.RECONNAISSANCE, mission.getMissionType());
+        assertFalse(mission.isAttack());
+        assertEquals("TARGET_LOCKED", mission.getState().name());
+    }
+
+    @Test
+    public void operatorEntityLockRefreshesActiveAttackWithoutRewindingState() {
+        RDPMission mission = mission();
+        mission.transitionTo(MissionState.DISPATCHED, 1);
+        mission.transitionTo(MissionState.TAKEOFF, 2);
+        mission.transitionTo(MissionState.CRUISE, 3);
+        mission.transitionTo(MissionState.SEARCHING, 4);
+        mission.transitionTo(MissionState.TARGET_ACQUIRED, 5);
+        mission.lockTarget(UUID.randomUUID(), 6);
+        mission.transitionTo(MissionState.ATTACK_TARGET, 7);
+        UUID replacement = UUID.randomUUID();
+        mission.applyOperatorEntityLock(replacement, 8);
+        assertEquals(MissionState.ATTACK_TARGET, mission.getState());
+        assertEquals(replacement, mission.getTargetId());
+    }
+
+    @Test
     public void longRangeProfileSeparatesDetectionLockAndExecutionRanges() {
         UavVehicleProfile profile = new UavVehicleProfile(
                 UavExecutionProfile.LONG_RANGE_REUSABLE_UAV, 250, 200, 320,

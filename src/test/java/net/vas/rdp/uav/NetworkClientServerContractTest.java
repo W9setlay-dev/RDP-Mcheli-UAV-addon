@@ -131,6 +131,13 @@ public class NetworkClientServerContractTest {
                 new RdpUavNetwork.AiTargetLock()).getTargetId());
     }
 
+    @Test
+    public void sightStabilizationWireContractPreservesGroundPoint() {
+        assertSameWirePayload(
+                new RdpUavNetwork.AiTargetLock.AreaLock(12.5D, 80.0D, -4.5D, false),
+                new RdpUavNetwork.AiTargetLock.AreaLock());
+    }
+
     private static <T extends net.minecraftforge.fml.common.network.simpleimpl.IMessage>
     T roundTrip(T sent, T received) {
         ByteBuf wire = Unpooled.buffer();
