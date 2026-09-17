@@ -249,6 +249,30 @@ public class RdpUavContractMatrixTest {
     }
 
     @Test
+    public void operatorEntityLockRecoversExecutionStalledMissionBeforeLocking() {
+        RDPMission mission = mission();
+        mission.transitionTo(MissionState.DISPATCHED, 1);
+        mission.transitionTo(MissionState.TAKEOFF, 2);
+        mission.defer("INVALID_MISSION_TRANSITION", MissionState.EXECUTION_STALLED, 3);
+
+        mission.applyOperatorEntityLock(UUID.randomUUID(), 4);
+
+        assertEquals(MissionState.TARGET_LOCKED, mission.getState());
+        assertEquals(4L, mission.getLastUpdateTick());
+    }
+
+    @Test
+    public void operatorEntityLockRecoversWaitingWorldMissionBeforeLocking() {
+        RDPMission mission = mission();
+        mission.transitionTo(MissionState.DISPATCHED, 1);
+        mission.defer("AIRCRAFT_NOT_FOUND", MissionState.WAITING_FOR_WORLD, 2);
+
+        mission.applyOperatorEntityLock(UUID.randomUUID(), 3);
+
+        assertEquals(MissionState.TARGET_LOCKED, mission.getState());
+    }
+
+    @Test
     public void longRangeProfileSeparatesDetectionLockAndExecutionRanges() {
         UavVehicleProfile profile = new UavVehicleProfile(
                 UavExecutionProfile.LONG_RANGE_REUSABLE_UAV, 250, 200, 320,

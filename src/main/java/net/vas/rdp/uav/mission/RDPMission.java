@@ -108,7 +108,13 @@ public final class RDPMission {
         if (state == MissionState.SEARCHING) {
             transitionTo(MissionState.TARGET_ACQUIRED, tick);
         } else if (state == MissionState.WAITING_FOR_TARGET || state == MissionState.LOST
-                || state == MissionState.REPLAN) {
+                || state == MissionState.REPLAN || state == MissionState.WAITING_FOR_WORLD
+                || state == MissionState.EXECUTION_STALLED || state == MissionState.RECOVERING) {
+            if (state == MissionState.WAITING_FOR_WORLD
+                    || state == MissionState.EXECUTION_STALLED
+                    || state == MissionState.RECOVERING) {
+                transitionTo(MissionState.REPLAN, tick);
+            }
             transitionTo(MissionState.SEARCHING, tick);
             transitionTo(MissionState.TARGET_ACQUIRED, tick);
         } else if (state == MissionState.PLANNED) {

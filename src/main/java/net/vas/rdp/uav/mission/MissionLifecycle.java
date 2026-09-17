@@ -94,6 +94,21 @@ public final class MissionLifecycle {
                 manager.enqueueQueuedMission(mission);
                 continue;
             }
+            /*
+             * A persisted queue flag can outlive the state transition that
+             * consumed the mission (for example after a save during target
+             * locking). Such a mission is already in the active state
+             * machine; dispatching it again would attempt TARGET_LOCKED ->
+             * DISPATCHED and stall it forever.
+             */
+            if (mission.getState() != MissionState.PLANNED) {
+                mission.setQueued(false);
+                RdpUavDebug.debug("Lifecycle",
+                        "mission {} queue flag repaired state={}",
+                        mission.getMissionId(), mission.getState());
+                RDPMissionWorldData.get(world).markDirty();
+                continue;
+            }
             dispatch(world, mission);
         }
     }
