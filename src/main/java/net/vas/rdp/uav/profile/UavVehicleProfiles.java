@@ -29,17 +29,19 @@ public final class UavVehicleProfiles {
             UavExecutionProfile executionProfile = parseProfile(profileName);
             boolean reusable = executionProfile == UavExecutionProfile.REUSABLE_UAV
                     || executionProfile == UavExecutionProfile.LONG_RANGE_REUSABLE_UAV;
+            boolean helicopterOneWay =
+                    executionProfile == UavExecutionProfile.HELICOPTER_ONE_WAY_FPV;
             double altitude = number(config.getFloat("executionAltitude", category,
-                    reusable ? 250F : 0F,
+                    reusable ? 250F : helicopterOneWay ? 8F : 0F,
                     0F, 4096F, "Preferred execution altitude."));
             double minimum = number(config.getFloat("minimumExecutionAltitude", category,
-                    reusable ? 200F : 0F,
+                    reusable ? 200F : helicopterOneWay ? 4F : 0F,
                     0F, 4096F, "Minimum reusable-UAV altitude."));
             double maximum = number(config.getFloat("maximumExecutionAltitude", category,
-                    reusable ? 320F : 4096F,
+                    reusable ? 320F : helicopterOneWay ? 32F : 4096F,
                     0F, 4096F, "Maximum execution altitude."));
             double tolerance = number(config.getFloat("altitudeTolerance", category,
-                    reusable ? 15F : 0F,
+                    reusable ? 15F : helicopterOneWay ? 6F : 0F,
                     0F, 512F, "Execution-altitude tolerance."));
             double detectionRange = number(config.getFloat("detectionRange", category,
                     executionProfile == UavExecutionProfile.LONG_RANGE_REUSABLE_UAV ? 2048F : 256F,
@@ -78,12 +80,13 @@ public final class UavVehicleProfiles {
 
     private static void ensureDefaults(Configuration config) {
         String[] names = {"switchblade", "shahed136", "fpvdrone", "mq9"};
-        String[] profile = {"ONE_WAY", "ONE_WAY", "ONE_WAY", "LONG_RANGE_REUSABLE_UAV"};
+        String[] profile = {"ONE_WAY", "ONE_WAY", "HELICOPTER_ONE_WAY_FPV",
+                "LONG_RANGE_REUSABLE_UAV"};
         String[] aliases = {"switchblade", "shahed136,shahed-136", "fpv,fpv-drone,fpv_drone", "mq-9,mq_9,reaper,predator"};
         for (int i = 0; i < names.length; i++) {
             String category = "vehicle." + names[i];
             config.getString("profile", category, profile[i],
-                    "RDP execution profile: ONE_WAY or REUSABLE_UAV.");
+                    "RDP execution profile: ONE_WAY, HELICOPTER_ONE_WAY_FPV, or REUSABLE_UAV.");
             config.getString("aliases", category, aliases[i],
                     "Comma-separated McHeli definition names using this profile.");
             config.getFloat("executionAltitude", category, i == 3 ? 250F : 0F,
@@ -116,8 +119,11 @@ public final class UavVehicleProfiles {
     public static UavVehicleProfile forAircraft(String definition) {
         UavVehicleProfile profile = profiles.get(normalize(definition));
         String normalized = normalize(definition);
-        if (profile == null && (normalized.contains("fpv")
-                || normalized.contains("shahed")
+        if (profile == null && normalized.contains("fpv")) {
+            return new UavVehicleProfile(UavExecutionProfile.HELICOPTER_ONE_WAY_FPV, 8, 4, 32,
+                    6, false, "SELF_DESTRUCT");
+        }
+        if (profile == null && (normalized.contains("shahed")
                 || normalized.contains("switchblade"))) {
             return new UavVehicleProfile(UavExecutionProfile.ONE_WAY, 0, 0, 4096,
                     4, false, "SELF_DESTRUCT");

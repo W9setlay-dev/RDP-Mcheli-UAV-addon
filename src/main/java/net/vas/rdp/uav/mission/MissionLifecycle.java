@@ -131,7 +131,7 @@ public final class MissionLifecycle {
         // it here would replace the ON_MISSION record with a fresh READY
         // record and allow a second mission to claim the same entity.
         if (!flight.hasFuelForMission(aircraft)) {
-            fail(world, mission, "INSUFFICIENT_FUEL", tick);
+            defer(world, mission, "INSUFFICIENT_FUEL", MissionState.WAITING_FOR_FUEL, tick);
             return;
         }
         if (mission.isAttack() && !flight.hasAttackAmmunition(aircraft)
@@ -176,7 +176,7 @@ public final class MissionLifecycle {
                         aircraftSpeed(aircraft), profile(aircraft).getAttackEnvelope(), true,
                         profile(aircraft).getAttackWeaponPriority());
                 if (!guided.isAccepted()) {
-                    if ("NO_GUIDED_WEAPON".equals(guided.getReason())) {
+                    if (isPermanentGuidanceFailure(guided.getReason())) {
                         fail(world, mission, guided.getReason(), tick);
                     } else {
                         defer(world, mission, guided.getReason(), MissionState.REPLAN, tick);
@@ -192,11 +192,12 @@ public final class MissionLifecycle {
                 mission.transitionTo(MissionState.TARGET_ACQUIRED, tick);
                 if (target.entity == null) mission.lockPoint(tick);
                 else mission.lockTarget(target.entity.getUniqueID(), tick);
-                mission.transitionTo(MissionState.ATTACK_TARGET, tick);
+                mission.transitionTo(MissionState.DIRECT_LAUNCH_COMPLETE, tick);
+                manager.release(mission);
                 RDPMissionWorldData.get(world).markDirty();
                 return;
             }
-            double guidanceY = guidanceAltitude(aircraft, target.y);
+            double guidanceY = terminalRouteAltitude(aircraft, target, mission);
             if (target.entity != null && mission.getTargetId() == null) {
                 mission.reacquireTarget(target.entity.getUniqueID(), tick);
             }
@@ -237,6 +238,7 @@ public final class MissionLifecycle {
                 continue;
             }
             if (mission.getState() != MissionState.HOLDING
+                    && mission.getState() != MissionState.WAITING_FOR_FUEL
                     && tick - mission.getLastUpdateTick() > MISSION_TIMEOUT) {
                 defer(world, mission, mission.getState().name() + "_TIMEOUT",
                         MissionState.EXECUTION_STALLED, tick);
@@ -256,7 +258,13 @@ public final class MissionLifecycle {
                 dirty = true;
                 continue;
             }
+            if (mission.getState() == MissionState.WAITING_FOR_FUEL
+                    && !flight.hasFuelForMission(aircraft)) {
+                dirty = true;
+                continue;
+            }
             if (mission.getState() == MissionState.WAITING_FOR_WORLD
+                    || mission.getState() == MissionState.WAITING_FOR_FUEL
                     || mission.getState() == MissionState.EXECUTION_STALLED
                     || mission.getState() == MissionState.RECOVERING
                     || mission.getState() == MissionState.REPLAN) {
@@ -272,8 +280,8 @@ public final class MissionLifecycle {
                 // Low fuel is reported to the operator; autonomous mission
                 // logic must never initiate RTB.  The player can explicitly
                 // request native return through the GUI or command.
-                defer(world, mission, "LOW_FUEL_OPERATOR_RTB_REQUIRED",
-                        MissionState.RECOVERING, tick);
+                defer(world, mission, "INSUFFICIENT_FUEL",
+                        MissionState.WAITING_FOR_FUEL, tick);
                 dirty = true;
                 continue;
             }
@@ -430,9 +438,14 @@ public final class MissionLifecycle {
     private boolean updateMission(World world, RDPMission mission, MCH_EntityAircraft aircraft,
                                   Target target, long tick) {
         if (mission.isTerminal()) return false;
+        if (mission.getState() == MissionState.REPLAN && target != null
+                && isDirectNativeWeaponMission(mission, aircraft)) {
+            launchDirectWeapon(world, mission, aircraft, target, tick);
+            return true;
+        }
         if (mission.getState() == MissionState.REPLAN && target != null) {
             flight.release(aircraft);
-            double routeY = guidanceAltitude(aircraft, target.y);
+            double routeY = terminalRouteAltitude(aircraft, target, mission);
             if (!flight.dispatch(aircraft, target.x, routeY, target.z,
                     mission.getObservationDistance(), 200, mission.isAttack(),
                     target.entity == null ? null : target.entity.getUniqueID())) {
@@ -456,7 +469,7 @@ public final class MissionLifecycle {
             return true;
         }
         if (target != null) {
-            double targetGuidanceY = guidanceAltitude(aircraft, target.y);
+            double targetGuidanceY = terminalRouteAltitude(aircraft, target, mission);
             flight.updateTargetGuidance(aircraft, target.x, targetGuidanceY, target.z,
                     target.entity == null ? null : target.entity.getUniqueID());
             if (entry.order != null) {
@@ -486,7 +499,7 @@ public final class MissionLifecycle {
                     return true;
                 }
                 flight.release(aircraft);
-                double routeY = guidanceAltitude(aircraft, target.y);
+                double routeY = terminalRouteAltitude(aircraft, target, mission);
                 if (flight.dispatch(aircraft, target.x, routeY, target.z,
                         mission.getObservationDistance(), 0, true,
                         target.entity == null ? null : target.entity.getUniqueID())) {
@@ -586,6 +599,10 @@ public final class MissionLifecycle {
                                 mission.getMissionId(), guided.getReason(), aircraft.getUniqueID(),
                                 formatTarget(target));
                         if (guided.getReason().startsWith("GUIDED_HOLD_")) return false;
+                        if (isPermanentGuidanceFailure(guided.getReason())) {
+                            fail(world, mission, guided.getReason(), tick);
+                            return true;
+                        }
                         defer(world, mission, guided.getReason(), MissionState.REPLAN, tick);
                         return true;
                     }
@@ -879,6 +896,14 @@ public final class MissionLifecycle {
         if (world == null || aircraft == null || target == null) {
             return MissionSafety.RouteDecision.HOLD_AND_REEVALUATE;
         }
+        /*
+         * One-way platforms are terminal strike vehicles, not observation
+         * aircraft. Never let corridor safety convert their terminal route
+         * into an offset orbit or a reusable-UAV hold.
+         */
+        if (mission.isAttack() && !profile(aircraft).isReusable()) {
+            return MissionSafety.RouteDecision.DIRECT_INTERCEPT;
+        }
 
         double dx = target.x - aircraft.posX;
         double dy = target.y - aircraft.posY;
@@ -910,7 +935,7 @@ public final class MissionLifecycle {
         boolean due = previous == null
                 || (tick - previous.tick >= 10L && flight.hasReachedRoutePoint(aircraft));
         if (!moved && !due) return;
-        double guidanceY = guidanceAltitude(aircraft, target.y);
+        double guidanceY = terminalRouteAltitude(aircraft, target, mission);
         if (flight.refreshObservationRoute(aircraft, target.x, guidanceY, target.z,
                 mission.getObservationDistance(), orbit, mission.getTargetId())) {
             routeRefreshes.put(aircraftId, new RouteRefresh(tick, target.x, guidanceY, target.z));
@@ -978,6 +1003,14 @@ public final class MissionLifecycle {
                 Math.min(profile.getMaximumExecutionAltitude(), profile.getExecutionAltitude()));
     }
 
+    private double terminalRouteAltitude(MCH_EntityAircraft aircraft, Target target,
+                                         RDPMission mission) {
+        if (mission != null && mission.isAttack() && !profile(aircraft).isReusable()) {
+            return target.y;
+        }
+        return guidanceAltitude(aircraft, target.y);
+    }
+
     private Target resolvePointTarget(World world, double x, double requestedY, double z) {
         if (world == null) return Target.point(x, requestedY, z);
         net.minecraft.util.math.BlockPos column =
@@ -991,6 +1024,18 @@ public final class MissionLifecycle {
     private double aircraftSpeed(MCH_EntityAircraft aircraft) {
         return Math.sqrt(aircraft.motionX * aircraft.motionX
                 + aircraft.motionY * aircraft.motionY + aircraft.motionZ * aircraft.motionZ);
+    }
+
+    private boolean isPermanentGuidanceFailure(String reason) {
+        if (reason == null) return false;
+        return "NO_GUIDED_WEAPON".equals(reason)
+                || "UNSUPPORTED_GUIDANCE".equals(reason)
+                || "UNSUPPORTED_OBJECTIVE_COMBINATION".equals(reason)
+                || "AI_TV_GUIDANCE_UNSUPPORTED".equals(reason)
+                || "UNSUPPORTED_SEEKER_TARGET_ASSIGNMENT".equals(reason)
+                || "NATIVE_SEEKER_LAUNCH_REJECTED".equals(reason)
+                || "NATIVE_WINGMAN_REJECTED".equals(reason)
+                || "NO_AMMUNITION".equals(reason);
     }
 
     private UavVehicleProfile profile(MCH_EntityAircraft aircraft) {
@@ -1022,6 +1067,39 @@ public final class MissionLifecycle {
             }
         }
         return result;
+    }
+
+    private boolean isDirectNativeWeaponMission(RDPMission mission,
+                                                 MCH_EntityAircraft aircraft) {
+        return mission.isAttack() && aircraft != null && !aircraft.isUAV()
+                && profile(aircraft).getExecutionProfile()
+                != net.vas.rdp.uav.profile.UavExecutionProfile.ONE_WAY;
+    }
+
+    private void launchDirectWeapon(World world, RDPMission mission,
+                                    MCH_EntityAircraft aircraft, Target target, long tick) {
+        GuidedStrikeObjective objective = target.entity == null
+                ? GuidedStrikeObjective.square(mission.getMissionId(),
+                world.provider.getDimension(), target.x, target.y, target.z, tick)
+                : GuidedStrikeObjective.entity(mission.getMissionId(),
+                target.entity.getUniqueID(), world.provider.getDimension(),
+                target.x, target.y, target.z, tick);
+        objective.authorize();
+        objective.beginTracking();
+        GuidedWeaponDecision decision = guidedWeapons.arm(world, aircraft, objective,
+                aircraftSpeed(aircraft), profile(aircraft).getAttackEnvelope(), true,
+                profile(aircraft).getAttackWeaponPriority());
+        if (!decision.isAccepted()) {
+            if (!decision.getReason().startsWith("GUIDED_HOLD_")) {
+                defer(world, mission, decision.getReason(), MissionState.REPLAN, tick);
+            }
+            return;
+        }
+        objective.release();
+        mission.transitionTo(MissionState.TARGET_LOCKED, tick);
+        mission.transitionTo(MissionState.DIRECT_LAUNCH_COMPLETE, tick);
+        manager.release(mission);
+        RDPMissionWorldData.get(world).markDirty();
     }
 
     private void fail(World world, RDPMission mission, String reason, long tick) {

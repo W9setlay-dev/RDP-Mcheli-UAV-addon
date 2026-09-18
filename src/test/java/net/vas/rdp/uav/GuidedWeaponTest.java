@@ -56,6 +56,20 @@ public class GuidedWeaponTest {
     }
 
     @Test
+    public void meteorNativeAamissileIsEntityOnly() {
+        GuidedWeaponRegistry.clear();
+        GuidedWeaponCapability meteor = new GuidedWeaponCapability("meteor", "aamissile",
+                GuidedNativeBehavior.ENTITY_SEEKER, EnumSet.of(GuidedObjectiveType.ENTITY),
+                new GuidedTerminalProfile(0, true));
+        GuidedWeaponRegistry.register(meteor);
+        GuidedWeaponCapability resolved = GuidedWeaponRegistry.find("meteor", "aamissile");
+        Assert.assertNotNull(resolved);
+        assertTrue(resolved.supports(GuidedObjectiveType.ENTITY));
+        assertTrue(!resolved.supports(GuidedObjectiveType.SQUARE));
+        GuidedWeaponRegistry.clear();
+    }
+
+    @Test
     public void registryMatchesDefinitionAndTypeCaseInsensitively() {
         GuidedWeaponRegistry.clear();
         GuidedWeaponCapability capability = new GuidedWeaponCapability("CustomGuided",

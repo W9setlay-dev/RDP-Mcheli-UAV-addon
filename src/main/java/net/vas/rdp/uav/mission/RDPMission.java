@@ -12,7 +12,7 @@ public final class RDPMission {
     private final UUID aircraftId;
     private final String aircraftType;
     private final MissionType missionType;
-    private final TargetSpec targetSpec;
+    private TargetSpec targetSpec;
     private final boolean attack;
     private final boolean eliminateAllCost;
     private final boolean deepScan;
@@ -81,7 +81,8 @@ public final class RDPMission {
     public boolean isTerminal() {
         return state == MissionState.COMPLETE || state == MissionState.ABORTED
                 || state == MissionState.FAILED
-                || state == MissionState.KAMIKADZE_DETONATED;
+                || state == MissionState.KAMIKADZE_DETONATED
+                || state == MissionState.DIRECT_LAUNCH_COMPLETE;
     }
     public boolean isDestructiveAuthorized() { return destructiveAuthorized; }
     public void authorizeDestructiveAction() { destructiveAuthorized = true; }
@@ -109,12 +110,15 @@ public final class RDPMission {
             transitionTo(MissionState.TARGET_ACQUIRED, tick);
         } else if (state == MissionState.WAITING_FOR_TARGET || state == MissionState.LOST
                 || state == MissionState.REPLAN || state == MissionState.WAITING_FOR_WORLD
+                || state == MissionState.WAITING_FOR_FUEL
                 || state == MissionState.EXECUTION_STALLED || state == MissionState.RECOVERING) {
             if (state == MissionState.WAITING_FOR_WORLD
+                    || state == MissionState.WAITING_FOR_FUEL
                     || state == MissionState.EXECUTION_STALLED
                     || state == MissionState.RECOVERING) {
                 transitionTo(MissionState.REPLAN, tick);
             }
+
             transitionTo(MissionState.SEARCHING, tick);
             transitionTo(MissionState.TARGET_ACQUIRED, tick);
         } else if (state == MissionState.PLANNED) {
@@ -131,6 +135,33 @@ public final class RDPMission {
         } else {
             lockTarget(targetId, tick);
         }
+    }
+
+    public void applyOperatorAreaLock(double x, double y, double z, long tick) {
+        if (!Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)) {
+            throw new IllegalArgumentException("Area lock coordinates must be finite");
+        }
+        this.targetSpec = TargetSpec.point(x, y, z, targetSpec.getPriority());
+        this.targetId = null;
+        this.lastTargetId = null;
+        this.lastTargetTick = tick;
+        if (state == MissionState.PLANNED) {
+            transitionTo(MissionState.WAITING_FOR_TARGET, tick);
+            transitionTo(MissionState.SEARCHING, tick);
+        } else if (state == MissionState.WAITING_FOR_WORLD
+                || state == MissionState.WAITING_FOR_FUEL
+                || state == MissionState.EXECUTION_STALLED
+                || state == MissionState.RECOVERING) {
+            transitionTo(MissionState.REPLAN, tick);
+            transitionTo(MissionState.SEARCHING, tick);
+        } else if (state == MissionState.WAITING_FOR_TARGET
+                || state == MissionState.LOST
+                || state == MissionState.REPLAN) {
+            transitionTo(MissionState.SEARCHING, tick);
+        }
+        if (state == MissionState.SEARCHING) transitionTo(MissionState.TARGET_ACQUIRED, tick);
+        if (state == MissionState.TARGET_ACQUIRED) transitionTo(MissionState.TARGET_LOCKED, tick);
+        this.lastUpdateTick = tick;
     }
 
     /**

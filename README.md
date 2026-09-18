@@ -54,8 +54,9 @@ not copied into source control.
 The addon includes a tactical mission-control GUI and player-owned UAV mission
 commands. While piloting a McHeli UAV, authorize it with
 `/rdpuav authorize`, then create a manual-target reconnaissance mission with
-`/rdpuav mission create <namespace:id>` (append `attack` only when an attack
-mission was intentionally configured). Use `/rdpuav mission gui` to monitor
+`/rdpuav mission create <namespace:id|mod=namespace> [attack] [low|normal|high|critical]`
+(`namespace:id` is an exact entity-ID filter; `mod=namespace` selects the whole
+mod namespace). Use `/rdpuav mission gui` to monitor
 missions. The screen receives only the current
 player's mission summaries from the server; select a mission and use
 `Abort selected` to safely stop a non-terminal mission, Refresh requests a new
@@ -65,7 +66,10 @@ target-telemetry pane. `Lock crosshair [3]` sends a single-press, server-validat
 request for the entity or McHeli vehicle under the crosshair. `J`, or
 **Clear lock** in the dashboard, requests lock cancellation and normal WingMan
 recovery. Locking does not require a destructive weapon and does not bypass
-aircraft ownership or target validation. Abort requests are checked server-side against the player's UUID,
+aircraft ownership or target validation. For entity missions, enter the exact
+registry ID in the `ENTITY ID FILTER` field and cycle `Target priority` in the
+GUI before pressing Recon or Attack; the selected LOW/NORMAL/HIGH/CRITICAL
+value is validated server-side. Abort requests are checked server-side against the player's UUID,
 mission ownership, and terminal state. Authorization requires the player to
 be the McHeli UAV pilot; another player cannot create a mission for that UAV.
 Attack-intent missions begin in reconnaissance mode and automatically arm
@@ -103,7 +107,9 @@ payload. `N` aborts the selected mission and `K` only refreshes mission data.
 The client key names are configurable through Minecraft's Controls menu; the
 GUI displays the current bindings rather than assuming these defaults.
 
-For an autonomous AI task, use `/rdpuav mission ai <namespace:id> [attack]`.
+For an autonomous AI task, use `/rdpuav mission ai <namespace:id|mod=namespace> [attack]`.
+The `mod=namespace` form selects any loaded entity from that mod namespace;
+it is a namespace filter, not an automatic hostile classification.
 The command evaluates the controlled, authorized UAV through the deterministic
 AI tasking service and submits a mission only when the aircraft is available
 and attack capability is present for an attack request.
@@ -122,9 +128,12 @@ remain under operator control until an explicit return-to-base request.
 
 Temporary execution conditions are not immediate failures. Missing entities
 use `WAITING_FOR_TARGET`, unavailable world/chunks use `WAITING_FOR_WORLD`,
-stalled native routes use `EXECUTION_STALLED`, and target/route recovery uses
-`REPLAN` with bounded persisted attempts. Only exhausted recovery becomes
-`FAILED`.
+insufficient fuel/energy uses `WAITING_FOR_FUEL` and retries automatically
+after refueling, stalled native routes use `EXECUTION_STALLED`, and
+target/route recovery uses `REPLAN` with bounded persisted attempts. A
+piloted aircraft with a supported missile uses a direct native-weapon route
+and does not require a WingMan entry; successful release is reported as
+`DIRECT_LAUNCH_COMPLETE`. Only exhausted recovery becomes `FAILED`.
 
 For a survival-safe point attack, look at a block or structure from the
 piloted UAV and run `/rdpuav mission attack-point`. The server ray-traces the
@@ -459,7 +468,7 @@ currently resolved target.
 The addon does not derive mission behavior from McHeliCE's technical
 `Type: helicopter` value or from display names. On startup it creates
 `config/rdp-uav-vehicles.cfg`, where each exact McHeli aircraft definition can
-be mapped to `ONE_WAY` or `REUSABLE_UAV` and aliases can be listed. The default
+be mapped to `ONE_WAY`, `HELICOPTER_ONE_WAY_FPV`, or `REUSABLE_UAV` and aliases can be listed. The default
 mapping covers Switchblade/Shahed-style one-way payload vehicles and an MQ-9
 profile. Reusable profiles use the configured execution altitude, altitude
 tolerance, and horizontal target guidance; they do not dive toward target Y or
@@ -471,7 +480,9 @@ not a universal mission classification.
 locking uses authoritative 3D distance and UUID continuity, and mission
 execution remains gated by the smaller execution range.
 Repeating square-strike passes are restricted to reusable UAV profiles.
-ONE_WAY FPV/Shahed-style aircraft use a terminal point/entity attack path
+`HELICOPTER_ONE_WAY_FPV` aircraft use a bounded low-altitude terminal
+point/entity attack path; they are not treated as reusable helicopters.
+`ONE_WAY` FPV/Shahed-style aircraft use a terminal point/entity attack path
 instead: the square is a surface-resolved terminal objective, not a repeating
 orbit. Square altitude, heading, and pass spacing are configured in
 `rdp-uav-square-strike.cfg`; the command coordinates are the requested area

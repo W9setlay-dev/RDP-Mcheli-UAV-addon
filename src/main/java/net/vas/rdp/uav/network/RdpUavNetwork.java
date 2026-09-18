@@ -54,6 +54,8 @@ public final class RdpUavNetwork {
         CHANNEL.registerMessage(ServerReturnToBaseHandler.class, ReturnToBase.class, 14, Side.SERVER);
         CHANNEL.registerMessage(AiTargetLock.ServerAreaLockHandler.class,
                 AiTargetLock.AreaLock.class, 15, Side.SERVER);
+        CHANNEL.registerMessage(ClientSwarmTelemetryHandler.ServerSwarmConfigHandler.class,
+                ClientSwarmTelemetryHandler.SwarmConfigUpdate.class, 16, Side.SERVER);
     }
 
     public static void openMissionControl(EntityPlayerMP player) {
@@ -93,8 +95,13 @@ public final class RdpUavNetwork {
     }
 
     public static void createMission(String target, boolean attack) {
-        if (target == null || !target.matches("[A-Za-z0-9_.-]+:[A-Za-z0-9_./-]+")) return;
-        CHANNEL.sendToServer(new CreateMission(target, attack, false));
+        createMission(target, attack, 2);
+    }
+
+    public static void createMission(String target, boolean attack, int priority) {
+        if (target == null || !target.matches(
+                "(?i)(mod=[A-Za-z0-9_.-]+|[A-Za-z0-9_.-]+:[A-Za-z0-9_./-]+)")) return;
+        CHANNEL.sendToServer(new CreateMission(target, attack, false, priority));
     }
 
     public static void createPointMission() {
@@ -130,6 +137,13 @@ public final class RdpUavNetwork {
 
     public static void clearContactSelection() {
         CHANNEL.sendToServer(new ContactSelection(false, true));
+    }
+
+    public static void updateSwarmConfig(String swarmId, int maximumMembers,
+                                         boolean participation, boolean allowDuplicates) {
+        if (swarmId == null || swarmId.trim().isEmpty()) return;
+        CHANNEL.sendToServer(new ClientSwarmTelemetryHandler.SwarmConfigUpdate(swarmId, maximumMembers,
+                participation, allowDuplicates));
     }
 
     static void sendMissionData(EntityPlayerMP player) {
@@ -176,6 +190,65 @@ public final class RdpUavNetwork {
     public static final class ClientSwarmTelemetryHandler implements IMessageHandler<SwarmTelemetry, IMessage> {
         public IMessage onMessage(SwarmTelemetry message, MessageContext context) {
             return null;
+        }
+
+        public static final class SwarmConfigUpdate implements IMessage {
+            private String swarmId = "";
+            private int maximumMembers;
+            private boolean participation;
+            private boolean allowDuplicates;
+            public SwarmConfigUpdate() { }
+            public SwarmConfigUpdate(String swarmId, int maximumMembers,
+                                     boolean participation, boolean allowDuplicates) {
+                this.swarmId = swarmId == null ? "" : swarmId;
+                this.maximumMembers = maximumMembers;
+                this.participation = participation;
+                this.allowDuplicates = allowDuplicates;
+            }
+            public void fromBytes(ByteBuf buffer) {
+                swarmId = readString(buffer);
+                maximumMembers = buffer.readUnsignedByte();
+                participation = buffer.readBoolean();
+                allowDuplicates = buffer.readBoolean();
+            }
+            public void toBytes(ByteBuf buffer) {
+                writeString(buffer, swarmId);
+                buffer.writeByte(Math.max(1, Math.min(255, maximumMembers)));
+                buffer.writeBoolean(participation);
+                buffer.writeBoolean(allowDuplicates);
+            }
+        }
+
+        public static final class ServerSwarmConfigHandler
+                implements IMessageHandler<SwarmConfigUpdate, IMessage> {
+            public IMessage onMessage(final SwarmConfigUpdate message, MessageContext context) {
+                final EntityPlayerMP player = context.getServerHandler().player;
+                Objects.requireNonNull(player.getServer()).addScheduledTask(new Runnable() {
+                    public void run() {
+                        try {
+                            java.util.UUID id = java.util.UUID.fromString(message.swarmId);
+                            net.vas.rdp.uav.swarm.SwarmRecord record =
+                                    RDPUavMod.swarms().find(player.world, id);
+                            if (!RDPUavMod.swarms().owns(record, player.getUniqueID())) {
+                                player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                        "Swarm configuration rejected: owner authorization is required."));
+                                return;
+                            }
+                            record.setMissionMaximumMembers(message.maximumMembers);
+                            record.setMissionParticipation(message.participation);
+                            record.setAllowDuplicateTargets(message.allowDuplicates);
+                            net.vas.rdp.uav.persistence.RDPUavSwarmWorldData.get(player.world).markDirty();
+                            player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                    "Swarm configuration updated."));
+                            syncSwarmTelemetry(player);
+                        } catch (IllegalArgumentException failure) {
+                            player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                    "Swarm configuration rejected: invalid swarm ID."));
+                        }
+                    }
+                });
+                return null;
+            }
         }
     }
 
@@ -280,24 +353,31 @@ public final class RdpUavNetwork {
         private String target = "";
         private boolean attack;
         private boolean point;
+        private int priority = 2;
 
         public CreateMission() { }
         public CreateMission(String target, boolean attack, boolean point) {
+            this(target, attack, point, 2);
+        }
+        public CreateMission(String target, boolean attack, boolean point, int priority) {
             this.target = target == null ? "" : target;
             this.attack = attack;
             this.point = point;
+            this.priority = Math.max(0, Math.min(3, priority));
         }
 
         public void fromBytes(ByteBuf buffer) {
             target = readString(buffer);
             attack = buffer.readBoolean();
             point = buffer.readBoolean();
+            priority = buffer.readUnsignedByte();
         }
 
         public void toBytes(ByteBuf buffer) {
             writeString(buffer, target);
             buffer.writeBoolean(attack);
             buffer.writeBoolean(point);
+            buffer.writeByte(Math.max(0, Math.min(3, priority)));
         }
 
     }
@@ -358,6 +438,36 @@ public final class RdpUavNetwork {
                                     "UAV area lock rejected: invalid ground coordinate."));
                             return;
                         }
+                        java.util.UUID assigned = RDPUavMod.missions()
+                                .assignedMission(aircraft.getUniqueID());
+                        net.vas.rdp.uav.mission.RDPMission mission = assigned == null ? null
+                                : net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
+                                .getRepository().find(assigned);
+                        if (mission == null) {
+                            net.vas.rdp.uav.profile.UavVehicleProfile profile =
+                                    aircraft.getAcInfo() == null ? null
+                                    : net.vas.rdp.uav.profile.UavVehicleProfiles.forAircraft(
+                                    aircraft.getAcInfo().name);
+                            if (profile == null) {
+                                player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                        "UAV area lock rejected: aircraft profile is unavailable."));
+                                return;
+                            }
+                            mission = new net.vas.rdp.uav.mission.RDPMission(
+                                    java.util.UUID.randomUUID(), player.getUniqueID(),
+                                    aircraft.getUniqueID(), aircraft.getAcInfo().name,
+                                    net.vas.rdp.uav.mission.MissionType.RECONNAISSANCE,
+                                    net.vas.rdp.uav.target.TargetSpec.point(message.x, message.y,
+                                            message.z, net.vas.rdp.uav.target.TargetPriority.HIGH),
+                                    false, false, false, profile.getDetectionRange(), 8.0D,
+                                    player.world.getTotalWorldTime());
+                            mission.setDimension(player.dimension);
+                            RDPUavMod.missions().create(player.world, mission);
+                        } else {
+                            mission.applyOperatorAreaLock(message.x, message.y, message.z,
+                                    player.world.getTotalWorldTime());
+                        }
+                        net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world).markDirty();
                         player.sendMessage(new net.minecraft.util.text.TextComponentString(
                                 String.format(java.util.Locale.ROOT,
                                         "UAV sight stabilization locked at %.1f %.1f %.1f.",
@@ -878,7 +988,8 @@ public final class RdpUavNetwork {
             Objects.requireNonNull(player.getServer()).addScheduledTask(new Runnable() {
                 public void run() {
                     if (!message.point && (message.target == null
-                            || !message.target.matches("[A-Za-z0-9_.-]+:[A-Za-z0-9_./-]+"))) {
+                            || !message.target.matches(
+                            "(?i)(mod=[A-Za-z0-9_.-]+|[A-Za-z0-9_.-]+:[A-Za-z0-9_./-]+)"))) {
                         return;
                     }
 
@@ -888,11 +999,21 @@ public final class RdpUavNetwork {
                     String command = message.point
                             ? "rdpuav mission attack-point"
                             : "rdpuav mission create " + message.target
-                                    + (message.attack ? " attack" : "");
+                                    + (message.attack ? " attack" : "")
+                                    + " " + priorityName(message.priority);
                     Objects.requireNonNull(player.getServer()).getCommandManager().executeCommand(player, command);
                 }
             });
             return null;
+        }
+
+        private String priorityName(int value) {
+            switch (Math.max(0, Math.min(3, value))) {
+                case 0: return "low";
+                case 1: return "normal";
+                case 2: return "high";
+                default: return "critical";
+            }
         }
     }
 

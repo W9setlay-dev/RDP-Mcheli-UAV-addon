@@ -15,6 +15,7 @@ import net.vas.rdp.uav.scan.RDPScanReport;
 import net.vas.rdp.uav.scan.ReportNbtCodec;
 import net.vas.rdp.uav.target.TargetAcquisition;
 import net.vas.rdp.uav.target.TargetPriority;
+import net.vas.rdp.uav.target.TargetSelectionMode;
 import net.vas.rdp.uav.target.TargetSelector;
 import net.vas.rdp.uav.target.TargetSpec;
 import net.vas.rdp.uav.target.ContactLifecycle;
@@ -171,9 +172,9 @@ public class RdpUavContractMatrixTest {
     }
 
     @Test
-    public void fpvProfileIsExplicitlyOneWayAndDoesNotFallThroughToUnknown() {
+    public void fpvProfileIsExplicitlyHelicopterOneWayAndDoesNotFallThroughToUnknown() {
         UavVehicleProfile profile = UavVehicleProfiles.forAircraft("fpv-drone");
-        assertEquals(UavExecutionProfile.ONE_WAY, profile.getExecutionProfile());
+        assertEquals(UavExecutionProfile.HELICOPTER_ONE_WAY_FPV, profile.getExecutionProfile());
         assertEquals("SELF_DESTRUCT", profile.getTerminalPayloadBehavior());
         assertTrue(profile.getAttackEnvelope() > 0D);
     }
@@ -270,6 +271,20 @@ public class RdpUavContractMatrixTest {
         mission.applyOperatorEntityLock(UUID.randomUUID(), 3);
 
         assertEquals(MissionState.TARGET_LOCKED, mission.getState());
+    }
+
+    @Test
+    public void operatorAreaLockReplacesEntityObjectiveAndPreservesMissionIntent() {
+        RDPMission mission = mission();
+        mission.applyOperatorEntityLock(UUID.randomUUID(), 1);
+        mission.applyOperatorAreaLock(12.5D, 80.0D, -4.0D, 2);
+
+        assertEquals(MissionState.TARGET_LOCKED, mission.getState());
+        assertEquals(TargetSelectionMode.POINT, mission.getTargetSelectionMode());
+        assertEquals(12.5D, mission.getTargetSpec().getX(), 0.0D);
+        assertEquals(80.0D, mission.getTargetSpec().getY(), 0.0D);
+        assertEquals(-4.0D, mission.getTargetSpec().getZ(), 0.0D);
+        assertFalse(mission.isAttack());
     }
 
     @Test
@@ -482,6 +497,7 @@ public class RdpUavContractMatrixTest {
 
     private static boolean declaredSuccessor(MissionState state, MissionState next) {
         if (next == MissionState.WAITING_FOR_WORLD
+                || next == MissionState.WAITING_FOR_FUEL
                 || next == MissionState.EXECUTION_STALLED
                 || next == MissionState.REPLAN
                 || next == MissionState.RECOVERING) {
@@ -507,6 +523,7 @@ public class RdpUavContractMatrixTest {
             case TARGET_LOCKED: return next == MissionState.APPROACHING
                     || next == MissionState.ATTACK_TARGET
                     || next == MissionState.KAMIKADZE_TARGET
+                    || next == MissionState.DIRECT_LAUNCH_COMPLETE
                     || next == MissionState.LOST;
             case ATTACK_TARGET: return next == MissionState.APPROACHING
                     || next == MissionState.ON_TARGET || next == MissionState.RETURNING
@@ -527,10 +544,12 @@ public class RdpUavContractMatrixTest {
             case HOLDING: return next == MissionState.RETURNING
                     || next == MissionState.COMPLETE;
             case WAITING_FOR_WORLD:
+            case WAITING_FOR_FUEL:
             case EXECUTION_STALLED:
             case RECOVERING:
                 return next == MissionState.REPLAN
                         || next == MissionState.WAITING_FOR_WORLD
+                        || next == MissionState.WAITING_FOR_FUEL
                         || next == MissionState.EXECUTION_STALLED
                         || next == MissionState.RECOVERING;
             case REPLAN:

@@ -20,8 +20,10 @@ public enum MissionState {
     SCANNING,
     DEEP_SCANNING,
     REPORTING,
+    DIRECT_LAUNCH_COMPLETE,
     HOLDING,
     WAITING_FOR_WORLD,
+    WAITING_FOR_FUEL,
     EXECUTION_STALLED,
     REPLAN,
     RECOVERING,
@@ -41,7 +43,7 @@ public enum MissionState {
             return true;
         }
         if (next == this) return false;
-        if (next == WAITING_FOR_WORLD || next == EXECUTION_STALLED
+        if (next == WAITING_FOR_WORLD || next == WAITING_FOR_FUEL || next == EXECUTION_STALLED
                 || next == REPLAN || next == RECOVERING) {
             return true;
         }
@@ -56,7 +58,8 @@ public enum MissionState {
             case LOST: return next == SEARCHING || next == WAITING_FOR_TARGET;
             case TARGET_ACQUIRED: return next == TARGET_LOCKED || next == LOST;
             case TARGET_LOCKED: return next == APPROACHING || next == ATTACK_TARGET
-                    || next == KAMIKADZE_TARGET || next == LOST;
+                    || next == KAMIKADZE_TARGET || next == DIRECT_LAUNCH_COMPLETE
+                    || next == LOST;
             case ATTACK_TARGET: return next == APPROACHING || next == ON_TARGET
                     || next == RETURNING || next == KAMIKADZE_TARGET;
             case KAMIKADZE_TARGET: return next == ON_TARGET || next == RETURNING
@@ -67,12 +70,15 @@ public enum MissionState {
             case SCANNING: return next == DEEP_SCANNING || next == REPORTING;
             case DEEP_SCANNING: return next == REPORTING;
             case REPORTING: return next == HOLDING || next == RETURNING;
+            case DIRECT_LAUNCH_COMPLETE: return false;
             case HOLDING: return next == RETURNING || next == COMPLETE;
             case WAITING_FOR_WORLD:
+            case WAITING_FOR_FUEL:
             case EXECUTION_STALLED:
             case RECOVERING:
                 return next == REPLAN || next == WAITING_FOR_WORLD
-                        || next == EXECUTION_STALLED || next == RECOVERING;
+                        || next == WAITING_FOR_FUEL || next == EXECUTION_STALLED
+                        || next == RECOVERING;
             case REPLAN:
                 return next == SEARCHING || next == TARGET_LOCKED
                         || next == APPROACHING || next == ATTACK_TARGET;

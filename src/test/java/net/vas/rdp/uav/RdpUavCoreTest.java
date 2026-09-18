@@ -102,6 +102,8 @@ public class RdpUavCoreTest {
     public void targetSpecsNormalizeAndRejectInvalidInput() {
         assertEquals("mod:target", TargetSpec.manual(" MOD:Target ", TargetPriority.NORMAL).getRegistryId());
         assertEquals("mod", TargetSpec.automatic(" Mod ", TargetPriority.NORMAL).getNamespace());
+        assertEquals("srparasites",
+                TargetSpec.modNamespace(" SRParasites ", TargetPriority.HIGH).getNamespace());
         assertEquals(12.5, TargetSpec.point(12.5, 80, -2, TargetPriority.NORMAL).getX(), 0);
 
         assertIllegalArgument(new Runnable() {
@@ -129,6 +131,16 @@ public class RdpUavCoreTest {
                 TargetSpec.manual("mod:near", TargetPriority.HIGH), candidates));
         assertNull(selector.select(
                 TargetSpec.manual("mod:missing", TargetPriority.HIGH), candidates));
+    }
+
+    @Test
+    public void targetSelectionIsStableWhenPriorityAndRangeTie() {
+        TargetSelector<String> selector = new TargetSelector<String>();
+        List<TargetSelector.Candidate<String>> candidates = Arrays.asList(
+                candidate("mod:zeta", 4, TargetPriority.NORMAL, "zeta"),
+                candidate("mod:alpha", 4, TargetPriority.NORMAL, "alpha"));
+        assertEquals("alpha", selector.select(
+                TargetSpec.automatic("mod", TargetPriority.NORMAL), candidates));
     }
 
     @Test

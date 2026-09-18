@@ -20,6 +20,9 @@ public final class SwarmRecord {
     private SwarmMissionState missionState = SwarmMissionState.IDLE;
     private SwarmLockState lockState = SwarmLockState.CLEAR;
     private SwarmOperatorState operatorState = SwarmOperatorState.UNASSIGNED;
+    private boolean missionParticipation = true;
+    private int missionMaximumMembers = 8;
+    private boolean allowDuplicateTargets;
 
     public SwarmRecord(UUID swarmId, UUID ownerId, String name) {
         if (swarmId == null || ownerId == null || name == null || name.trim().isEmpty()) {
@@ -113,6 +116,14 @@ public final class SwarmRecord {
     public void setLockState(SwarmLockState value) { if (value != null) lockState = value; }
     public SwarmOperatorState getOperatorState() { return operatorState; }
     public void setOperatorState(SwarmOperatorState value) { if (value != null) operatorState = value; }
+    public boolean isMissionParticipation() { return missionParticipation; }
+    public void setMissionParticipation(boolean value) { missionParticipation = value; }
+    public int getMissionMaximumMembers() { return missionMaximumMembers; }
+    public void setMissionMaximumMembers(int value) {
+        missionMaximumMembers = Math.max(1, Math.min(SwarmConfig.maximumSize, value));
+    }
+    public boolean isAllowDuplicateTargets() { return allowDuplicateTargets; }
+    public void setAllowDuplicateTargets(boolean value) { allowDuplicateTargets = value; }
 
     public UUID referenceMember() {
         if (members.isEmpty() || leadership == SwarmLeadership.NO_SINGLE_LEADER) return null;

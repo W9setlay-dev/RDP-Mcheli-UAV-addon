@@ -44,7 +44,17 @@ public final class TargetSelector<T> {
         if (score > 0) return true;
         if (score < 0) return false;
 
-        return candidate.getDistanceSquared() < current.getDistanceSquared();
+        int distance = Double.compare(candidate.getDistanceSquared(),
+                current.getDistanceSquared());
+        if (distance != 0) return distance < 0;
+
+        // Stable ordering prevents target selection from changing with
+        // loaded-entity iteration order when candidates are otherwise equal.
+        String candidateId = candidate.getRegistryId() == null
+                ? "" : candidate.getRegistryId();
+        String currentId = current.getRegistryId() == null
+                ? "" : current.getRegistryId();
+        return candidateId.compareTo(currentId) < 0;
     }
 
     private boolean matchesNamespace(TargetSpec spec, String registryId) {

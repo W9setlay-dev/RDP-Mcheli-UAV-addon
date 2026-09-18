@@ -35,8 +35,10 @@ public final class SwarmManager {
         if (!SwarmConfig.enabled) return false;
         SwarmRecord record = find(world, swarmId);
         if (!owns(record, owner) || member == null) return false;
-        if (record.getMembers().size() >= Math.min(SwarmConfig.maximumSize,
-                SwarmConfig.maximumForProfile(member.getProfile()))) return false;
+        if (!record.isMissionParticipation()
+                || record.getMembers().size() >= Math.min(record.getMissionMaximumMembers(),
+                Math.min(SwarmConfig.maximumSize,
+                        SwarmConfig.maximumForProfile(member.getProfile())))) return false;
         record.add(member);
         RDPUavSwarmWorldData.get(world).markDirty();
         return true;
@@ -72,7 +74,8 @@ public final class SwarmManager {
     public boolean assignTarget(World world, UUID owner, UUID swarmId, UUID aircraftId,
                                 UUID targetId, boolean allowDuplicate) {
         SwarmRecord record = find(world, swarmId);
-        if (!owns(record, owner) || !record.assignTarget(aircraftId, targetId, allowDuplicate)) {
+        if (!owns(record, owner) || !record.assignTarget(aircraftId, targetId,
+                allowDuplicate && record.isAllowDuplicateTargets())) {
             return false;
         }
         RDPUavSwarmWorldData.get(world).markDirty();

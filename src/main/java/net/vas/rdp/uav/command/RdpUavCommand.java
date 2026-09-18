@@ -299,7 +299,7 @@ public final class RdpUavCommand extends CommandBase {
     private void createMission(EntityPlayer player, String[] args) {
         if (args.length < 3) {
             player.sendMessage(new TextComponentString(
-                    "Usage: /rdpuav mission create <namespace:id> [attack]"));
+                    "Usage: /rdpuav mission create <namespace:id|mod=namespace> [attack] [low|normal|high|critical]"));
             return;
         }
 
@@ -317,6 +317,8 @@ public final class RdpUavCommand extends CommandBase {
             return;
         }
         boolean attack = args.length >= 4 && "attack".equalsIgnoreCase(args[3]);
+        TargetPriority priority = parsePriority(args.length >= 5 ? args[4] : null,
+                attack ? TargetPriority.HIGH : TargetPriority.NORMAL);
         try {
             if (aircraft.getAcInfo() == null) {
                 player.sendMessage(new TextComponentString("UAV metadata is unavailable; mission rejected."));
@@ -324,7 +326,7 @@ public final class RdpUavCommand extends CommandBase {
             }
             RDPMission mission = new RDPMission(UUID.randomUUID(), player.getUniqueID(), aircraftId,
                     aircraft.getAcInfo().name, attack ? MissionType.STRIKE : MissionType.RECONNAISSANCE,
-                    TargetSpec.manual(args[2], TargetPriority.HIGH), attack, false, true,
+                    parseTarget(args[2], priority), attack, false, true,
                     MissionLimits.MAX_SQUARE_STRIKE_DISTANCE, 64.0D,
                     player.world.getTotalWorldTime());
             mission.setDimension(player.dimension);
@@ -344,7 +346,7 @@ public final class RdpUavCommand extends CommandBase {
     private void createAiMission(EntityPlayer player, String[] args) {
         if (args.length < 3) {
             player.sendMessage(new TextComponentString(
-                    "Usage: /rdpuav mission ai <namespace:id> [attack]"));
+                    "Usage: /rdpuav mission ai <namespace:id|mod=namespace> [attack]"));
             return;
         }
         MCH_EntityAircraft aircraft = UavControlAccess.findControlledAircraft(player);
@@ -357,7 +359,7 @@ public final class RdpUavCommand extends CommandBase {
         }
         boolean attack = args.length >= 4 && "attack".equalsIgnoreCase(args[3]);
         try {
-            TargetSpec target = TargetSpec.manual(args[2],
+            TargetSpec target = parseTarget(args[2],
                     attack ? TargetPriority.HIGH : TargetPriority.NORMAL);
             AiTaskRequest request = new AiTaskRequest(UUID.randomUUID(), player.getUniqueID(),
                     attack ? MissionType.STRIKE : MissionType.RECONNAISSANCE, target,
@@ -373,6 +375,7 @@ public final class RdpUavCommand extends CommandBase {
                         + decision.getReason()));
                 return;
             }
+
             RDPMission mission = RDPUavMod.ai().executeAutonomous(player.world, request,
                     decision, player.world.getTotalWorldTime());
             RDPMissionWorldData.get(player.world).markDirty();
@@ -381,6 +384,22 @@ public final class RdpUavCommand extends CommandBase {
         } catch (RuntimeException failure) {
             player.sendMessage(new TextComponentString("AI mission rejected: "
                     + (failure.getMessage() == null ? "invalid request" : failure.getMessage())));
+        }
+    }
+
+    private TargetSpec parseTarget(String value, TargetPriority priority) {
+        if (value != null && value.regionMatches(true, 0, "mod=", 0, 4)) {
+            return TargetSpec.modNamespace(value.substring(4), priority);
+        }
+        return TargetSpec.manual(value, priority);
+    }
+
+    private TargetPriority parsePriority(String value, TargetPriority fallback) {
+        if (value == null || value.trim().isEmpty()) return fallback;
+        try {
+            return TargetPriority.valueOf(value.trim().toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException invalid) {
+            throw new IllegalArgumentException("priority must be low, normal, high, or critical");
         }
     }
 

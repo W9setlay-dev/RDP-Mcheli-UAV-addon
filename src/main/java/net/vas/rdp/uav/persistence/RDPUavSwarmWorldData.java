@@ -50,6 +50,15 @@ public final class RDPUavSwarmWorldData extends WorldSavedData {
             catch (IllegalArgumentException ignored) { }
             try { swarm.setSearchPattern(SearchPattern.valueOf(value.getString("search"))); }
             catch (IllegalArgumentException ignored) { }
+            if (value.hasKey("missionParticipation")) {
+                swarm.setMissionParticipation(value.getBoolean("missionParticipation"));
+            }
+            if (value.hasKey("missionMaximumMembers")) {
+                swarm.setMissionMaximumMembers(value.getInteger("missionMaximumMembers"));
+            }
+            if (value.hasKey("allowDuplicateTargets")) {
+                swarm.setAllowDuplicateTargets(value.getBoolean("allowDuplicateTargets"));
+            }
             if (value.hasKey("leader")) swarm.setDesignatedLeader(UUID.fromString(value.getString("leader")));
             NBTTagList members = value.getTagList("members", 10);
             for (int j = 0; j < members.tagCount(); j++) {
@@ -85,6 +94,9 @@ public final class RDPUavSwarmWorldData extends WorldSavedData {
             value.setString("lockState", swarm.getLockState().name());
             value.setString("operatorState", swarm.getOperatorState().name());
             value.setString("search", swarm.getSearchPattern().name());
+            value.setBoolean("missionParticipation", swarm.isMissionParticipation());
+            value.setInteger("missionMaximumMembers", swarm.getMissionMaximumMembers());
+            value.setBoolean("allowDuplicateTargets", swarm.isAllowDuplicateTargets());
             if (swarm.getDesignatedLeader() != null) {
                 value.setString("leader", swarm.getDesignatedLeader().toString());
             }

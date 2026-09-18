@@ -41,6 +41,11 @@ public final class TargetSpec {
         return new TargetSpec(TargetSelectionMode.AUTO, null, normalized, priority, 0, 0, 0);
     }
 
+    /** Select any entity whose registry ID belongs to this mod namespace. */
+    public static TargetSpec modNamespace(String namespace, TargetPriority priority) {
+        return automatic(namespace, priority);
+    }
+
     public static TargetSpec hostile(TargetPriority priority) {
         return new TargetSpec(TargetSelectionMode.AUTO, null, "hostile", priority, 0, 0, 0);
     }

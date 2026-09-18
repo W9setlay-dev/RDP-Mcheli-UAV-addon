@@ -417,6 +417,11 @@ public final class WingManFlightAdapter {
         double approachZ = z + (dz / horizontalDistance) * diveRun;
         double approachY = y + Math.tan(angleRadians) * diveRun;
         entry.mission.add(MissionNode.flyTo(approachX, approachY, approachZ));
+        // A single approach waypoint is not enough to guarantee that native
+        // WingMan enters the target-facing terminal leg. Keep the existing
+        // payload/detonation owner, but finish the route at the objective so
+        // the aircraft's native nose points through the target before impact.
+        entry.mission.add(MissionNode.flyTo(x, y, z));
     }
 
     public void release(MCH_EntityAircraft aircraft) {

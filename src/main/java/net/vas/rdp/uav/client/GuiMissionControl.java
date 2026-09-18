@@ -28,12 +28,17 @@ public final class GuiMissionControl extends GuiScreen {
     private int filterMode;
     private GuiTextField targetField;
     private GuiTextField filterField;
+    private GuiTextField swarmIdField;
+    private GuiTextField swarmSizeField;
     private String status = "";
     private String pendingDangerAction;
     private boolean uavMode;
     private boolean guidedMode;
     private String guidanceSummary = "No controlled aircraft";
     private String lastMode = "";
+    private boolean swarmParticipation = true;
+    private boolean swarmAllowDuplicates;
+    private int targetPriority;
 
     public GuiMissionControl() { active = this; }
 
@@ -107,6 +112,15 @@ public final class GuiMissionControl extends GuiScreen {
             filterField = new GuiTextField(11, fontRenderer, width / 2 + 15, 42, 205, 18);
             filterField.setMaxStringLength(32);
         }
+        if (swarmIdField == null) {
+            swarmIdField = new GuiTextField(12, fontRenderer, width / 2 + 15, 63, 205, 18);
+            swarmIdField.setMaxStringLength(36);
+        }
+        if (swarmSizeField == null) {
+            swarmSizeField = new GuiTextField(13, fontRenderer, width / 2 - 220, 63, 60, 18);
+            swarmSizeField.setMaxStringLength(2);
+            swarmSizeField.setText("1");
+        }
         rebuildButtons();
         requestRefresh();
     }
@@ -143,6 +157,14 @@ public final class GuiMissionControl extends GuiScreen {
                     "Attack [" + RdpUavClientKeys.attackKey() + "]"));
             buttonList.add(new GuiButton(7, left + 140, height - 106, 65, 20,
                     "Point [" + RdpUavClientKeys.pointKey() + "]"));
+            buttonList.add(new GuiButton(20, right, height - 132, 220, 20,
+                    "Target priority: " + targetPriorityLabel()));
+            buttonList.add(new GuiButton(17, right, height - 106, 220, 20,
+                    "Apply swarm mission settings"));
+            buttonList.add(new GuiButton(18, left, height - 132, 100, 20,
+                    "Swarm " + (swarmParticipation ? "ON" : "OFF")));
+            buttonList.add(new GuiButton(19, left + 105, height - 132, 100, 20,
+                    "Duplicates " + (swarmAllowDuplicates ? "ON" : "OFF")));
         } else if (guidedMode) {
             buttonList.add(new GuiButton(3, left, height - 54, 100, 20, "Guide selected"));
             buttonList.add(new GuiButton(4, left + 105, height - 54, 100, 20, "Abort guide"));
@@ -251,6 +273,10 @@ public final class GuiMissionControl extends GuiScreen {
             RdpUavNetwork.clearAiTargetLock();
             status = "Target lock clear requested; recovery will be attempted.";
         }
+        else if (button.id == 17) applySwarmSettings();
+        else if (button.id == 18) { swarmParticipation = !swarmParticipation; rebuildButtons(); }
+        else if (button.id == 19) { swarmAllowDuplicates = !swarmAllowDuplicates; rebuildButtons(); }
+        else if (button.id == 20) { targetPriority = (targetPriority + 1) % 4; rebuildButtons(); }
         else if (button.id == 12) {
             filterMode = (filterMode + 1) % 3;
             rebuildButtons();
@@ -283,13 +309,40 @@ public final class GuiMissionControl extends GuiScreen {
 
     private void createEntityMission(boolean attack) {
         String target = targetField == null ? "" : targetField.getText().trim();
-        if (target.indexOf(':') <= 0 || target.indexOf(':') == target.length() - 1) {
-            status = "Enter a target as namespace:id.";
+        if (!target.matches("(?i)(mod=[A-Za-z0-9_.-]+|[A-Za-z0-9_.-]+:[A-Za-z0-9_./-]+)")) {
+            status = "Enter namespace:id or mod=namespace.";
             return;
         }
-        RdpUavNetwork.createMission(target, attack);
+
+        RdpUavNetwork.createMission(target, attack, targetPriority);
         status = attack ? "Autonomous attack submitted; WingMan arms after target lock."
                 : "Recon mission submitted.";
+    }
+
+    private String targetPriorityLabel() {
+        switch (targetPriority) {
+            case 0: return "LOW";
+            case 1: return "NORMAL";
+            case 2: return "HIGH";
+            default: return "CRITICAL";
+        }
+    }
+
+    private void applySwarmSettings() {
+        String id = swarmIdField == null ? "" : swarmIdField.getText().trim();
+        int maximum;
+        try {
+            maximum = Integer.parseInt(swarmSizeField == null ? "1" : swarmSizeField.getText().trim());
+        } catch (NumberFormatException invalid) {
+            status = "Swarm size must be a number.";
+            return;
+        }
+        if (maximum < 1 || maximum > 64) {
+            status = "Swarm size must be between 1 and 64.";
+            return;
+        }
+        RdpUavNetwork.updateSwarmConfig(id, maximum, swarmParticipation, swarmAllowDuplicates);
+        status = "Swarm mission settings submitted for server validation.";
     }
 
     private void createSquareMission() {
@@ -308,6 +361,8 @@ public final class GuiMissionControl extends GuiScreen {
             rebuildButtons();
             return;
         }
+        if (swarmIdField != null && swarmIdField.textboxKeyTyped(typedChar, keyCode)) return;
+        if (swarmSizeField != null && swarmSizeField.textboxKeyTyped(typedChar, keyCode)) return;
         super.keyTyped(typedChar, keyCode);
     }
 
@@ -315,6 +370,8 @@ public final class GuiMissionControl extends GuiScreen {
         super.mouseClicked(mouseX, mouseY, mouseButton);
         if (targetField != null) targetField.mouseClicked(mouseX, mouseY, mouseButton);
         if (filterField != null) filterField.mouseClicked(mouseX, mouseY, mouseButton);
+        if (swarmIdField != null) swarmIdField.mouseClicked(mouseX, mouseY, mouseButton);
+        if (swarmSizeField != null) swarmSizeField.mouseClicked(mouseX, mouseY, mouseButton);
     }
 
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
@@ -329,10 +386,14 @@ public final class GuiMissionControl extends GuiScreen {
         } else {
             int left = width / 2 - 220;
             int right = width / 2 + 15;
-            drawString(fontRenderer, "MISSION TARGET / AREA", left, 30, 0xB0D8FF);
+            drawString(fontRenderer, "ENTITY ID FILTER (namespace:path or mod=namespace)", left, 30, 0xB0D8FF);
             if (targetField != null) targetField.drawTextBox();
             drawString(fontRenderer, "MISSION FILTER", right, 30, 0xB0D8FF);
             if (filterField != null) filterField.drawTextBox();
+            drawString(fontRenderer, "SWARM ID", right, 51, 0xB0D8FF);
+            if (swarmIdField != null) swarmIdField.drawTextBox();
+            drawString(fontRenderer, "SWARM MAX", left, 51, 0xB0D8FF);
+            if (swarmSizeField != null) swarmSizeField.drawTextBox();
             if (!status.isEmpty()) drawString(fontRenderer, status, left, 64, 0xFFCC66);
             drawString(fontRenderer, uavMode ? "UAV MISSIONS" : "GUIDED WEAPON MODE",
                     left, 80, 0x88FFAA);
