@@ -30,6 +30,7 @@ public class MissionGuidanceFailureTest {
         assertFalse(MissionLifecycle.isPermanentGuidanceFailure("GUIDED_HOLD_TERRAIN"));
         assertFalse(MissionLifecycle.isPermanentGuidanceFailure("GUIDED_HOLD_LINE_OF_SIGHT"));
         assertFalse(MissionLifecycle.isPermanentGuidanceFailure("GUIDED_HOLD_CHUNK_UNLOADED"));
+        assertFalse(MissionLifecycle.isPermanentGuidanceFailure("GUIDED_WAIT_TARGET_CHUNK"));
         assertFalse(MissionLifecycle.isPermanentGuidanceFailure("TARGET_NOT_AVAILABLE"));
         assertFalse(MissionLifecycle.isPermanentGuidanceFailure("REPLAN_DISPATCH_REJECTED"));
     }

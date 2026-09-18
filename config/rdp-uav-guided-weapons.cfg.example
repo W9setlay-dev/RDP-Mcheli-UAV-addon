@@ -2,6 +2,7 @@
 # Keys are McHeli MCH_WeaponSet definition/type pairs, not display names.
 [weapon.aamissile]
 type=aamissile
+supportsUnloadedTargetExecution=false
 behavior=ENTITY_SEEKER
 objectives=ENTITY
 maximumAircraftSpeed=0
@@ -11,6 +12,7 @@ noOrbit=true
 
 [weapon.atmissile]
 type=atmissile
+supportsUnloadedTargetExecution=false
 behavior=ENTITY_SEEKER
 objectives=ENTITY,SQUARE
 maximumAircraftSpeed=0
@@ -20,6 +22,7 @@ noOrbit=true
 
 [weapon.asmissile]
 type=asmissile
+supportsUnloadedTargetExecution=false
 behavior=COORDINATE_BALLISTIC
 objectives=ENTITY,SQUARE
 maximumAircraftSpeed=0
@@ -31,6 +34,7 @@ coordinateCorrectionInterval=2
 
 [weapon.tvmissile]
 type=tvmissile
+supportsUnloadedTargetExecution=false
 behavior=COORDINATE_TV_LASER
 objectives=ENTITY,SQUARE
 maximumAircraftSpeed=0

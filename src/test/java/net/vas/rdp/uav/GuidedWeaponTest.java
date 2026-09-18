@@ -53,6 +53,17 @@ public class GuidedWeaponTest {
                 new GuidedTerminalProfile(0, true));
         assertTrue(capability.supports(GuidedObjectiveType.ENTITY));
         assertFalse(capability.supports(GuidedObjectiveType.SQUARE));
+        assertFalse(capability.supportsUnloadedTargetExecution());
+    }
+
+    @Test
+    public void executionChunkCapabilityIsSeparateFromObjectiveCompatibility() {
+        GuidedWeaponCapability capability = new GuidedWeaponCapability("asmissile", "asmissile",
+                GuidedNativeBehavior.COORDINATE_BALLISTIC,
+                EnumSet.of(GuidedObjectiveType.SQUARE),
+                new GuidedTerminalProfile(0, true), true);
+        assertTrue(capability.supports(GuidedObjectiveType.SQUARE));
+        assertTrue(capability.supportsUnloadedTargetExecution());
     }
 
     @Test

@@ -21,15 +21,27 @@ public final class GuidedSafetyPolicy {
                                                 GuidedStrikeObjective objective,
                                                 boolean requireLineOfSight,
                                                 GuidedTerminalProfile profile) {
+        return evaluate(world, aircraft, objective, requireLineOfSight, profile, false);
+    }
+
+    public static GuidedSafetyDecision evaluate(World world, Entity aircraft,
+                                                GuidedStrikeObjective objective,
+                                                boolean requireLineOfSight,
+                                                GuidedTerminalProfile profile,
+                                                boolean allowUnloadedTarget) {
         if (world == null || aircraft == null || objective == null
                 || world.provider.getDimension() != objective.getDimension()) {
             return GuidedSafetyDecision.REJECT_DIMENSION;
         }
         BlockPos target = new BlockPos(objective.getX(), objective.getY(), objective.getZ());
-        if (!world.isBlockLoaded(target)) return GuidedSafetyDecision.HOLD_CHUNK_UNLOADED;
+        if (!allowUnloadedTarget && !world.isBlockLoaded(target)) {
+            return GuidedSafetyDecision.HOLD_CHUNK_UNLOADED;
+        }
         GuidedTerrainAnalyzer.Result terrain = GuidedTerrainAnalyzer.analyze(
                 world, aircraft, objective, profile);
-        if (terrain == GuidedTerrainAnalyzer.Result.UNLOADED) return GuidedSafetyDecision.HOLD_CHUNK_UNLOADED;
+        if (terrain == GuidedTerrainAnalyzer.Result.UNLOADED && !allowUnloadedTarget) {
+            return GuidedSafetyDecision.HOLD_CHUNK_UNLOADED;
+        }
         if (terrain != GuidedTerrainAnalyzer.Result.CLEAR) return GuidedSafetyDecision.HOLD_TERRAIN;
         if (requireLineOfSight) {
 

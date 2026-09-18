@@ -471,8 +471,12 @@ public final class MissionLifecycle {
         }
         if (target != null) {
             double targetGuidanceY = terminalRouteAltitude(aircraft, target, mission);
-            flight.updateTargetGuidance(aircraft, target.x, targetGuidanceY, target.z,
-                    target.entity == null ? null : target.entity.getUniqueID());
+            if (target.entity != null) {
+                flight.updateMovingEntityGuidance(aircraft, target.entity,
+                        targetGuidanceY, tick);
+            } else {
+                flight.updateTargetGuidance(aircraft, target.x, targetGuidanceY, target.z, null);
+            }
             if (entry.order != null) {
                 entry.order.targetX = target.x;
                 entry.order.targetZ = target.z;
@@ -599,7 +603,8 @@ public final class MissionLifecycle {
                                 "mission {} guided attack decision={} aircraft={} target={}",
                                 mission.getMissionId(), guided.getReason(), aircraft.getUniqueID(),
                                 formatTarget(target));
-                        if (guided.getReason().startsWith("GUIDED_HOLD_")) {
+                        if (guided.getReason().startsWith("GUIDED_HOLD_")
+                                || guided.getReason().startsWith("GUIDED_WAIT_")) {
                             defer(world, mission, guided.getReason(),
                                     guidanceRecoveryState(guided.getReason()), tick);
                             return true;
@@ -1009,9 +1014,6 @@ public final class MissionLifecycle {
 
     private double terminalRouteAltitude(MCH_EntityAircraft aircraft, Target target,
                                          RDPMission mission) {
-        if (mission != null && mission.isAttack() && !profile(aircraft).isReusable()) {
-            return target.y;
-        }
         return guidanceAltitude(aircraft, target.y);
     }
 
@@ -1110,7 +1112,8 @@ public final class MissionLifecycle {
                     formatTarget(target));
             if (isPermanentGuidanceFailure(decision.getReason())) {
                 fail(world, mission, decision.getReason(), tick);
-            } else if (!decision.getReason().startsWith("GUIDED_HOLD_")) {
+            } else if (!decision.getReason().startsWith("GUIDED_HOLD_")
+                    && !decision.getReason().startsWith("GUIDED_WAIT_")) {
                 defer(world, mission, decision.getReason(),
                         guidanceRecoveryState(decision.getReason()), tick);
             }
@@ -1170,7 +1173,8 @@ public final class MissionLifecycle {
     }
 
     private MissionState guidanceRecoveryState(String reason) {
-        if ("GUIDED_HOLD_CHUNK_UNLOADED".equals(reason)
+        if ("GUIDED_WAIT_TARGET_CHUNK".equals(reason)
+                || "GUIDED_HOLD_CHUNK_UNLOADED".equals(reason)
                 || "GUIDED_REJECT_DIMENSION".equals(reason)) {
             return MissionState.WAITING_FOR_WORLD;
         }

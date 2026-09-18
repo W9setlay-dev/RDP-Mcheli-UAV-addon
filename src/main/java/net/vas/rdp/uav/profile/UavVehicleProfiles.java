@@ -27,6 +27,11 @@ public final class UavVehicleProfiles {
             String profileName = config.getString("profile", category, "UNKNOWN",
                     "RDP execution profile: ONE_WAY or REUSABLE_UAV.");
             UavExecutionProfile executionProfile = parseProfile(profileName);
+            boolean migratedFpv = definition.contains("fpv")
+                    && executionProfile == UavExecutionProfile.ONE_WAY;
+            if (migratedFpv) {
+                executionProfile = UavExecutionProfile.HELICOPTER_ONE_WAY_FPV;
+            }
             boolean reusable = executionProfile == UavExecutionProfile.REUSABLE_UAV
                     || executionProfile == UavExecutionProfile.LONG_RANGE_REUSABLE_UAV;
             boolean helicopterOneWay =
@@ -43,6 +48,12 @@ public final class UavVehicleProfiles {
             double tolerance = number(config.getFloat("altitudeTolerance", category,
                     reusable ? 15F : helicopterOneWay ? 6F : 0F,
                     0F, 512F, "Execution-altitude tolerance."));
+            if (migratedFpv && altitude <= 0.0D && minimum <= 0.0D && maximum >= 4096.0D) {
+                altitude = 8.0D;
+                minimum = 4.0D;
+                maximum = 32.0D;
+                tolerance = 6.0D;
+            }
             double detectionRange = number(config.getFloat("detectionRange", category,
                     executionProfile == UavExecutionProfile.LONG_RANGE_REUSABLE_UAV ? 2048F : 256F,
                     1F, 4096F, "Target detection range."));

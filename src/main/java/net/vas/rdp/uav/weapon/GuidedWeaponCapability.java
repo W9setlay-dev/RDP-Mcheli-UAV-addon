@@ -11,10 +11,18 @@ public final class GuidedWeaponCapability {
     private final GuidedNativeBehavior behavior;
     private final Set<GuidedObjectiveType> objectives;
     private final GuidedTerminalProfile terminalProfile;
+    private final boolean supportsUnloadedTargetExecution;
 
     public GuidedWeaponCapability(String definition, String type, GuidedNativeBehavior behavior,
                                   Set<GuidedObjectiveType> objectives,
                                   GuidedTerminalProfile terminalProfile) {
+        this(definition, type, behavior, objectives, terminalProfile, false);
+    }
+
+    public GuidedWeaponCapability(String definition, String type, GuidedNativeBehavior behavior,
+                                  Set<GuidedObjectiveType> objectives,
+                                  GuidedTerminalProfile terminalProfile,
+                                  boolean supportsUnloadedTargetExecution) {
         if (definition == null || definition.trim().isEmpty() || type == null
                 || type.trim().isEmpty() || behavior == null || objectives == null
                 || terminalProfile == null) {
@@ -27,6 +35,7 @@ public final class GuidedWeaponCapability {
                 ? EnumSet.noneOf(GuidedObjectiveType.class) : EnumSet.copyOf(objectives);
         this.objectives = Collections.unmodifiableSet(copy);
         this.terminalProfile = terminalProfile;
+        this.supportsUnloadedTargetExecution = supportsUnloadedTargetExecution;
     }
 
     public String getDefinition() { return definition; }
@@ -34,6 +43,9 @@ public final class GuidedWeaponCapability {
     public GuidedNativeBehavior getBehavior() { return behavior; }
     public Set<GuidedObjectiveType> getObjectives() { return objectives; }
     public GuidedTerminalProfile getTerminalProfile() { return terminalProfile; }
+    public boolean supportsUnloadedTargetExecution() {
+        return supportsUnloadedTargetExecution;
+    }
     public boolean supports(GuidedObjectiveType objective) {
         return objective != null && objectives.contains(objective)
                 && behavior != GuidedNativeBehavior.UNSUPPORTED;

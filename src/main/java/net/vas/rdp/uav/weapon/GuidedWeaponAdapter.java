@@ -118,6 +118,8 @@ public final class GuidedWeaponAdapter {
                 "target", objective.getX() + "," + objective.getY() + "," + objective.getZ(),
                 "behavior", capability.getBehavior(),
                 "objectives", capability.getObjectives(),
+                "supportsUnloadedTargetExecution",
+                capability.supportsUnloadedTargetExecution(),
                 "supportsObjective", capability.supports(objective.getType()));
         if (!GuidedNativeContract.supportsAiGuidance(capability.getBehavior())) {
             RdpUavDebug.debug("Guidance", "aircraft={} weapon={} behavior={} decision=AI_UNSUPPORTED",
@@ -125,7 +127,8 @@ public final class GuidedWeaponAdapter {
             return GuidedWeaponDecision.reject("AI_TV_GUIDANCE_UNSUPPORTED");
         }
         GuidedSafetyDecision safety = GuidedSafetyPolicy.evaluate(world, aircraft, objective,
-                requireLineOfSight, capability.getTerminalProfile());
+                requireLineOfSight, capability.getTerminalProfile(),
+                capability.supportsUnloadedTargetExecution());
         if (safety != GuidedSafetyDecision.ALLOW) {
             RdpUavDebug.event("Guidance", "safety_rejected",
                     "aircraft", aircraft.getUniqueID(), "weapon", decision.getWeapon(),
@@ -301,7 +304,7 @@ public final class GuidedWeaponAdapter {
     private String safetyReason(GuidedSafetyDecision decision) {
         switch (decision) {
         case REJECT_DIMENSION: return "GUIDED_REJECT_DIMENSION";
-        case HOLD_CHUNK_UNLOADED: return "GUIDED_HOLD_CHUNK_UNLOADED";
+        case HOLD_CHUNK_UNLOADED: return "GUIDED_WAIT_TARGET_CHUNK";
         case HOLD_LINE_OF_SIGHT: return "GUIDED_HOLD_LINE_OF_SIGHT";
         case HOLD_TERRAIN: return "GUIDED_HOLD_TERRAIN";
         default: return "GUIDED_SAFETY_REJECTED";

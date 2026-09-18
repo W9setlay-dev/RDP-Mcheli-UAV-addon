@@ -21,12 +21,15 @@ import java.util.UUID;
 import java.util.Locale;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.Map;
+import java.util.HashMap;
 
 /**
  * The only RDP-facing boundary for WingMan control.
  */
 public final class WingManFlightAdapter {
     private final Set<UUID> nativeAttackCompletions = new HashSet<>();
+    private final Map<UUID, ContinuousTargetTracker> targetTrackers = new HashMap<>();
     private static final double KAMIKAZE_ATTACK_ANGLE_DEGREES = 35.0D;
     private static final double MIN_DIVE_RUN_METERS = 32.0D;
     private static final double MAX_DIVE_RUN_METERS = 160.0D;
@@ -427,7 +430,44 @@ public final class WingManFlightAdapter {
             aircraft.getEntityData().removeTag(KamikazeConfig.ARMED_KEY);
             aircraft.getEntityData().removeTag(KamikazeConfig.MIN_SPEED_KEY);
             WingmanRegistry.remove(aircraft.getUniqueID());
+            targetTrackers.remove(aircraft.getUniqueID());
         }
+    }
+
+    /**
+     * Applies one bounded native route correction toward a moving entity.
+     * Target reads are O(1); no entity search, chunk load, or terrain scan is
+     * performed here.
+     */
+    public boolean updateMovingEntityGuidance(MCH_EntityAircraft aircraft,
+                                              net.minecraft.entity.Entity target,
+                                              double guidanceY, long tick) {
+        if (aircraft == null || target == null) return false;
+        UUID aircraftId = aircraft.getUniqueID();
+        ContinuousTargetTracker tracker = targetTrackers.get(aircraftId);
+        if (tracker == null) {
+            tracker = new ContinuousTargetTracker(trackingParameters(aircraft));
+            targetTrackers.put(aircraftId, tracker);
+        }
+        ContinuousTargetTracker.Solution solution = tracker.update(tick,
+                aircraft.posX, aircraft.posY, aircraft.posZ,
+                target.posX, guidanceY, target.posZ,
+                target.motionX, target.motionY, target.motionZ);
+        return updateTargetGuidance(aircraft, solution.getX(), solution.getY(),
+                solution.getZ(), target.getUniqueID());
+    }
+
+    private ContinuousTargetTracker.Parameters trackingParameters(MCH_EntityAircraft aircraft) {
+        String name = aircraft.getAcInfo() == null ? "" : aircraft.getAcInfo().name;
+        String normalized = name == null ? "" : name.toLowerCase(Locale.ROOT);
+        if (normalized.contains("shahed") || normalized.contains("mq9")
+                || UavVehicleProfiles.forAircraft(name).getExecutionProfile()
+                == UavExecutionProfile.LONG_RANGE_REUSABLE_UAV) {
+            return new ContinuousTargetTracker.Parameters(8.0D, 0.18D,
+                    0.12D, 1.5D, 96.0D, 4);
+        }
+        return new ContinuousTargetTracker.Parameters(3.0D, 0.45D,
+                0.35D, 0.75D, 48.0D, 2);
     }
 
     public boolean isDispatched(MCH_EntityAircraft aircraft) {

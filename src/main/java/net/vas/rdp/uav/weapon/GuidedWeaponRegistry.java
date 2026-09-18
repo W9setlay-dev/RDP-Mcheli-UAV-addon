@@ -74,6 +74,8 @@ public final class GuidedWeaponRegistry {
                 2, "Minimum ticks between coordinate corrections.", 1, 40)
                 .getInt();
         boolean noOrbit = c.getBoolean("noOrbit", category, true, "No terminal loiter");
+        boolean unloadedTargetExecution = c.getBoolean("supportsUnloadedTargetExecution",
+                category, false, "Native projectile can execute against an unloaded target region.");
         GuidedNativeBehavior behavior;
         try { behavior = GuidedNativeBehavior.valueOf(behaviorName.trim().toUpperCase(Locale.ROOT)); }
         catch (IllegalArgumentException e) { behavior = GuidedNativeBehavior.UNSUPPORTED; }
@@ -84,7 +86,7 @@ public final class GuidedWeaponRegistry {
         }
         register(new GuidedWeaponCapability(definition, type, behavior, objectives,
                 new GuidedTerminalProfile(maxSpeed, noOrbit, minAltitude, maxAltitude,
-                        maxCorrection, correctionInterval)));
+                        maxCorrection, correctionInterval), unloadedTargetExecution));
     }
 
     private static void register(Configuration c, String key, String definition,
@@ -112,6 +114,8 @@ public final class GuidedWeaponRegistry {
                 .getInt();
         boolean noOrbit = c.getBoolean("noOrbit", category, true,
                 "Do not append a loiter node for terminal guidance.");
+        boolean unloadedTargetExecution = c.getBoolean("supportsUnloadedTargetExecution",
+                category, false, "Native projectile can execute against an unloaded target region.");
         GuidedNativeBehavior behavior;
         try { behavior = GuidedNativeBehavior.valueOf(behaviorName.trim().toUpperCase(Locale.ROOT)); }
         catch (IllegalArgumentException e) { behavior = GuidedNativeBehavior.UNSUPPORTED; }
@@ -122,7 +126,7 @@ public final class GuidedWeaponRegistry {
         }
         GuidedWeaponCapability capability = new GuidedWeaponCapability(definition, type, behavior,
                 objectives, new GuidedTerminalProfile(maxSpeed, noOrbit, minAltitude, maxAltitude,
-                        maxCorrection, correctionInterval));
+                        maxCorrection, correctionInterval), unloadedTargetExecution);
         CAPABILITIES.put(key(definition, type), capability);
     }
 
