@@ -7,7 +7,9 @@ import com.norwood.mcheli.weapon.MCH_WeaponSet;
 import net.vas.rdp.uav.flight.WingManFlightAdapter;
 import net.minecraft.world.World;
 import net.minecraft.entity.Entity;
+import net.minecraft.util.math.AxisAlignedBB;
 import net.vas.rdp.uav.RdpUavDebug;
+import net.vas.rdp.uav.target.TargetPolicy;
 
 /**
  * The only guided-weapon boundary. It reads verified McHeli metadata and
@@ -120,7 +122,27 @@ public final class GuidedWeaponAdapter {
             return GuidedWeaponDecision.reject(safetyReason(safety));
         }
         if (capability.getBehavior() == GuidedNativeBehavior.ENTITY_SEEKER) {
+            GuidedStrikeObjective nativeObjective = objective;
             Entity target = findLoadedTarget(world, objective.getContactId());
+            if (objective.getType() == GuidedObjectiveType.SQUARE) {
+                target = findSquareTarget(world, objective, 8.0D);
+                if (target == null) {
+                    RdpUavDebug.event("Guidance", "area_target_unavailable",
+                            "aircraft", aircraft.getUniqueID(), "weapon", decision.getWeapon(),
+                            "objective", objective.getObjectiveId(), "x", objective.getX(),
+                            "y", objective.getY(), "z", objective.getZ(), "radius", 8.0D);
+                    return GuidedWeaponDecision.reject("GUIDED_TARGET_LOST");
+                }
+                nativeObjective = GuidedStrikeObjective.entity(objective.getObjectiveId(),
+                        target.getUniqueID(), objective.getDimension(), target.posX,
+                        target.posY, target.posZ, world.getTotalWorldTime());
+                nativeObjective.authorize();
+                nativeObjective.beginTracking();
+                RdpUavDebug.event("Guidance", "area_target_acquired",
+                        "aircraft", aircraft.getUniqueID(), "weapon", decision.getWeapon(),
+                        "objective", objective.getObjectiveId(), "target", target.getUniqueID(),
+                        "radius", 8.0D);
+            }
             String nativeDecision = GuidedNativeContract.entityDecision(
                     GuidedNativeContract.supportsEntitySeeker(findWeapon(aircraft, decision.getWeapon())),
                     target != null);
@@ -128,14 +150,14 @@ public final class GuidedWeaponAdapter {
             if (!fireNativeEntitySeeker(aircraft, decision.getWeapon(), target)) {
                 RdpUavDebug.event("Guidance", "native_launch_rejected",
                         "aircraft", aircraft.getUniqueID(), "weapon", decision.getWeapon(),
-                        "objective", objective.getObjectiveId(), "target", objective.getContactId(),
+                        "objective", nativeObjective.getObjectiveId(), "target", target.getUniqueID(),
                         "mode", "ENTITY_SEEKER");
                 return GuidedWeaponDecision.reject("NATIVE_SEEKER_LAUNCH_REJECTED");
             }
-            MissileGuidanceController.authorize(aircraft.getUniqueID(), decision.getWeapon(), objective);
+            MissileGuidanceController.authorize(aircraft.getUniqueID(), decision.getWeapon(), nativeObjective);
             RdpUavDebug.event("Guidance", "native_launch_accepted",
                     "aircraft", aircraft.getUniqueID(), "weapon", decision.getWeapon(),
-                    "objective", objective.getObjectiveId(), "target", objective.getContactId(),
+                    "objective", nativeObjective.getObjectiveId(), "target", target.getUniqueID(),
                     "mode", "ENTITY_SEEKER");
             RdpUavDebug.debug("Guidance", "aircraft={} weapon={} owner=AI objective=ENTITY launch=native",
                     aircraft.getUniqueID(), decision.getWeapon());
@@ -222,6 +244,25 @@ public final class GuidedWeaponAdapter {
                     && targetId.equals(entity.getUniqueID())) return entity;
         }
         return null;
+    }
+
+    private Entity findSquareTarget(World world, GuidedStrikeObjective objective, double radius) {
+        AxisAlignedBB area = new AxisAlignedBB(objective.getX() - radius, objective.getY() - radius,
+                objective.getZ() - radius, objective.getX() + radius, objective.getY() + radius,
+                objective.getZ() + radius);
+        Entity selected = null;
+        double selectedDistance = Double.MAX_VALUE;
+        for (Entity candidate : world.getEntitiesWithinAABB(Entity.class, area)) {
+            if (candidate == null || candidate.isDead
+                    || candidate.dimension != world.provider.getDimension()
+                    || !TargetPolicy.isSafeContact(world, candidate)) continue;
+            double distance = candidate.getDistanceSq(objective.getX(), objective.getY(), objective.getZ());
+            if (distance < selectedDistance) {
+                selected = candidate;
+                selectedDistance = distance;
+            }
+        }
+        return selected;
     }
 
     private int indexOf(MCH_EntityAircraft aircraft, MCH_WeaponSet selected) {

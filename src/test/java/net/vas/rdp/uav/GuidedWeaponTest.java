@@ -56,6 +56,16 @@ public class GuidedWeaponTest {
     }
 
     @Test
+    public void atmissileCapabilitySupportsEntityAndAreaObjectives() {
+        GuidedWeaponCapability capability = new GuidedWeaponCapability("atmissile", "atmissile",
+                GuidedNativeBehavior.ENTITY_SEEKER,
+                EnumSet.of(GuidedObjectiveType.ENTITY, GuidedObjectiveType.SQUARE),
+                new GuidedTerminalProfile(0, true));
+        assertTrue(capability.supports(GuidedObjectiveType.ENTITY));
+        assertTrue(capability.supports(GuidedObjectiveType.SQUARE));
+    }
+
+    @Test
     public void meteorNativeAamissileIsEntityOnly() {
         GuidedWeaponRegistry.clear();
         GuidedWeaponCapability meteor = new GuidedWeaponCapability("meteor", "aamissile",
@@ -147,6 +157,19 @@ public class GuidedWeaponTest {
         GuidedTerminalProfile profile = new GuidedTerminalProfile(220, true, 2, 2048);
         assertEquals(2.0D, profile.getMinimumAltitude(), 0.0D);
         assertEquals(2048.0D, profile.getMaximumAltitude(), 0.0D);
+    }
+
+    @Test
+    public void terminalProfileExposesBoundedCoordinateCorrectionPolicy() {
+        GuidedTerminalProfile profile = new GuidedTerminalProfile(0, true, 0, 4096, 6, 2);
+        assertEquals(6.0D, profile.getMaximumCoordinateCorrection(), 0.0D);
+        assertEquals(2L, profile.getCoordinateCorrectionInterval());
+        try {
+            new GuidedTerminalProfile(0, true, 0, 4096, -1, 2);
+            Assert.fail("Negative coordinate correction must be rejected");
+        } catch (IllegalArgumentException expected) {
+            // Contract verified.
+        }
     }
 
     @Test

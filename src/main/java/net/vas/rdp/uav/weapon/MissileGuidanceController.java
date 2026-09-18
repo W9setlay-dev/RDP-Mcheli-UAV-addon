@@ -28,6 +28,10 @@ public final class MissileGuidanceController {
             new HashMap<UUID, AvoidancePlan>();
     private static final Map<UUID, Long> LAST_COORDINATE_LOG =
             new HashMap<UUID, Long>();
+    private static final Map<UUID, CoordinatePoint> LAST_COORDINATES =
+            new HashMap<UUID, CoordinatePoint>();
+    private static final Map<UUID, Long> LAST_CORRECTION_TICK =
+            new HashMap<UUID, Long>();
     private static final int MAX_ROUTE_SAMPLES = 12;
     private static final int MAX_AVOIDANCE_CANDIDATES = 8;
     private static final double AVOIDANCE_OFFSET = 4.0D;
@@ -185,6 +189,8 @@ public final class MissileGuidanceController {
             PROJECTILES.keySet().retainAll(liveProjectiles);
             AVOIDANCE_PLANS.keySet().retainAll(liveProjectiles);
             LAST_COORDINATE_LOG.keySet().retainAll(liveProjectiles);
+            LAST_COORDINATES.keySet().retainAll(liveProjectiles);
+            LAST_CORRECTION_TICK.keySet().retainAll(liveProjectiles);
         }
     }
 
@@ -244,6 +250,12 @@ public final class MissileGuidanceController {
         x = aim.x;
         y = aim.y;
         z = aim.z;
+        CoordinatePoint corrected = applyCoordinatePolicy(world, missile, x, y, z);
+        if (corrected != null) {
+            x = corrected.x;
+            y = corrected.y;
+            z = corrected.z;
+        }
         if (aim.avoiding) {
             boolean firstAvoidance =
                     projectile.getState() != ProjectileGuidanceState.AVOIDANCE_ACTIVE;
@@ -254,6 +266,7 @@ public final class MissileGuidanceController {
                         "projectile", missile.getUniqueID(), "objective", objective.getObjectiveId(),
                         "x", x, "y", y, "z", z);
             }
+
             RdpUavDebug.debug("Guidance",
                     "aircraft={} projectile={} native avoidance candidate=({}, {}, {})",
                     shooterId(missile),
@@ -282,8 +295,57 @@ public final class MissileGuidanceController {
                     "aircraft", shooterId(missile),
                     "projectile", missile.getUniqueID(), "objective", objective.getObjectiveId(),
                     "weapon", assignment.weapon, "mode", behaviorFor(missile),
+                    "target", objective.getContactId(),
                     "x", x, "y", y, "z", z);
         }
+    }
+
+    private static CoordinatePoint applyCoordinatePolicy(World world,
+                                                          MCH_EntityBaseBullet missile,
+                                                          double x, double y, double z) {
+        if (!(missile instanceof MCH_EntityASMissile)
+                || missile.getInfo() == null) return new CoordinatePoint(x, y, z);
+        GuidedWeaponCapability capability = GuidedWeaponRegistry.find(
+                missile.getInfo().name, missile.getInfo().type);
+        if (capability == null) return new CoordinatePoint(x, y, z);
+        GuidedTerminalProfile profile = capability.getTerminalProfile();
+        double maximum = profile.getMaximumCoordinateCorrection();
+        if (maximum <= 0.0D) return new CoordinatePoint(x, y, z);
+        long now = world.getTotalWorldTime();
+        Long previousTick = LAST_CORRECTION_TICK.get(missile.getUniqueID());
+        CoordinatePoint previous = LAST_COORDINATES.get(missile.getUniqueID());
+        if (previous != null && previousTick != null
+                && now - previousTick.longValue() < profile.getCoordinateCorrectionInterval()) {
+            return previous;
+        }
+        if (previous == null) {
+            CoordinatePoint initial = new CoordinatePoint(x, y, z);
+            LAST_COORDINATES.put(missile.getUniqueID(), initial);
+            LAST_CORRECTION_TICK.put(missile.getUniqueID(), now);
+            RdpUavDebug.event("Guidance", "coordinate_policy_started",
+                    "projectile", missile.getUniqueID(), "weapon", missile.getInfo().name,
+                    "maximum", maximum, "interval", profile.getCoordinateCorrectionInterval());
+            return initial;
+        }
+        double dx = x - previous.x;
+        double dy = y - previous.y;
+        double dz = z - previous.z;
+        double distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (distance > maximum && distance > 0.0D) {
+            double scale = maximum / distance;
+            x = previous.x + dx * scale;
+            y = previous.y + dy * scale;
+            z = previous.z + dz * scale;
+        }
+        CoordinatePoint result = new CoordinatePoint(x, y, z);
+        LAST_COORDINATES.put(missile.getUniqueID(), result);
+        LAST_CORRECTION_TICK.put(missile.getUniqueID(), now);
+        if (distance > maximum) {
+            RdpUavDebug.event("Guidance", "coordinate_correction_clamped",
+                    "projectile", missile.getUniqueID(), "weapon", missile.getInfo().name,
+                    "maximum", maximum, "x", x, "y", y, "z", z);
+        }
+        return result;
     }
 
     private static synchronized ProjectileGuidanceMission projectileMission(
@@ -403,6 +465,17 @@ public final class MissileGuidanceController {
             this.y = y;
             this.z = z;
             this.avoiding = avoiding;
+        }
+
+    }
+
+    private static final class CoordinatePoint {
+        private final double x;
+        private final double y;
+        private final double z;
+
+        private CoordinatePoint(double x, double y, double z) {
+            this.x = x; this.y = y; this.z = z;
         }
     }
 

@@ -1,6 +1,7 @@
 package net.vas.rdp.uav.weapon;
 
 import net.minecraftforge.common.config.Configuration;
+import net.vas.rdp.uav.RdpUavDebug;
 import java.io.File;
 import java.util.EnumSet;
 import java.util.HashMap;
@@ -21,7 +22,7 @@ public final class GuidedWeaponRegistry {
         register(config, "aamissile", "aamissile", GuidedNativeBehavior.ENTITY_SEEKER,
                 "ENTITY", 0.0D, true);
         register(config, "atmissile", "atmissile", GuidedNativeBehavior.ENTITY_SEEKER,
-                "ENTITY", 0.0D, true);
+                "ENTITY,SQUARE", 0.0D, true);
         register(config, "asmissile", "asmissile", GuidedNativeBehavior.COORDINATE_BALLISTIC,
                 "SQUARE", 0.0D, true);
         register(config, "tvmissile", "tvmissile", GuidedNativeBehavior.COORDINATE_TV_LASER,
@@ -34,6 +35,14 @@ public final class GuidedWeaponRegistry {
         }
 
         if (config.hasChanged()) config.save();
+        for (GuidedWeaponCapability capability : CAPABILITIES.values()) {
+            GuidedTerminalProfile profile = capability.getTerminalProfile();
+            RdpUavDebug.event("Guidance", "capability_loaded",
+                    "definition", capability.getDefinition(), "type", capability.getType(),
+                    "behavior", capability.getBehavior(), "objectives", capability.getObjectives(),
+                    "maxCorrection", profile.getMaximumCoordinateCorrection(),
+                    "correctionInterval", profile.getCoordinateCorrectionInterval());
+        }
     }
 
     private static boolean isBuiltIn(String key) {
@@ -57,6 +66,13 @@ public final class GuidedWeaponRegistry {
                 "Minimum terminal target altitude.", 0.0D, 4096.0D).getDouble();
         double maxAltitude = c.get(category, "maximumAltitude", 4096.0D,
                 "Maximum terminal target altitude.", 0.0D, 4096.0D).getDouble();
+        double maxCorrection = c.get(category, "maximumCoordinateCorrection",
+                "asmissile".equalsIgnoreCase(type) ? 6.0D : 0.0D,
+                "Maximum per-update native coordinate correction; zero disables clamping.",
+                0.0D, 256.0D).getDouble();
+        long correctionInterval = c.get(category, "coordinateCorrectionInterval",
+                2, "Minimum ticks between coordinate corrections.", 1, 40)
+                .getInt();
         boolean noOrbit = c.getBoolean("noOrbit", category, true, "No terminal loiter");
         GuidedNativeBehavior behavior;
         try { behavior = GuidedNativeBehavior.valueOf(behaviorName.trim().toUpperCase(Locale.ROOT)); }
@@ -67,7 +83,8 @@ public final class GuidedWeaponRegistry {
             catch (IllegalArgumentException ignored) { }
         }
         register(new GuidedWeaponCapability(definition, type, behavior, objectives,
-                new GuidedTerminalProfile(maxSpeed, noOrbit, minAltitude, maxAltitude)));
+                new GuidedTerminalProfile(maxSpeed, noOrbit, minAltitude, maxAltitude,
+                        maxCorrection, correctionInterval)));
     }
 
     private static void register(Configuration c, String key, String definition,
@@ -87,6 +104,13 @@ public final class GuidedWeaponRegistry {
                 "Minimum terminal target altitude.", 0.0D, 4096.0D).getDouble();
         double maxAltitude = c.get(category, "maximumAltitude", 4096.0D,
                 "Maximum terminal target altitude.", 0.0D, 4096.0D).getDouble();
+        double maxCorrection = c.get(category, "maximumCoordinateCorrection",
+                "asmissile".equalsIgnoreCase(key) ? 6.0D : 0.0D,
+                "Maximum per-update native coordinate correction; zero disables clamping.",
+                0.0D, 256.0D).getDouble();
+        long correctionInterval = c.get(category, "coordinateCorrectionInterval",
+                2, "Minimum ticks between coordinate corrections.", 1, 40)
+                .getInt();
         boolean noOrbit = c.getBoolean("noOrbit", category, defaultNoOrbit,
                 "Do not append a loiter node for terminal guidance.");
         GuidedNativeBehavior behavior;
@@ -98,7 +122,8 @@ public final class GuidedWeaponRegistry {
             catch (IllegalArgumentException ignored) { }
         }
         GuidedWeaponCapability capability = new GuidedWeaponCapability(definition, type, behavior,
-                objectives, new GuidedTerminalProfile(maxSpeed, noOrbit, minAltitude, maxAltitude));
+                objectives, new GuidedTerminalProfile(maxSpeed, noOrbit, minAltitude, maxAltitude,
+                        maxCorrection, correctionInterval));
         CAPABILITIES.put(key(definition, type), capability);
     }
 

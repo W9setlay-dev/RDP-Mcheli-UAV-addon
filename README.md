@@ -170,8 +170,11 @@ select an allowed entity or square objective, satisfy the server lock/safety
 gates, then authorize launch. The GUI distinguishes target acquisition,
 native seeker handoff, launch confirmation, target loss, and tracking; a
 temporary missing target is reported as `WAITING_FOR_TARGET` rather than a
-generic execution stall. `aamissile` and `atmissile` remain native
-entity-seeker weapons. `asmissile` is native coordinate/ballistic guidance:
+generic execution stall. `aamissile` remains a native entity-seeker weapon. `atmissile` supports both
+entity objectives and square/area objectives: for a square, the server selects
+the nearest safe loaded entity inside the bounded strike area and passes that
+entity to McHeli's native AT seeker; it does not pretend that the AT missile
+has coordinate guidance. `asmissile` is native coordinate/ballistic guidance:
 the addon validates and submits a point/square objective but does not turn it
 into a UAV-like entity hunter. `tvmissile` can use the verified coordinate/TV
 AI handoff for an authorized objective. AI ownership overrides camera input
@@ -396,7 +399,12 @@ server-owned AI guidance even if the player is viewing the missile camera.
 Abort removes the AI ownership and returns to native player guidance where
 McHeli supports it. `asmissile` pursuit uses bounded server-side 3D obstacle
 sampling and replanning toward the configured square; it preserves McHeli
-gravity, collision, fuse, damage, and impact behavior. Unsupported runtime
+gravity, collision, fuse, damage, and impact behavior. Entity or namespace
+selection first acquires a live entity and locks its UUID; the namespace is
+not a perpetual permission to silently switch targets. During flight,
+`asmissile` receives only bounded native-coordinate corrections at the
+configured cadence (`maximumCoordinateCorrection` and
+`coordinateCorrectionInterval`). Unsupported runtime
 or objective combinations are rejected explicitly, and temporary blocked or
 unloaded routes remain recoverable rather than becoming immediate failures.
 
