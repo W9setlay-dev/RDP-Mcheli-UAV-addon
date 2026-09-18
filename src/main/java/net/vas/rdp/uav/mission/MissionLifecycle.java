@@ -294,8 +294,8 @@ public final class MissionLifecycle {
             }
 
             Target target = mission.getTargetSelectionMode() == TargetSelectionMode.POINT
-                    ? Target.point(mission.getTargetSpec().getX(), mission.getTargetSpec().getY(),
-                    mission.getTargetSpec().getZ())
+                    ? resolvePointTarget(world, mission.getTargetSpec().getX(),
+                    mission.getTargetSpec().getY(), mission.getTargetSpec().getZ())
                     : reacquire(world, aircraft, mission, tick);
             if (mission.getTargetSelectionMode() != TargetSelectionMode.POINT && target == null) {
                 flight.clearGuidance(aircraft);
