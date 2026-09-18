@@ -1,5 +1,6 @@
 package net.vas.rdp.uav;
 
+import net.vas.rdp.uav.weapon.GuidedChunkCapability;
 import net.vas.rdp.uav.weapon.GuidedNativeBehavior;
 import net.vas.rdp.uav.weapon.GuidedNativeContract;
 import net.vas.rdp.uav.weapon.GuidedObjectiveState;
@@ -64,6 +65,14 @@ public class GuidedWeaponTest {
                 new GuidedTerminalProfile(0, true), true);
         assertTrue(capability.supports(GuidedObjectiveType.SQUARE));
         assertTrue(capability.supportsUnloadedTargetExecution());
+    }
+
+    @Test
+    public void mcHeliChunkStreamingIsAuthoritativeAndSeparateFromObjectiveSupport() {
+        assertFalse(GuidedChunkCapability.allowUnloadedTarget(false, false));
+        assertTrue(GuidedChunkCapability.allowUnloadedTarget(false, true));
+        assertTrue(GuidedChunkCapability.allowUnloadedTarget(true, false));
+        assertTrue(GuidedChunkCapability.allowUnloadedTarget(true, true));
     }
 
     @Test

@@ -108,6 +108,10 @@ public final class GuidedWeaponAdapter {
                     "objective", objective.getType(), "reason", "UNSUPPORTED_GUIDANCE");
             return GuidedWeaponDecision.reject("UNSUPPORTED_GUIDANCE");
         }
+        MCH_WeaponSet weapon = findWeapon(aircraft, decision.getWeapon());
+        boolean mcheliCanLoadChunk = GuidedChunkCapability.fromWeaponSet(weapon);
+        boolean allowUnloadedTarget = GuidedChunkCapability.allowUnloadedTarget(
+                capability.supportsUnloadedTargetExecution(), mcheliCanLoadChunk);
         RdpUavDebug.event("Guidance", "compatibility_evaluated",
                 "aircraft", aircraft.getUniqueID(),
                 "weapon", decision.getWeapon(),
@@ -120,6 +124,8 @@ public final class GuidedWeaponAdapter {
                 "objectives", capability.getObjectives(),
                 "supportsUnloadedTargetExecution",
                 capability.supportsUnloadedTargetExecution(),
+                "mcheliCanLoadChunk", mcheliCanLoadChunk,
+                "allowUnloadedTarget", allowUnloadedTarget,
                 "supportsObjective", capability.supports(objective.getType()));
         if (!GuidedNativeContract.supportsAiGuidance(capability.getBehavior())) {
             RdpUavDebug.debug("Guidance", "aircraft={} weapon={} behavior={} decision=AI_UNSUPPORTED",
@@ -127,8 +133,7 @@ public final class GuidedWeaponAdapter {
             return GuidedWeaponDecision.reject("AI_TV_GUIDANCE_UNSUPPORTED");
         }
         GuidedSafetyDecision safety = GuidedSafetyPolicy.evaluate(world, aircraft, objective,
-                requireLineOfSight, capability.getTerminalProfile(),
-                capability.supportsUnloadedTargetExecution());
+                requireLineOfSight, capability.getTerminalProfile(), allowUnloadedTarget);
         if (safety != GuidedSafetyDecision.ALLOW) {
             RdpUavDebug.event("Guidance", "safety_rejected",
                     "aircraft", aircraft.getUniqueID(), "weapon", decision.getWeapon(),
