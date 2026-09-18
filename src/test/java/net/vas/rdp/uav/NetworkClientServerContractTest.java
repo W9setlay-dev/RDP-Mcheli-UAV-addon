@@ -54,6 +54,9 @@ public class NetworkClientServerContractTest {
                 new RdpUavNetwork.CreateMission());
         assertSameWirePayload(new RdpUavNetwork.CreateMission("mod:target", true, false),
                 new RdpUavNetwork.CreateMission());
+        assertSameWirePayload(new RdpUavNetwork.CreateMission("mod:target", true, false, 3,
+                        "agm114"),
+                new RdpUavNetwork.CreateMission());
         assertSameWirePayload(new RdpUavNetwork.SquareStrike("100 140 -50 80"),
                 new RdpUavNetwork.SquareStrike());
     }

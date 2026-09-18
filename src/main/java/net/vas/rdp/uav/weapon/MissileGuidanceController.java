@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.Set;
 import java.util.List;
+import java.util.ArrayList;
 import net.vas.rdp.uav.RdpUavDebug;
 
 /**
@@ -73,6 +74,77 @@ public final class MissileGuidanceController {
                 }
             }
         }
+    }
+
+    public static synchronized boolean reassign(UUID aircraftId, UUID projectileId,
+                                                 GuidedStrikeObjective objective) {
+        if (aircraftId == null || projectileId == null || objective == null) return false;
+        Assignment assignment = ASSIGNMENTS.get(aircraftId);
+        ProjectileGuidanceMission projectile = PROJECTILES.get(projectileId);
+        if (assignment == null || projectile == null
+                || !aircraftId.equals(projectile.getAircraftId())) return false;
+        ASSIGNMENTS.put(aircraftId, new Assignment(assignment.weapon, objective, assignment.filter));
+        return true;
+    }
+
+    public static synchronized boolean reassign(UUID aircraftId,
+                                                 GuidedStrikeObjective objective) {
+        if (aircraftId == null || objective == null) return false;
+        Assignment assignment = ASSIGNMENTS.get(aircraftId);
+        if (assignment == null) return false;
+        ASSIGNMENTS.put(aircraftId, new Assignment(assignment.weapon, objective, assignment.filter));
+        return true;
+    }
+
+    public static synchronized boolean adopt(World world, UUID aircraftId, UUID projectileId,
+                                              GuidedStrikeObjective objective) {
+        if (world == null || aircraftId == null || projectileId == null || objective == null) {
+            return false;
+        }
+        for (Entity entity : world.loadedEntityList) {
+            if (!(entity instanceof MCH_EntityBaseBullet)
+                    || !projectileId.equals(entity.getUniqueID())) continue;
+            MCH_EntityBaseBullet missile = (MCH_EntityBaseBullet) entity;
+            Entity shooter = missile.shootingAircraft == null
+                    ? missile.shootingEntity : missile.shootingAircraft;
+            if (shooter == null || !aircraftId.equals(shooter.getUniqueID())
+                    || !matchesNative(missile)) return false;
+            String weapon = missile.getInfo() == null ? "" : missile.getInfo().name;
+            if (weapon.isEmpty() || ASSIGNMENTS.containsKey(aircraftId)) return false;
+            Assignment assignment = new Assignment(weapon, objective);
+            ASSIGNMENTS.put(aircraftId, assignment);
+            projectileMission(missile, shooter, assignment);
+            return true;
+        }
+        return false;
+    }
+
+    public static synchronized List<WeaponTelemetry> telemetry(World world, UUID aircraftId) {
+        List<WeaponTelemetry> result = new ArrayList<WeaponTelemetry>();
+        if (world == null || aircraftId == null) return result;
+        Assignment assignment = ASSIGNMENTS.get(aircraftId);
+        for (Entity entity : world.loadedEntityList) {
+            if (!(entity instanceof MCH_EntityBaseBullet)) continue;
+            MCH_EntityBaseBullet missile = (MCH_EntityBaseBullet) entity;
+            if (!aircraftId.equals(shooterId(missile)) || !matchesNative(missile)) continue;
+            ProjectileGuidanceMission projectile = PROJECTILES.get(missile.getUniqueID());
+            String state = projectile == null ? "NATIVE" : projectile.getState().name();
+            String weapon = missile.getInfo() == null ? "" : missile.getInfo().name;
+            String objective = assignment == null ? "" :
+                    assignment.objective.getObjectiveId().toString();
+            result.add(new WeaponTelemetry(weapon, state, missile.getUniqueID(),
+                    missile.posX, missile.posY, missile.posZ, objective));
+            if (result.size() >= 32) break;
+        }
+        return result;
+    }
+
+    private static boolean matchesNative(MCH_EntityBaseBullet missile) {
+        return missile instanceof MCH_EntityASMissile
+                || missile instanceof MCH_EntityTvMissile
+                || (missile.getInfo() != null
+                && ("aamissile".equalsIgnoreCase(missile.getInfo().type)
+                || "atmissile".equalsIgnoreCase(missile.getInfo().type)));
     }
 
     public static void tick(World world) {
@@ -373,5 +445,31 @@ public final class MissileGuidanceController {
         private Assignment(String weapon, GuidedStrikeObjective objective, GuidedTargetFilter filter) {
             this.weapon = weapon; this.objective = objective; this.filter = filter;
         }
+    }
+
+    public static final class WeaponTelemetry {
+            private final String weapon;
+            private final String state;
+            private final UUID projectileId;
+            private final double x;
+            private final double y;
+            private final double z;
+            private final String objectiveId;
+
+        private WeaponTelemetry(String weapon, String state, UUID projectileId,
+                                double x, double y, double z, String objectiveId) {
+                this.weapon = weapon == null ? "" : weapon;
+                this.state = state == null ? "UNKNOWN" : state;
+                this.projectileId = projectileId;
+                this.x = x; this.y = y; this.z = z;
+                this.objectiveId = objectiveId == null ? "" : objectiveId;
+            }
+        public String getWeapon() { return weapon; }
+        public String getState() { return state; }
+        public UUID getProjectileId() { return projectileId; }
+        public double getX() { return x; }
+        public double getY() { return y; }
+        public double getZ() { return z; }
+        public String getObjectiveId() { return objectiveId; }
     }
 }

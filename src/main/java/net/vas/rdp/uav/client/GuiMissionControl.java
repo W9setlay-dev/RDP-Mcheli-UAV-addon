@@ -35,6 +35,9 @@ public final class GuiMissionControl extends GuiScreen {
     private boolean uavMode;
     private boolean guidedMode;
     private String guidanceSummary = "No controlled aircraft";
+    private String[] guidedWeaponRows = new String[0];
+    private String[] guidedWeaponNames = new String[0];
+    private int selectedGuidedWeapon;
     private String lastMode = "";
     private boolean swarmParticipation = true;
     private boolean swarmAllowDuplicates;
@@ -43,11 +46,29 @@ public final class GuiMissionControl extends GuiScreen {
     public GuiMissionControl() { active = this; }
 
     public static void receiveMissionData(String[] rows, String[] ids) {
+        receiveMissionData(rows, ids, new String[0], new String[0]);
+    }
+
+    public static void receiveMissionData(String[] rows, String[] ids,
+                                          String[] weaponRows, String[] weaponNames) {
         if (active == null) return;
         String selectedId = selectedMissionId();
         active.missionRows = rows == null ? new String[0] : rows;
         active.missionIds = ids == null ? new String[0] : ids;
         active.selected = -1;
+        active.guidedWeaponRows = weaponRows == null ? new String[0] : weaponRows;
+        if (weaponNames == null) {
+            active.guidedWeaponNames = new String[0];
+        } else {
+            List<String> names = new ArrayList<String>();
+            for (String name : weaponNames) {
+                if (name != null && !name.trim().isEmpty()) names.add(name);
+            }
+            active.guidedWeaponNames = names.toArray(new String[names.size()]);
+        }
+        if (active.selectedGuidedWeapon >= active.guidedWeaponNames.length) {
+            active.selectedGuidedWeapon = 0;
+        }
         for (int i = 0; i < active.missionIds.length; i++) {
             if (selectedId != null && selectedId.equals(active.missionIds[i])) {
                 active.selected = i;
@@ -176,6 +197,12 @@ public final class GuiMissionControl extends GuiScreen {
                     "Area [" + RdpUavClientKeys.areaLockKey() + "]"));
             buttonList.add(new GuiButton(13, left, height - 80, 100, 20, "Take player control"));
             buttonList.add(new GuiButton(14, left + 105, height - 80, 100, 20, "Weapon details"));
+            buttonList.add(new GuiButton(23, right, height - 106, 220, 20,
+                    guidedWeaponButtonLabel()));
+            buttonList.add(new GuiButton(24, right, height - 132, 220, 20,
+                    "Adopt launched missile"));
+            buttonList.add(new GuiButton(25, right, height - 158, 220, 20,
+                    "Reassign to crosshair"));
         }
         buttonList.add(new GuiButton(12, right, 64, 220, 20, filterLabel()));
         for (int i = 0, shown = 0; i < missionRows.length && shown < 11; i++) {
@@ -281,6 +308,25 @@ public final class GuiMissionControl extends GuiScreen {
         else if (button.id == 20) { targetPriority = (targetPriority + 1) % 4; rebuildButtons(); }
         else if (button.id == 21) assignSwarmCrosshair();
         else if (button.id == 22) releaseSwarmTarget();
+        else if (button.id == 23) {
+            if (guidedWeaponNames.length > 0) {
+                selectedGuidedWeapon = (selectedGuidedWeapon + 1) % guidedWeaponNames.length;
+                status = "Selected guided weapon: " + guidedWeaponNames[selectedGuidedWeapon];
+                rebuildButtons();
+            }
+        } else if (button.id == 24) {
+            RdpUavNetwork.adoptLaunchedProjectile();
+            status = "AI adoption requested for the selected controlled-aircraft missile.";
+        } else if (button.id == 25) {
+            String missionId = selectedMissionId();
+            RayTraceResult hit = mc.objectMouseOver;
+            if (missionId == null || hit == null || hit.entityHit == null) {
+                status = "Select a guided mission and aim at an entity.";
+            } else {
+                RdpUavNetwork.reassignGuidedMission(missionId, hit.entityHit.getUniqueID());
+                status = "Guided reassignment requested for " + hit.entityHit.getName() + ".";
+            }
+        }
         else if (button.id == 12) {
             filterMode = (filterMode + 1) % 3;
             rebuildButtons();
@@ -318,7 +364,8 @@ public final class GuiMissionControl extends GuiScreen {
             return;
         }
 
-        RdpUavNetwork.createMission(target, attack, targetPriority);
+        RdpUavNetwork.createMission(target, attack, targetPriority,
+                selectedGuidedWeaponName());
         status = attack ? "Autonomous attack submitted; WingMan arms after target lock."
                 : "Recon mission submitted.";
     }
@@ -376,8 +423,18 @@ public final class GuiMissionControl extends GuiScreen {
             status = "Square format: centerX centerY centerZ [size].";
             return;
         }
-        RdpUavNetwork.createSquareStrike(parameters);
+        RdpUavNetwork.createSquareStrike(parameters, selectedGuidedWeaponName());
         status = "Autonomous square strike submitted to WingMan.";
+    }
+
+    private String selectedGuidedWeaponName() {
+        return selectedGuidedWeapon >= 0 && selectedGuidedWeapon < guidedWeaponNames.length
+                ? guidedWeaponNames[selectedGuidedWeapon] : "";
+    }
+
+    private String guidedWeaponButtonLabel() {
+        return guidedWeaponNames.length == 0 ? "Weapon: none supported"
+                : "Weapon: " + guidedWeaponNames[selectedGuidedWeapon];
     }
 
     protected void keyTyped(char typedChar, int keyCode) throws IOException {
@@ -424,6 +481,12 @@ public final class GuiMissionControl extends GuiScreen {
                     left, 80, 0x88FFAA);
             if (guidedMode) drawString(fontRenderer, "PAYLOAD: " + guidanceSummary,
                     right, 80, 0x88FFAA);
+            if (guidedWeaponRows.length > 0) {
+                drawString(fontRenderer, "GUIDED WEAPONS / PROJECTILES", right, 96, 0xB0D8FF);
+                for (int i = 0; i < guidedWeaponRows.length && i < 6; i++) {
+                    drawString(fontRenderer, guidedWeaponRows[i], right, 109 + i * 12, 0xFFFFFF);
+                }
+            }
             drawMissions(left, right);
         }
         super.drawScreen(mouseX, mouseY, partialTicks);

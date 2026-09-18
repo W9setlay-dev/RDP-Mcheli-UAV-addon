@@ -174,7 +174,7 @@ public final class MissionLifecycle {
                 objective.beginTracking();
                 GuidedWeaponDecision guided = guidedWeapons.arm(world, aircraft, objective,
                         aircraftSpeed(aircraft), profile(aircraft).getAttackEnvelope(), true,
-                        profile(aircraft).getAttackWeaponPriority());
+                        weaponPriority(mission, aircraft));
                 if (!guided.isAccepted()) {
                     if (isPermanentGuidanceFailure(guided.getReason())) {
                         fail(world, mission, guided.getReason(), tick);
@@ -584,10 +584,10 @@ public final class MissionLifecycle {
                     GuidedWeaponDecision guided = directReusableLaunch
                             ? guidedWeapons.armDirect(world, aircraft, guidedObjective,
                             aircraftSpeed(aircraft), profile(aircraft).getAttackEnvelope(), true,
-                            profile(aircraft).getAttackWeaponPriority())
+                            weaponPriority(mission, aircraft))
                             : guidedWeapons.arm(world, aircraft, guidedObjective,
                             aircraftSpeed(aircraft), profile(aircraft).getAttackEnvelope(), true,
-                            profile(aircraft).getAttackWeaponPriority());
+                            weaponPriority(mission, aircraft));
                     if (guided.isAccepted()) {
                         guidedObjective.release();
                         mission.transitionTo(MissionState.ATTACK_TARGET, tick);
@@ -618,7 +618,7 @@ public final class MissionLifecycle {
                     }
                     if (!flight.armAttack(aircraft, target.x, target.y, target.z,
                             profile(aircraft).getAttackEnvelope(), mission.getTargetId(),
-                            profile(aircraft).getAttackWeaponPriority())) {
+                            weaponPriority(mission, aircraft))) {
                         defer(world, mission, "WINGMAN_ATTACK_ARM_REJECTED",
                                 MissionState.EXECUTION_STALLED, tick);
                     } else {
@@ -1076,6 +1076,14 @@ public final class MissionLifecycle {
                 != net.vas.rdp.uav.profile.UavExecutionProfile.ONE_WAY;
     }
 
+    private String weaponPriority(RDPMission mission, MCH_EntityAircraft aircraft) {
+        if (mission != null && mission.getGuidedWeapon() != null
+                && !mission.getGuidedWeapon().trim().isEmpty()) {
+            return mission.getGuidedWeapon();
+        }
+        return profile(aircraft).getAttackWeaponPriority();
+    }
+
     private void launchDirectWeapon(World world, RDPMission mission,
                                     MCH_EntityAircraft aircraft, Target target, long tick) {
         GuidedStrikeObjective objective = target.entity == null
@@ -1088,7 +1096,7 @@ public final class MissionLifecycle {
         objective.beginTracking();
         GuidedWeaponDecision decision = guidedWeapons.arm(world, aircraft, objective,
                 aircraftSpeed(aircraft), profile(aircraft).getAttackEnvelope(), true,
-                profile(aircraft).getAttackWeaponPriority());
+                weaponPriority(mission, aircraft));
         if (!decision.isAccepted()) {
             RdpUavDebug.debug("Lifecycle",
                     "mission {} direct guided launch decision={} aircraft={} target={}",

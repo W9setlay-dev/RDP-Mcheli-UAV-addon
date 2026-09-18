@@ -32,6 +32,7 @@ public final class RDPMission {
     private String recoveryPolicy = "RETURN_TO_BASE";
     private boolean destructiveAuthorized;
     private boolean paused;
+    private String guidedWeapon;
     private int recoveryAttempts;
     private String recoveryReason;
     private static final int MAX_RECOVERY_ATTEMPTS = 5;
@@ -89,6 +90,11 @@ public final class RDPMission {
     public void setDestructiveAuthorized(boolean value) { destructiveAuthorized = value; }
     public boolean isPaused() { return paused; }
     public void setPaused(boolean paused) { this.paused = paused; }
+    public String getGuidedWeapon() { return guidedWeapon; }
+    public void setGuidedWeapon(String guidedWeapon) {
+        this.guidedWeapon = guidedWeapon == null || guidedWeapon.trim().isEmpty()
+                ? null : guidedWeapon.trim();
+    }
 
     public void lockTarget(UUID targetId, long tick) {
         if (targetId == null) {

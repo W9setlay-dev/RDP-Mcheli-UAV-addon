@@ -400,6 +400,18 @@ gravity, collision, fuse, damage, and impact behavior. Unsupported runtime
 or objective combinations are rejected explicitly, and temporary blocked or
 unloaded routes remain recoverable rather than becoming immediate failures.
 
+Mission Control exposes every supported guided weapon mounted on the currently
+controlled aircraft, including native type, guidance family, and ammunition.
+Selecting a weapon sends that exact definition to the server; it is validated
+against the live McHeli weapon set and is never silently replaced by another
+weapon. Mission rows include the selected weapon and objective coordinates,
+while the guided-weapon panel reports active projectile state and altitude.
+The crosshair reassignment action updates an active AI assignment, and
+`Adopt launched missile` can hand a compatible already-fired missile to AI
+guidance only when its shooter is the player's currently controlled aircraft.
+Adoption and reassignment preserve McHeli projectile motion, collision, fuse,
+and detonation ownership.
+
 ## Square strike constraint boundary
 
 `SquareArea` is the authoritative bounded geometry for area missions; it
