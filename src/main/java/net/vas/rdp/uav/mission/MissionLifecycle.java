@@ -179,7 +179,8 @@ public final class MissionLifecycle {
                     if (isPermanentGuidanceFailure(guided.getReason())) {
                         fail(world, mission, guided.getReason(), tick);
                     } else {
-                        defer(world, mission, guided.getReason(), MissionState.REPLAN, tick);
+                        defer(world, mission, guided.getReason(),
+                                guidanceRecoveryState(guided.getReason()), tick);
                     }
                     return;
                 }
@@ -598,12 +599,17 @@ public final class MissionLifecycle {
                                 "mission {} guided attack decision={} aircraft={} target={}",
                                 mission.getMissionId(), guided.getReason(), aircraft.getUniqueID(),
                                 formatTarget(target));
-                        if (guided.getReason().startsWith("GUIDED_HOLD_")) return false;
+                        if (guided.getReason().startsWith("GUIDED_HOLD_")) {
+                            defer(world, mission, guided.getReason(),
+                                    guidanceRecoveryState(guided.getReason()), tick);
+                            return true;
+                        }
                         if (isPermanentGuidanceFailure(guided.getReason())) {
                             fail(world, mission, guided.getReason(), tick);
                             return true;
                         }
-                        defer(world, mission, guided.getReason(), MissionState.REPLAN, tick);
+                        defer(world, mission, guided.getReason(),
+                                guidanceRecoveryState(guided.getReason()), tick);
                         return true;
                     }
                     if (profile(aircraft).isReusable()
@@ -1105,7 +1111,8 @@ public final class MissionLifecycle {
             if (isPermanentGuidanceFailure(decision.getReason())) {
                 fail(world, mission, decision.getReason(), tick);
             } else if (!decision.getReason().startsWith("GUIDED_HOLD_")) {
-                defer(world, mission, decision.getReason(), MissionState.REPLAN, tick);
+                defer(world, mission, decision.getReason(),
+                        guidanceRecoveryState(decision.getReason()), tick);
             }
             return;
         }
@@ -1152,6 +1159,14 @@ public final class MissionLifecycle {
                 ? String.format(java.util.Locale.ROOT, "point(%.1f,%.1f,%.1f)",
                 target.x, target.y, target.z)
                 : target.entity.getUniqueID() + "/" + EntityList.getKey(target.entity);
+    }
+
+    private MissionState guidanceRecoveryState(String reason) {
+        if ("GUIDED_HOLD_CHUNK_UNLOADED".equals(reason)
+                || "GUIDED_REJECT_DIMENSION".equals(reason)) {
+            return MissionState.WAITING_FOR_WORLD;
+        }
+        return MissionState.REPLAN;
     }
 
     private String describeWingman(WingmanEntry entry) {
