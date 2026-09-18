@@ -608,14 +608,12 @@ public final class MissionLifecycle {
                     }
                     if (profile(aircraft).isReusable()
                             && mission.getMissionType() == MissionType.SQUARE_STRIKE) {
-                        defer(world, mission, "REUSABLE_UAV_GUIDED_WEAPON_REQUIRED",
-                                MissionState.REPLAN, tick);
+                        fail(world, mission, "REUSABLE_UAV_GUIDED_WEAPON_REQUIRED", tick);
                         return true;
                     }
                     if (!profile(aircraft).isReusable()
                             && mission.getMissionType() == MissionType.SQUARE_STRIKE) {
-                        defer(world, mission, "ONE_WAY_SQUARE_TERMINAL_PAYLOAD_REQUIRED",
-                                MissionState.REPLAN, tick);
+                        fail(world, mission, "ONE_WAY_SQUARE_TERMINAL_PAYLOAD_REQUIRED", tick);
                         return true;
                     }
                     if (!flight.armAttack(aircraft, target.x, target.y, target.z,
@@ -1026,7 +1024,7 @@ public final class MissionLifecycle {
                 + aircraft.motionY * aircraft.motionY + aircraft.motionZ * aircraft.motionZ);
     }
 
-    private boolean isPermanentGuidanceFailure(String reason) {
+    static boolean isPermanentGuidanceFailure(String reason) {
         if (reason == null) return false;
         return "NO_GUIDED_WEAPON".equals(reason)
                 || "UNSUPPORTED_GUIDANCE".equals(reason)
@@ -1035,7 +1033,9 @@ public final class MissionLifecycle {
                 || "UNSUPPORTED_SEEKER_TARGET_ASSIGNMENT".equals(reason)
                 || "NATIVE_SEEKER_LAUNCH_REJECTED".equals(reason)
                 || "NATIVE_WINGMAN_REJECTED".equals(reason)
-                || "NO_AMMUNITION".equals(reason);
+                || "NO_AMMUNITION".equals(reason)
+                || "REUSABLE_UAV_GUIDED_WEAPON_REQUIRED".equals(reason)
+                || "ONE_WAY_SQUARE_TERMINAL_PAYLOAD_REQUIRED".equals(reason);
     }
 
     private UavVehicleProfile profile(MCH_EntityAircraft aircraft) {
@@ -1090,7 +1090,13 @@ public final class MissionLifecycle {
                 aircraftSpeed(aircraft), profile(aircraft).getAttackEnvelope(), true,
                 profile(aircraft).getAttackWeaponPriority());
         if (!decision.isAccepted()) {
-            if (!decision.getReason().startsWith("GUIDED_HOLD_")) {
+            RdpUavDebug.debug("Lifecycle",
+                    "mission {} direct guided launch decision={} aircraft={} target={}",
+                    mission.getMissionId(), decision.getReason(), aircraft.getUniqueID(),
+                    formatTarget(target));
+            if (isPermanentGuidanceFailure(decision.getReason())) {
+                fail(world, mission, decision.getReason(), tick);
+            } else if (!decision.getReason().startsWith("GUIDED_HOLD_")) {
                 defer(world, mission, decision.getReason(), MissionState.REPLAN, tick);
             }
             return;
