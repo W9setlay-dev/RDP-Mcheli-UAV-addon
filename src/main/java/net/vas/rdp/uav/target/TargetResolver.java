@@ -63,11 +63,7 @@ public final class TargetResolver {
             }
             if (matches) result.add(new EntityCandidate(entity, id, distance));
         }
-        Collections.sort(result, new Comparator<EntityCandidate>() {
-            public int compare(EntityCandidate left, EntityCandidate right) {
-                return Double.compare(left.distanceSquared, right.distanceSquared);
-            }
-        });
+        Collections.sort(result, Comparator.comparingDouble(left -> left.distanceSquared));
         return result;
     }
 

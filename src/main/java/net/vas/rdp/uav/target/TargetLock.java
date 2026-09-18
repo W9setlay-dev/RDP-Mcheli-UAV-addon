@@ -57,11 +57,6 @@ public final class TargetLock {
         this.confidence = Math.min(1.0D, confidence + 0.05D);
     }
 
-    public void markLost() {
-        validation = Validation.LOST;
-        confidence = Math.max(0.0D, confidence - 0.2D);
-    }
-
     public void markIdentityMismatch() {
         validation = Validation.IDENTITY_MISMATCH;
         confidence = 0.0D;

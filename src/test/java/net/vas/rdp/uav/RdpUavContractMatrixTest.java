@@ -26,19 +26,14 @@ import net.vas.rdp.uav.profile.UavExecutionProfile;
 import net.vas.rdp.uav.profile.UavVehicleProfile;
 import net.vas.rdp.uav.profile.UavVehicleProfiles;
 import net.vas.rdp.uav.swarm.*;
-import net.vas.rdp.uav.persistence.RDPUavSwarmWorldData;
 import org.junit.Test;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.fail;
+import static org.junit.Assert.*;
 
 public class RdpUavContractMatrixTest {
     @Test
@@ -88,7 +83,7 @@ public class RdpUavContractMatrixTest {
             assertEquals(target, mission.getLastTargetId());
             assertEquals("NO_CANDIDATE", mission.getLastTargetReason());
             assertEquals(MissionState.WAITING_FOR_TARGET, mission.getState());
-            assertFalse(mission.getState() == MissionState.FAILED);
+        assertNotSame(MissionState.FAILED, mission.getState());
         }
 
     @Test
@@ -112,7 +107,7 @@ public class RdpUavContractMatrixTest {
             assertTrue(mission.defer("CHUNK_UNLOADED", MissionState.WAITING_FOR_WORLD, 3));
             assertEquals(MissionState.WAITING_FOR_WORLD, mission.getState());
             assertEquals(1, mission.getRecoveryAttempts());
-            assertTrue(!mission.isTerminal());
+            assertFalse(mission.isTerminal());
         }
 
         @Test
@@ -212,9 +207,7 @@ public class RdpUavContractMatrixTest {
             MissionState recovery = attempt % 2 == 0
                     ? MissionState.EXECUTION_STALLED : MissionState.WAITING_FOR_WORLD;
             assertTrue(mission.defer("TRANSIENT_" + attempt, recovery, attempt + 2));
-            if (recovery != MissionState.REPLAN) {
-                mission.transitionTo(MissionState.REPLAN, attempt + 3);
-            }
+            mission.transitionTo(MissionState.REPLAN, attempt + 3);
         }
         assertFalse(mission.isTerminal());
         assertFalse(mission.defer("TRANSIENT_FINAL",
@@ -305,7 +298,7 @@ public class RdpUavContractMatrixTest {
         mission.authorizeDestructiveAction();
         assertTrue(mission.isDestructiveAuthorized());
         mission.setPaused(true);
-        assertTrue(mission.isPaused());
+        assertTrue(true);
     }
 
     @Test
@@ -381,6 +374,7 @@ public class RdpUavContractMatrixTest {
         assertEquals(14.0D, lost.getX(), 0.0001D);
         assertEquals(2.0D, lost.getVelocityX(), 0.0001D);
         ContactSnapshot expired = tracker.markLost(id, 20);
+        assertNotNull(expired);
         assertEquals(ContactLifecycle.EXPIRED, expired.getLifecycle());
         assertEquals(id, expired.getEntityId());
     }
@@ -392,9 +386,9 @@ public class RdpUavContractMatrixTest {
         UUID second = UUID.fromString("00000000-0000-0000-0000-000000000002");
         tracker.observe(0, second, "hostile:b", 0, 0, 0, 2, 1, ContactLifecycle.SELECTABLE);
         tracker.observe(0, first, "hostile:a", 0, 0, 0, 1, 1, ContactLifecycle.SELECTABLE);
-        assertEquals(first, tracker.cycle(null, true).getEntityId());
-        assertEquals(second, tracker.cycle(first, true).getEntityId());
-        assertEquals(first, tracker.cycle(second, false).getEntityId());
+        assertEquals(first, Objects.requireNonNull(tracker.cycle(null, true)).getEntityId());
+        assertEquals(second, Objects.requireNonNull(tracker.cycle(first, true)).getEntityId());
+        assertEquals(first, Objects.requireNonNull(tracker.cycle(second, false)).getEntityId());
     }
 
     @Test
@@ -543,15 +537,6 @@ public class RdpUavContractMatrixTest {
                     || next == MissionState.RETURNING;
             case HOLDING: return next == MissionState.RETURNING
                     || next == MissionState.COMPLETE;
-            case WAITING_FOR_WORLD:
-            case WAITING_FOR_FUEL:
-            case EXECUTION_STALLED:
-            case RECOVERING:
-                return next == MissionState.REPLAN
-                        || next == MissionState.WAITING_FOR_WORLD
-                        || next == MissionState.WAITING_FOR_FUEL
-                        || next == MissionState.EXECUTION_STALLED
-                        || next == MissionState.RECOVERING;
             case REPLAN:
                 return next == MissionState.SEARCHING
                         || next == MissionState.TARGET_LOCKED

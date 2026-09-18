@@ -20,7 +20,7 @@ public final class GuidedStrikeObjective {
     private GuidedStrikeObjective(UUID objectiveId, GuidedObjectiveType type, UUID contactId,
                                   int dimension, double x, double y, double z, long tick) {
         if (objectiveId == null || type == null || type == GuidedObjectiveType.ENTITY && contactId == null
-                || !finite(x) || !finite(y) || !finite(z)) {
+                || finite(x) || finite(y) || finite(z)) {
             throw new IllegalArgumentException("Invalid guided objective");
         }
         this.objectiveId = objectiveId;
@@ -52,7 +52,7 @@ public final class GuidedStrikeObjective {
         if (type == GuidedObjectiveType.ENTITY) state = GuidedObjectiveState.LOST;
     }
     public void updateContact(double x, double y, double z, long tick) {
-        if (type != GuidedObjectiveType.ENTITY || !finite(x) || !finite(y) || !finite(z)
+        if (type != GuidedObjectiveType.ENTITY || finite(x) || finite(y) || finite(z)
                 || tick < lastContactTick || state == GuidedObjectiveState.COMPLETE
                 || state == GuidedObjectiveState.ABORTED) {
             throw new IllegalArgumentException("Invalid contact update");
@@ -61,8 +61,8 @@ public final class GuidedStrikeObjective {
         if (state == GuidedObjectiveState.LOST) state = GuidedObjectiveState.TRACKING;
     }
     public void switchContact(UUID contactId, double x, double y, double z, long tick) {
-        if (type != GuidedObjectiveType.ENTITY || contactId == null || !finite(x) || !finite(y)
-                || !finite(z) || tick < lastContactTick || state == GuidedObjectiveState.COMPLETE
+        if (type != GuidedObjectiveType.ENTITY || contactId == null || finite(x) || finite(y)
+                || finite(z) || tick < lastContactTick || state == GuidedObjectiveState.COMPLETE
                 || state == GuidedObjectiveState.ABORTED) {
             throw new IllegalArgumentException("Invalid contact switch");
         }
@@ -76,7 +76,7 @@ public final class GuidedStrikeObjective {
         }
         state = next;
     }
-    private static boolean finite(double v) { return !Double.isNaN(v) && !Double.isInfinite(v); }
+    private static boolean finite(double v) { return Double.isNaN(v) || Double.isInfinite(v); }
     public UUID getObjectiveId() { return objectiveId; }
     public GuidedObjectiveType getType() { return type; }
     public UUID getContactId() { return contactId; }

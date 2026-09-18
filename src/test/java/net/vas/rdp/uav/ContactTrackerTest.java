@@ -5,6 +5,7 @@ import net.vas.rdp.uav.target.ContactSnapshot;
 import net.vas.rdp.uav.target.ContactTracker;
 import org.junit.Test;
 
+import java.util.Objects;
 import java.util.UUID;
 
 import static org.junit.Assert.*;
@@ -28,8 +29,8 @@ public class ContactTrackerTest {
         ContactTracker tracker = new ContactTracker(2);
         UUID id = UUID.randomUUID();
         tracker.observe(0, id, "minecraft:zombie", 0, 0, 0, 1, 1, ContactLifecycle.SELECTABLE);
-        assertEquals(ContactLifecycle.LOST, tracker.markLost(id, 2).getLifecycle());
-        assertEquals(ContactLifecycle.EXPIRED, tracker.markLost(id, 4).getLifecycle());
+        assertEquals(ContactLifecycle.LOST, Objects.requireNonNull(tracker.markLost(id, 2)).getLifecycle());
+        assertEquals(ContactLifecycle.EXPIRED, Objects.requireNonNull(tracker.markLost(id, 4)).getLifecycle());
         assertTrue(tracker.selectable().isEmpty());
     }
 }

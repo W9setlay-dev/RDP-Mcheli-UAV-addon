@@ -131,8 +131,6 @@ public final class GuiMissionControl extends GuiScreen {
         int left = width / 2 - 220;
         int right = width / 2 + 15;
         // Keep every action inside one of the two 205/220px content columns.
-        // The previous layout placed several buttons past the right panel and
-        // over the selected-mission heading.
         buttonList.add(new GuiButton(0, left, height - 28, 62, 20, "Refresh"));
         buttonList.add(new GuiButton(1, left + 67, height - 28, 62, 20, help ? "Dashboard" : "Help"));
         buttonList.add(new GuiButton(2, right, height - 28, 62, 20, "Close"));
@@ -228,14 +226,14 @@ public final class GuiMissionControl extends GuiScreen {
         if (row == null) return false;
         String normalized = row.toLowerCase(java.util.Locale.ROOT);
         String query = filterField == null ? "" : filterField.getText().trim().toLowerCase(java.util.Locale.ROOT);
-        if (!query.isEmpty() && normalized.indexOf(query) < 0) return false;
+        if (!query.isEmpty() && !normalized.contains(query)) return false;
         if (filterMode == 1) {
-            return normalized.indexOf("complete") < 0 && normalized.indexOf("aborted") < 0
-                    && normalized.indexOf("failed") < 0 && normalized.indexOf("detonated") < 0;
+            return !normalized.contains("complete") && !normalized.contains("aborted")
+                    && !normalized.contains("failed") && !normalized.contains("detonated");
         }
         if (filterMode == 2) {
-            return normalized.indexOf("failed") >= 0 || normalized.indexOf("lost") >= 0
-                    || normalized.indexOf("out") >= 0;
+            return normalized.contains("failed") || normalized.contains("lost")
+                    || normalized.contains("out");
         }
         return true;
     }
@@ -482,7 +480,7 @@ public final class GuiMissionControl extends GuiScreen {
             double distance = entity.getDistanceSq(mc.player.posX, mc.player.posY, mc.player.posZ);
             if (distance > 250000.0D) continue;
             result.add(String.format(java.util.Locale.ROOT, "%s  [%s]  %.1fm",
-                    id.toString(), classification, Math.sqrt(distance)));
+                    id, classification, Math.sqrt(distance)));
         }
         Collections.sort(result);
         return result;

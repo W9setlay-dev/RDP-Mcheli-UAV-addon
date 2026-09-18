@@ -15,9 +15,9 @@ import org.junit.Test;
 
 import java.util.EnumSet;
 import java.util.UUID;
+import java.util.Collections;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.*;
 
 public class GuidedWeaponTest {
     @Test
@@ -52,7 +52,7 @@ public class GuidedWeaponTest {
                 GuidedNativeBehavior.ENTITY_SEEKER, EnumSet.of(GuidedObjectiveType.ENTITY),
                 new GuidedTerminalProfile(0, true));
         assertTrue(capability.supports(GuidedObjectiveType.ENTITY));
-        assertTrue(!capability.supports(GuidedObjectiveType.SQUARE));
+        assertFalse(capability.supports(GuidedObjectiveType.SQUARE));
     }
 
     @Test
@@ -65,7 +65,7 @@ public class GuidedWeaponTest {
         GuidedWeaponCapability resolved = GuidedWeaponRegistry.find("meteor", "aamissile");
         Assert.assertNotNull(resolved);
         assertTrue(resolved.supports(GuidedObjectiveType.ENTITY));
-        assertTrue(!resolved.supports(GuidedObjectiveType.SQUARE));
+        assertFalse(resolved.supports(GuidedObjectiveType.SQUARE));
         GuidedWeaponRegistry.clear();
     }
 
@@ -181,5 +181,130 @@ public class GuidedWeaponTest {
         projectile.obstacleUnavailable();
         assertEquals(ProjectileGuidanceState.OBSTACLE_UNAVAILABLE, projectile.getState());
         assertEquals("NATIVE_AVOIDANCE_UNAVAILABLE", projectile.getReason());
+    }
+
+    @Test
+    public void nativeBehaviorMatrixExposesAllSupportedFamilies() {
+        assertTrue(GuidedNativeContract.supportsAiGuidance(GuidedNativeBehavior.ENTITY_SEEKER));
+        assertTrue(GuidedNativeContract.supportsAiGuidance(
+                GuidedNativeBehavior.COORDINATE_BALLISTIC));
+        assertTrue(GuidedNativeContract.supportsAiGuidance(
+                GuidedNativeBehavior.COORDINATE_TV_LASER));
+        assertFalse(GuidedNativeContract.supportsAiGuidance(GuidedNativeBehavior.UNSUPPORTED));
+    }
+
+    @Test
+    public void unsupportedCapabilityCannotAuthorizeAnyObjective() {
+        GuidedWeaponCapability capability = new GuidedWeaponCapability("unknown", "unknown",
+                GuidedNativeBehavior.UNSUPPORTED, EnumSet.of(GuidedObjectiveType.ENTITY,
+                GuidedObjectiveType.SQUARE), new GuidedTerminalProfile(0, true));
+        assertFalse(capability.supports(GuidedObjectiveType.ENTITY));
+        assertFalse(capability.supports(GuidedObjectiveType.SQUARE));
+    }
+
+    @Test
+    public void capabilityObjectiveSetIsImmutable() {
+        GuidedWeaponCapability capability = new GuidedWeaponCapability("tv", "tvmissile",
+                GuidedNativeBehavior.COORDINATE_TV_LASER,
+                EnumSet.of(GuidedObjectiveType.ENTITY, GuidedObjectiveType.SQUARE),
+                new GuidedTerminalProfile(100, true));
+        try {
+            capability.getObjectives().add(GuidedObjectiveType.ENTITY);
+            Assert.fail("Capability objective set must be immutable");
+        } catch (UnsupportedOperationException expected) {
+            // Contract verified.
+        }
+    }
+
+    @Test
+    public void registryNativeTypeFallbackDoesNotMatchUnknownType() {
+        GuidedWeaponRegistry.clear();
+        GuidedWeaponCapability capability = new GuidedWeaponCapability("asmissile", "asmissile",
+                GuidedNativeBehavior.COORDINATE_BALLISTIC,
+                Collections.singleton(GuidedObjectiveType.SQUARE),
+                new GuidedTerminalProfile(0, true));
+        GuidedWeaponRegistry.register(capability);
+        assertEquals(capability, GuidedWeaponRegistry.find("custom-definition", "asmissile"));
+        assertNull(GuidedWeaponRegistry.find("custom-definition", "unsupported"));
+        GuidedWeaponRegistry.clear();
+    }
+
+    @Test
+    public void terminalProfileRejectsInvalidSpeedAndAltitudeEnvelope() {
+        try {
+            new GuidedTerminalProfile(-1, true);
+            Assert.fail("Negative speed must be rejected");
+        } catch (IllegalArgumentException expected) {
+            // Contract verified.
+        }
+        try {
+            new GuidedTerminalProfile(0, true, 100, 99);
+            Assert.fail("Inverted altitude envelope must be rejected");
+        } catch (IllegalArgumentException expected) {
+            // Contract verified.
+        }
+    }
+
+    @Test
+    public void entityObjectiveRejectsInvalidContactUpdates() {
+        GuidedStrikeObjective objective = GuidedStrikeObjective.entity(UUID.randomUUID(),
+                UUID.randomUUID(), 0, 1, 2, 3, 10);
+        objective.authorize();
+        objective.beginTracking();
+        try {
+            objective.updateContact(4, 5, 6, 9);
+            Assert.fail("Contact time cannot move backwards");
+        } catch (IllegalArgumentException expected) {
+            // Contract verified.
+        }
+        try {
+            objective.updateContact(Double.NaN, 5, 6, 11);
+            Assert.fail("Non-finite contact coordinates must be rejected");
+        } catch (IllegalArgumentException expected) {
+            // Contract verified.
+        }
+    }
+
+    @Test
+    public void objectiveTerminalStateRejectsFurtherTransitions() {
+        GuidedStrikeObjective objective = GuidedStrikeObjective.square(UUID.randomUUID(), 0,
+                1, 2, 3, 0);
+        objective.authorize();
+        objective.complete();
+        assertEquals(GuidedObjectiveState.COMPLETE, objective.getState());
+        try {
+            objective.beginTracking();
+            Assert.fail("Completed objective must remain terminal");
+        } catch (IllegalStateException expected) {
+            // Contract verified.
+        }
+    }
+
+    @Test
+    public void projectileTerminalStatesAreIdempotentAndIrreversible() {
+        GuidedStrikeObjective objective = GuidedStrikeObjective.square(UUID.randomUUID(), 0,
+                1, 2, 3, 0);
+        ProjectileGuidanceMission projectile = new ProjectileGuidanceMission(
+                UUID.randomUUID(), UUID.randomUUID(), "tvmissile",
+                GuidedNativeBehavior.COORDINATE_TV_LASER, objective);
+        projectile.abort();
+        projectile.impacted();
+        projectile.timeout();
+        assertEquals(ProjectileGuidanceState.ABORTED, projectile.getState());
+        assertEquals("ABORTED", projectile.getReason());
+    }
+
+    @Test
+    public void projectileTimeoutIsTerminalAndCannotBeReactivated() {
+        GuidedStrikeObjective objective = GuidedStrikeObjective.square(UUID.randomUUID(), 0,
+                1, 2, 3, 0);
+        ProjectileGuidanceMission projectile = new ProjectileGuidanceMission(
+                UUID.randomUUID(), UUID.randomUUID(), "asmissile",
+                GuidedNativeBehavior.COORDINATE_BALLISTIC, objective);
+        projectile.nativeGuidanceActive();
+        projectile.timeout();
+        projectile.nativeGuidanceActive();
+        assertEquals(ProjectileGuidanceState.TIMED_OUT, projectile.getState());
+        assertEquals("PROJECTILE_TIMEOUT", projectile.getReason());
     }
 }

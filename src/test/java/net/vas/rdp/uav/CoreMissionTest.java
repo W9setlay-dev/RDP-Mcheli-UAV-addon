@@ -71,7 +71,7 @@ public final class CoreMissionTest {
         check("critical".equals(selected), "automatic selection respects priority");
         selected = acquisition.acquire(
                 TargetSpec.manual("srparasites:rupter", TargetPriority.HIGH),
-                java.util.Arrays.<TargetSelector.Candidate<String>>asList(
+                java.util.Arrays.asList(
                         candidate("srparasites:beckon", 1, TargetPriority.CRITICAL, "wrong")));
         check(selected == null, "manual selection never substitutes a target");
 

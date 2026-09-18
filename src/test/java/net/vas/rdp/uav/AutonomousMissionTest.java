@@ -24,12 +24,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.Assert.*;
 
 /**
  * Contract tests for the operator-facing autonomous mission workflows.
@@ -88,7 +83,7 @@ public class AutonomousMissionTest {
         assertEquals(AiDecision.Kind.REQUEST_APPROVAL, decision.getKind());
         assertEquals(FlightIntent.APPROACH, decision.getIntent());
         assertNotNull(decision.getReason());
-        assertFalse(decision.getKind() == AiDecision.Kind.RECOMMEND);
+        assertNotSame(AiDecision.Kind.RECOMMEND, decision.getKind());
     }
 
     @Test
@@ -262,14 +257,14 @@ public class AutonomousMissionTest {
         TargetSelector<String> selector = new TargetSelector<String>();
         String selected = selector.select(TargetSpec.hostile(TargetPriority.HIGH),
                 Arrays.asList(
-                        candidate("minecraft:zombie", "zombie", TargetPriority.HIGH, 100.0D),
-                        candidate("bandit:heavy_guard", "guard", TargetPriority.HIGH, 10.0D)));
+                        candidate("minecraft:zombie", "zombie", 100.0D),
+                        candidate("bandit:heavy_guard", "guard", 10.0D)));
         assertEquals("guard", selected);
     }
 
     @Test
     public void targetSelectorDoesNotSubstituteWhenManualTargetIsMissing() {
-        TargetSelector<String> selector = new TargetSelector<String>();
+        TargetSelector<String> selector = new TargetSelector<>();
         String selected = selector.select(TargetSpec.manual("hostile:target", TargetPriority.HIGH),
                 Arrays.asList(candidate("hostile:other", "wrong")));
         assertNull(selected);
@@ -303,17 +298,16 @@ public class AutonomousMissionTest {
     }
 
     private static TargetSelector.Candidate<String> candidate(final String id, final String value) {
-        return candidate(id, value, TargetPriority.HIGH, 1.0D);
+        return candidate(id, value, 1.0D);
     }
 
     private static TargetSelector.Candidate<String> candidate(final String id, final String value,
-                                                            final TargetPriority priority,
-                                                            final double distanceSquared) {
+                                                              final double distanceSquared) {
         return new TargetSelector.Candidate<String>() {
             public String getRegistryId() { return id; }
             public double getDistanceSquared() { return distanceSquared; }
             public boolean isValid() { return true; }
-            public TargetPriority getPriority() { return priority; }
+            public TargetPriority getPriority() { return TargetPriority.HIGH; }
             public String getValue() { return value; }
         };
     }
