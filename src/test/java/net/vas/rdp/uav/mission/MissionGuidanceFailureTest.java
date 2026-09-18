@@ -1,7 +1,12 @@
 package net.vas.rdp.uav.mission;
 
+import net.vas.rdp.uav.target.TargetPriority;
+import net.vas.rdp.uav.target.TargetSpec;
 import org.junit.Test;
 
+import java.util.UUID;
+
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
@@ -56,5 +61,42 @@ public class MissionGuidanceFailureTest {
             assertFalse("Expected recoverable reason: " + reason,
                     MissionLifecycle.isPermanentGuidanceFailure(reason));
         }
+    }
+
+    @Test
+    public void permanentCompatibilityFailureIsTerminalFromPlannedOrReplan() {
+        RDPMission planned = mission();
+        planned.fail("UNSUPPORTED_OBJECTIVE_COMBINATION", 1);
+        assertEquals(MissionState.FAILED, planned.getState());
+        assertTrue(planned.isTerminal());
+
+        RDPMission replanning = mission();
+        replanning.transitionTo(MissionState.WAITING_FOR_WORLD, 1);
+        replanning.transitionTo(MissionState.REPLAN, 2);
+        replanning.fail("UNSUPPORTED_OBJECTIVE_COMBINATION", 3);
+        assertEquals(MissionState.FAILED, replanning.getState());
+        assertTrue(replanning.isTerminal());
+        assertFalse(replanning.getState() == MissionState.REPLAN);
+    }
+
+    @Test
+    public void failedMissionCannotBeResurrected() {
+        RDPMission mission = mission();
+        mission.fail("UNSUPPORTED_OBJECTIVE_COMBINATION", 1);
+        try {
+            mission.transitionTo(MissionState.REPLAN, 2);
+            org.junit.Assert.fail("FAILED mission must reject transitions");
+        } catch (IllegalStateException expected) {
+            assertEquals(MissionState.FAILED, mission.getState());
+        }
+        mission.fail("UNSUPPORTED_OBJECTIVE_COMBINATION", 3);
+        assertEquals(MissionState.FAILED, mission.getState());
+    }
+
+    private static RDPMission mission() {
+        return new RDPMission(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
+                "switchblade", MissionType.STRIKE,
+                TargetSpec.point(0, 80, 0, TargetPriority.HIGH),
+                true, false, false, 64, 32, 0);
     }
 }

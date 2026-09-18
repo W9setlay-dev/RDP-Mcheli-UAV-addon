@@ -663,7 +663,7 @@ public final class MissionLifecycle {
                             return true;
                         }
 
-                        mission.fail("ONE_WAY_SQUARE_TERMINAL_PAYLOAD_UNAVAILABLE", tick);
+                        fail(world, mission, "ONE_WAY_SQUARE_TERMINAL_PAYLOAD_UNAVAILABLE", tick);
                         return true;
                     }
                     mission.transitionTo(MissionState.APPROACHING, tick);
@@ -1125,10 +1125,18 @@ public final class MissionLifecycle {
 
     private void fail(World world, RDPMission mission, String reason, long tick) {
         if (!terminal(mission.getState())) {
-            LOGGER.warn("Mission {} FAILED reason={} state={} aircraft={} dimension={} tick={} age={}",
-                    mission.getMissionId(), reason, mission.getState(), mission.getAircraftId(),
-                    mission.getDimension(), tick, Math.max(0L, tick - mission.getCreatedTick()));
+            MissionState previousState = mission.getState();
             mission.fail(reason, tick);
+            LOGGER.warn("Mission {} FAILED reason={} previousState={} newState={} aircraft={} dimension={} tick={} age={}",
+                    mission.getMissionId(), reason, previousState, mission.getState(),
+                    mission.getAircraftId(), mission.getDimension(), tick,
+                    Math.max(0L, tick - mission.getCreatedTick()));
+            RdpUavDebug.event("Lifecycle", "mission_failed",
+                    "mission", mission.getMissionId(),
+                    "previousState", previousState,
+                    "newState", mission.getState(),
+                    "reason", reason,
+                    "aircraft", mission.getAircraftId());
             MCH_EntityAircraft aircraft = findAircraft(world, mission.getAircraftId());
             if (aircraft != null) flight.release(aircraft);
             routeRefreshes.remove(mission.getAircraftId());

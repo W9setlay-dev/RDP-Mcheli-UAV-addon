@@ -345,6 +345,14 @@ public final class GuidedWeaponAdapter {
             return GuidedWeaponDecision.reject("UNSUPPORTED_GUIDANCE");
         }
         if (!capability.supports(objective.getType())) {
+            RdpUavDebug.event("Guidance", "compatibility_rejected",
+                    "weapon", weapon.getName(),
+                    "resolvedDefinition", capability.getDefinition(),
+                    "resolvedType", capability.getType(),
+                    "objective", objective.getType(),
+                    "behavior", capability.getBehavior(),
+                    "objectives", capability.getObjectives(),
+                    "reason", "UNSUPPORTED_OBJECTIVE_COMBINATION");
             return GuidedWeaponDecision.reject("UNSUPPORTED_OBJECTIVE_COMBINATION");
         }
         double limit = capability.getTerminalProfile().getMaximumAircraftSpeed();
