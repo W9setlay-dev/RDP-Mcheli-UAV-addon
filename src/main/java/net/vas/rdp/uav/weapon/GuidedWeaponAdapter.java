@@ -108,6 +108,17 @@ public final class GuidedWeaponAdapter {
                     "objective", objective.getType(), "reason", "UNSUPPORTED_GUIDANCE");
             return GuidedWeaponDecision.reject("UNSUPPORTED_GUIDANCE");
         }
+        RdpUavDebug.event("Guidance", "compatibility_evaluated",
+                "aircraft", aircraft.getUniqueID(),
+                "weapon", decision.getWeapon(),
+                "resolvedDefinition", capability.getDefinition(),
+                "resolvedType", capability.getType(),
+                "objective", objective.getType(),
+                "targetType", objective.getType(),
+                "target", objective.getX() + "," + objective.getY() + "," + objective.getZ(),
+                "behavior", capability.getBehavior(),
+                "objectives", capability.getObjectives(),
+                "supportsObjective", capability.supports(objective.getType()));
         if (!GuidedNativeContract.supportsAiGuidance(capability.getBehavior())) {
             RdpUavDebug.debug("Guidance", "aircraft={} weapon={} behavior={} decision=AI_UNSUPPORTED",
                     aircraft.getUniqueID(), decision.getWeapon(), capability.getBehavior());
