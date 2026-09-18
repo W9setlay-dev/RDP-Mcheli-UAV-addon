@@ -311,7 +311,7 @@ public final class RdpUavCommand extends CommandBase {
         }
         UUID aircraftId = aircraft.getUniqueID();
         if (RDPUavMod.missions().ensureAuthorized(aircraft, player)
-                || RDPUavMod.missions().canAssignAircraft(aircraftId, player.getUniqueID())) {
+                || RDPUavMod.missions().isAircraftUnavailable(aircraftId, player.getUniqueID())) {
             player.sendMessage(new TextComponentString(
                     "UAV is not authorized for this player or is already assigned."));
             return;
@@ -352,7 +352,7 @@ public final class RdpUavCommand extends CommandBase {
         MCH_EntityAircraft aircraft = UavControlAccess.findControlledAircraft(player);
         if (!UavControlAccess.isOperator(aircraft, player)
                 || RDPUavMod.missions().ensureAuthorized(aircraft, player)
-                || RDPUavMod.missions().canAssignAircraft(aircraft.getUniqueID(), player.getUniqueID())) {
+                || RDPUavMod.missions().isAircraftUnavailable(aircraft.getUniqueID(), player.getUniqueID())) {
             player.sendMessage(new TextComponentString(
                     "AI requires an authorized, available McHeli UAV under your control."));
             return;
@@ -407,7 +407,7 @@ public final class RdpUavCommand extends CommandBase {
         MCH_EntityAircraft aircraft = UavControlAccess.findControlledAircraft(player);
         if (!UavControlAccess.isOperator(aircraft, player)
                 || RDPUavMod.missions().ensureAuthorized(aircraft, player)
-                || RDPUavMod.missions().canAssignAircraft(aircraft.getUniqueID(), player.getUniqueID())) {
+                || RDPUavMod.missions().isAircraftUnavailable(aircraft.getUniqueID(), player.getUniqueID())) {
             player.sendMessage(new TextComponentString(
                     "You must pilot an authorized, available McHeli aircraft."));
             return;
@@ -457,7 +457,7 @@ public final class RdpUavCommand extends CommandBase {
         MCH_EntityAircraft aircraft = UavControlAccess.findControlledAircraft(player);
         if (!UavControlAccess.isOperator(aircraft, player)
                 || RDPUavMod.missions().ensureAuthorized(aircraft, player)
-                || RDPUavMod.missions().canAssignAircraft(aircraft.getUniqueID(), player.getUniqueID())) {
+                || RDPUavMod.missions().isAircraftUnavailable(aircraft.getUniqueID(), player.getUniqueID())) {
             player.sendMessage(new TextComponentString(
                     "You must pilot an authorized, available McHeli UAV."));
             return;

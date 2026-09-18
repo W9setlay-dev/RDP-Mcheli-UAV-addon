@@ -15,7 +15,11 @@ public final class MissionManager {
 
     public void registerAircraft(AircraftRecord record) { aircraft.register(record); }
     public AircraftRecord findAircraft(UUID aircraftId) { return aircraft.find(aircraftId); }
-    public boolean canAssignAircraft(UUID aircraftId, UUID ownerId) {
+    /**
+     * Returns whether the aircraft is unavailable to the requested owner.
+     * Callers use this as a rejection predicate before creating a mission.
+     */
+    public boolean isAircraftUnavailable(UUID aircraftId, UUID ownerId) {
         return !aircraft.canAssign(aircraftId, ownerId);
     }
 

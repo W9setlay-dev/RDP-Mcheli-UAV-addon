@@ -14,6 +14,7 @@ import java.util.Set;
 import java.util.List;
 import java.util.ArrayList;
 import net.vas.rdp.uav.RdpUavDebug;
+import org.jetbrains.annotations.NotNull;
 
 /**
  * Server-side objective handoff for missiles whose native implementations
@@ -405,26 +406,7 @@ public final class MissileGuidanceController {
         if (corridorClear(world, missile, x, y, z)) {
             return new AimPoint(x, y, z, false);
         }
-        double dx = x - missile.posX;
-        double dz = z - missile.posZ;
-        double horizontal = Math.sqrt(dx * dx + dz * dz);
-        if (horizontal < 0.001D) {
-            dx = 1.0D;
-            dz = 0.0D;
-            horizontal = 1.0D;
-        }
-        double leftX = -dz / horizontal;
-        double leftZ = dx / horizontal;
-        double[][] offsets = {
-                {leftX, 0.0D, leftZ},
-                {-leftX, 0.0D, -leftZ},
-                {0.0D, 1.0D, 0.0D},
-                {0.0D, -1.0D, 0.0D},
-                {leftX, 1.0D, leftZ},
-                {-leftX, 1.0D, -leftZ},
-                {leftX, -1.0D, leftZ},
-                {-leftX, -1.0D, -leftZ}
-        };
+        double[][] offsets = getOffsets(missile, x, z);
         AimPoint best = null;
         double bestScore = Double.MAX_VALUE;
         for (int i = 0; i < MAX_AVOIDANCE_CANDIDATES; i++) {
@@ -448,6 +430,30 @@ public final class MissileGuidanceController {
                     new AvoidancePlan(best.x, best.y, best.z, now + AVOIDANCE_PLAN_TICKS));
         }
         return best;
+    }
+
+    @NotNull
+    private static double[][] getOffsets(MCH_EntityBaseBullet missile, double x, double z) {
+        double dx = x - missile.posX;
+        double dz = z - missile.posZ;
+        double horizontal = Math.sqrt(dx * dx + dz * dz);
+        if (horizontal < 0.001D) {
+            dx = 1.0D;
+            dz = 0.0D;
+            horizontal = 1.0D;
+        }
+        double leftX = -dz / horizontal;
+        double leftZ = dx / horizontal;
+        return new double[][]{
+                {leftX, 0.0D, leftZ},
+                {-leftX, 0.0D, -leftZ},
+                {0.0D, 1.0D, 0.0D},
+                {0.0D, -1.0D, 0.0D},
+                {leftX, 1.0D, leftZ},
+                {-leftX, 1.0D, -leftZ},
+                {leftX, -1.0D, leftZ},
+                {-leftX, -1.0D, -leftZ}
+        };
     }
 
     private static boolean corridorClear(World world, MCH_EntityBaseBullet missile,

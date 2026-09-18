@@ -8,6 +8,7 @@ import net.vas.rdp.uav.mission.AircraftRecord;
 import net.vas.rdp.uav.mission.AircraftRegistry;
 import net.vas.rdp.uav.mission.MissionState;
 import net.vas.rdp.uav.mission.MissionType;
+import net.vas.rdp.uav.mission.MissionManager;
 import net.vas.rdp.uav.mission.RDPMission;
 import net.vas.rdp.uav.persistence.MissionNbtCodec;
 import net.vas.rdp.uav.profile.UavExecutionProfile;
@@ -187,6 +188,19 @@ public class RdpUavCoreTest {
         assertFalse(registry.canAssign(aircraft, owner));
         registry.release(aircraft);
         assertTrue(registry.canAssign(aircraft, owner));
+    }
+
+    @Test
+    public void missionManagerAvailabilityPredicateNamesItsRejectionMeaning() {
+        UUID aircraft = UUID.randomUUID();
+        UUID owner = UUID.randomUUID();
+        MissionManager manager = new MissionManager();
+        manager.registerAircraft(new AircraftRecord(aircraft, owner, 0,
+                "switchblade", true, true));
+
+        assertFalse(manager.isAircraftUnavailable(aircraft, owner));
+        manager.findAircraft(aircraft).assign(UUID.randomUUID());
+        assertTrue(manager.isAircraftUnavailable(aircraft, owner));
     }
 
     @Test
