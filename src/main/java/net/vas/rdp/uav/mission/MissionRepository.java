@@ -7,7 +7,7 @@ import java.util.Map;
 import java.util.UUID;
 
 public final class MissionRepository {
-    private final Map<UUID, RDPMission> missions = new LinkedHashMap<UUID, RDPMission>();
+    private final Map<UUID, RDPMission> missions = new LinkedHashMap<>();
 
     public synchronized void add(RDPMission mission) {
         if (mission == null || missions.containsKey(mission.getMissionId())) {
@@ -31,7 +31,7 @@ public final class MissionRepository {
     }
 
     public synchronized List<RDPMission> snapshot() {
-        return new ArrayList<RDPMission>(missions.values());
+        return new ArrayList<>(missions.values());
     }
 
     public synchronized void clear() {

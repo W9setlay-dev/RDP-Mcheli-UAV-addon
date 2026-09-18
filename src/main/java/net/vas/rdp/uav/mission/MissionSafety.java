@@ -79,7 +79,7 @@ public final class MissionSafety {
 
         if (distance <= safeDistance && readyForApproach) {
             return new CorridorAssessment(RouteDecision.DIRECT_INTERCEPT, true, true, true, true,
-                    true, fuelReady, true, "direct intercept corridor clear");
+                    true, true, true, "direct intercept corridor clear");
         }
         if (corridorBlocked && distance > observationDistance) {
             return new CorridorAssessment(RouteDecision.OFFSET_ORBIT, false, false, lineOfSightClear,

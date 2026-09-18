@@ -130,7 +130,7 @@ public final class MissionLifecycle {
         // MissionManager.create already assigned this aircraft. Re-registering
         // it here would replace the ON_MISSION record with a fresh READY
         // record and allow a second mission to claim the same entity.
-        if (!flight.hasFuelForMission(aircraft)) {
+        if (flight.hasFuelForMission(aircraft)) {
             defer(world, mission, "INSUFFICIENT_FUEL", MissionState.WAITING_FOR_FUEL, tick);
             return;
         }
@@ -260,7 +260,7 @@ public final class MissionLifecycle {
                 continue;
             }
             if (mission.getState() == MissionState.WAITING_FOR_FUEL
-                    && !flight.hasFuelForMission(aircraft)) {
+                    && flight.hasFuelForMission(aircraft)) {
                 dirty = true;
                 continue;
             }
@@ -274,7 +274,7 @@ public final class MissionLifecycle {
                 }
                 dirty = true;
             }
-            if (!flight.hasFuelForMission(aircraft)
+            if (flight.hasFuelForMission(aircraft)
                     && mission.getState() != MissionState.RETURNING
                     && mission.getState() != MissionState.LANDING
                     && mission.getState() != MissionState.PARKING) {
@@ -401,7 +401,7 @@ public final class MissionLifecycle {
                     RdpUavDebug.debug("Lifecycle",
                             "mission {} kamikaze waiting aircraft={} targetDistance={} target={}",
                             mission.getMissionId(), aircraft.getUniqueID(),
-                            target == null ? null : targetDistance(aircraft, target),
+                            targetDistance(aircraft, target),
                             formatTarget(target));
                 }
                 continue;
@@ -491,7 +491,7 @@ public final class MissionLifecycle {
                 if (withinMissionExecutionRange(aircraft, target, mission)
                         && terminalGeometrySatisfied(aircraft, target, mission)
                         && flight.fireSelfDestructWeapon(aircraft)) {
-                    if (!armKamikazeTerminalState(mission, target, tick)) {
+                    if (armKamikazeTerminalState(mission, target, tick)) {
                         fail(world, mission, "KAMIKAZE_TERMINAL_STATE_REJECTED", tick);
                         return true;
                     }
@@ -563,7 +563,7 @@ public final class MissionLifecycle {
                 UUID pilotTarget = KamikazePilotOverride.targetFor(aircraft.getUniqueID());
                 if (mission.isAttack() && flight.hasSelfDestructWeaponWithAmmo(aircraft) && (!profile(aircraft).isReusable() || mission.isDestructiveAuthorized()) && (pilotTarget == null || pilotTarget.equals(
                         target.entity == null ? null : target.entity.getUniqueID()))) {
-                    if (!flight.armKamikaze(aircraft, target.x, target.y, target.z,
+                    if (flight.armKamikaze(aircraft, target.x, target.y, target.z,
                             mission.getObservationDistance(),
                             target.entity == null ? null : target.entity.getUniqueID())) {
                         fail(world, mission, "AI_KAMIKAZE_ARM_REJECTED", tick);
@@ -653,7 +653,7 @@ public final class MissionLifecycle {
                                 profile(aircraft).getTerminalPayloadBehavior())
                                 && terminalGeometrySatisfied(aircraft, target, mission)
                                 && flight.fireSelfDestructWeapon(aircraft)) {
-                            if (!armKamikazeTerminalState(mission, target, tick)) {
+                            if (armKamikazeTerminalState(mission, target, tick)) {
                                 fail(world, mission, "KAMIKAZE_TERMINAL_STATE_REJECTED", tick);
                                 return true;
                             }
@@ -737,29 +737,29 @@ public final class MissionLifecycle {
     }
 
     private boolean armKamikazeTerminalState(RDPMission mission, Target target, long tick) {
-        if (mission == null || target == null) return false;
+        if (mission == null || target == null) return true;
         switch (mission.getState()) {
         case SEARCHING:
             mission.transitionTo(MissionState.TARGET_ACQUIRED, tick);
             if (target.entity == null) mission.lockPoint(tick);
             else mission.lockTarget(target.entity.getUniqueID(), tick);
             mission.transitionTo(MissionState.KAMIKADZE_TARGET, tick);
-            return true;
+            return false;
         case TARGET_ACQUIRED:
             if (target.entity == null) mission.lockPoint(tick);
             else mission.lockTarget(target.entity.getUniqueID(), tick);
             mission.transitionTo(MissionState.KAMIKADZE_TARGET, tick);
-            return true;
+            return false;
         case TARGET_LOCKED:
             mission.transitionTo(MissionState.KAMIKADZE_TARGET, tick);
-            return true;
+            return false;
         case ATTACK_TARGET:
             mission.transitionTo(MissionState.KAMIKADZE_TARGET, tick);
-            return true;
-        case KAMIKADZE_TARGET:
-            return true;
-        default:
             return false;
+        case KAMIKADZE_TARGET:
+            return false;
+        default:
+            return true;
         }
     }
 
@@ -860,7 +860,7 @@ public final class MissionLifecycle {
         for (RDPMission mission : RDPMissionWorldData.get(world).getRepository().snapshot()) {
             if (!mission.getAircraftId().equals(aircraft.getUniqueID()) || mission.isTerminal()) continue;
             UUID current = operatorContacts.get(aircraft.getUniqueID());
-            List<ContactSnapshot> available = new java.util.ArrayList<ContactSnapshot>(
+            List<ContactSnapshot> available = new java.util.ArrayList<>(
                     contactTracker.selectable());
             if (available.isEmpty()) return false;
             int start = -1;
@@ -1060,7 +1060,7 @@ public final class MissionLifecycle {
     }
 
     private Map<UUID, MCH_EntityAircraft> indexAircraft(World world) {
-        Map<UUID, MCH_EntityAircraft> result = new HashMap<UUID, MCH_EntityAircraft>();
+        Map<UUID, MCH_EntityAircraft> result = new HashMap<>();
         for (Entity entity : world.loadedEntityList) {
             // Piloted aircraft are valid mission platforms for native guided
             // weapon release even though WingMan itself only controls UAVs.

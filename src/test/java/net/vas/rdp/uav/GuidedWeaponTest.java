@@ -225,6 +225,7 @@ public class GuidedWeaponTest {
         assertFalse(capability.supports(GuidedObjectiveType.SQUARE));
     }
 
+    @SuppressWarnings("DataFlowIssue")
     @Test
     public void capabilityObjectiveSetIsImmutable() {
         GuidedWeaponCapability capability = new GuidedWeaponCapability("tv", "tvmissile",
@@ -232,6 +233,7 @@ public class GuidedWeaponTest {
                 EnumSet.of(GuidedObjectiveType.ENTITY, GuidedObjectiveType.SQUARE),
                 new GuidedTerminalProfile(100, true));
         try {
+            //noinspection DataFlowIssue
             capability.getObjectives().add(GuidedObjectiveType.ENTITY);
             Assert.fail("Capability objective set must be immutable");
         } catch (UnsupportedOperationException expected) {

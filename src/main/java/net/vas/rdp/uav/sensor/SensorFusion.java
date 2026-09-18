@@ -12,14 +12,14 @@ public final class SensorFusion {
         if (observations.isEmpty()) {
             return new FusionResult(null, 0.0D, false, "No observations available");
         }
-        List<SensorObservation> usable = new ArrayList<SensorObservation>();
+        List<SensorObservation> usable = new ArrayList<>();
         for (SensorObservation observation : observations) {
             if (observation != null) usable.add(observation);
         }
         if (usable.isEmpty()) {
             return new FusionResult(null, 0.0D, false, "No usable observations available");
         }
-        Collections.sort(usable, (left, right) -> Double.compare(right.getConfidence(), left.getConfidence()));
+        usable.sort((left, right) -> Double.compare(right.getConfidence(), left.getConfidence()));
         SensorObservation best = usable.get(0);
         boolean disagreement = false;
         for (int i = 1; i < usable.size(); i++) {

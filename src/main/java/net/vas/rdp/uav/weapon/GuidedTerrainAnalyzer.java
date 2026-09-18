@@ -90,7 +90,7 @@ public final class GuidedTerrainAnalyzer {
         }
         @Override public int hashCode() {
             int result = dimension;
-            result = 31 * result + (int) (bucket ^ (bucket >>> 32));
+            result = 31 * result + Long.hashCode(bucket);
             result = 31 * result + ax; result = 31 * result + ay; result = 31 * result + az;
             result = 31 * result + tx; result = 31 * result + ty; result = 31 * result + tz;
             result = 31 * result + Double.valueOf(minAltitude).hashCode();

@@ -7,6 +7,7 @@ import net.minecraft.world.storage.MapStorage;
 import net.minecraft.world.storage.WorldSavedData;
 import net.vas.rdp.uav.mission.MissionRepository;
 import net.vas.rdp.uav.mission.RDPMission;
+import org.jetbrains.annotations.NotNull;
 
 public final class RDPMissionWorldData extends WorldSavedData {
     public static final String DATA_NAME = "rdpuav_missions";
@@ -49,7 +50,7 @@ public final class RDPMissionWorldData extends WorldSavedData {
 
     public void restoreQueued(net.vas.rdp.uav.mission.MissionQueue queue) {
         for (RDPMission mission : repository.snapshot()) {
-            if (mission.isQueued() && !queue.contains(mission)) queue.enqueue(mission);
+            if (mission.isQueued() && queue.contains(mission)) queue.enqueue(mission);
         }
     }
 
@@ -62,8 +63,9 @@ public final class RDPMissionWorldData extends WorldSavedData {
         }
     }
 
+    @NotNull
     @Override
-    public NBTTagCompound writeToNBT(NBTTagCompound compound) {
+    public NBTTagCompound writeToNBT(@NotNull NBTTagCompound compound) {
         NBTTagList list = new NBTTagList();
         for (RDPMission mission : repository.snapshot()) {
             list.appendTag(MissionNbtCodec.write(mission));

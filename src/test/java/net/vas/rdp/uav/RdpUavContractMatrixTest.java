@@ -404,7 +404,7 @@ public class RdpUavContractMatrixTest {
 
     @Test
     public void acquisitionRejectsMissingInputsAndInvalidCandidates() {
-        TargetAcquisition<String> acquisition = new TargetAcquisition<String>();
+        TargetAcquisition<String> acquisition = new TargetAcquisition<>();
         try {
             acquisition.acquire(null, null);
             fail("Missing target input must be rejected");

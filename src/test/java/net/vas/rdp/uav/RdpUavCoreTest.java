@@ -106,20 +106,14 @@ public class RdpUavCoreTest {
                 TargetSpec.modNamespace(" SRParasites ", TargetPriority.HIGH).getNamespace());
         assertEquals(12.5, TargetSpec.point(12.5, 80, -2, TargetPriority.NORMAL).getX(), 0);
 
-        assertIllegalArgument(new Runnable() {
-            public void run() { TargetSpec.manual("target", TargetPriority.NORMAL); }
-        });
-        assertIllegalArgument(new Runnable() {
-            public void run() { TargetSpec.automatic("mod:bad", TargetPriority.NORMAL); }
-        });
-        assertIllegalArgument(new Runnable() {
-            public void run() { TargetSpec.point(Double.NaN, 80, 0, TargetPriority.NORMAL); }
-        });
+        assertIllegalArgument(() -> TargetSpec.manual("target", TargetPriority.NORMAL));
+        assertIllegalArgument(() -> TargetSpec.automatic("mod:bad", TargetPriority.NORMAL));
+        assertIllegalArgument(() -> TargetSpec.point(Double.NaN, 80, 0, TargetPriority.NORMAL));
     }
 
     @Test
     public void targetSelectionHonorsManualIdentityAndAutomaticPriority() {
-        TargetSelector<String> selector = new TargetSelector<String>();
+        TargetSelector<String> selector = new TargetSelector<>();
         List<TargetSelector.Candidate<String>> candidates = Arrays.asList(
                 candidate("mod:near", 1, TargetPriority.NORMAL, "near"),
                 candidate("mod:critical", 100, TargetPriority.CRITICAL, "critical"),
@@ -135,7 +129,7 @@ public class RdpUavCoreTest {
 
     @Test
     public void targetSelectionIsStableWhenPriorityAndRangeTie() {
-        TargetSelector<String> selector = new TargetSelector<String>();
+        TargetSelector<String> selector = new TargetSelector<>();
         List<TargetSelector.Candidate<String>> candidates = Arrays.asList(
                 candidate("mod:zeta", 4, TargetPriority.NORMAL, "zeta"),
                 candidate("mod:alpha", 4, TargetPriority.NORMAL, "alpha"));

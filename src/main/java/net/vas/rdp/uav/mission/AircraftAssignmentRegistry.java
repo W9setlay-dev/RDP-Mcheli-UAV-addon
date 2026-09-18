@@ -5,7 +5,7 @@ import java.util.Map;
 import java.util.UUID;
 
 public final class AircraftAssignmentRegistry {
-    private final Map<UUID, UUID> aircraftToMission = new HashMap<UUID, UUID>();
+    private final Map<UUID, UUID> aircraftToMission = new HashMap<>();
 
     public synchronized boolean reserve(UUID aircraftId, UUID missionId) {
         if (aircraftId == null || missionId == null || aircraftToMission.containsKey(aircraftId)) {

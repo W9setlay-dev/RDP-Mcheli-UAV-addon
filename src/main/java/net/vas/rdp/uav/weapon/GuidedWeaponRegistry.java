@@ -11,7 +11,7 @@ import java.util.Map;
 /** Server-loaded registry keyed by McHeli definition name and weapon type. */
 public final class GuidedWeaponRegistry {
     private static final Map<String, GuidedWeaponCapability> CAPABILITIES =
-            new HashMap<String, GuidedWeaponCapability>();
+            new HashMap<>();
 
     private GuidedWeaponRegistry() { }
 
@@ -20,13 +20,13 @@ public final class GuidedWeaponRegistry {
         config.load();
         CAPABILITIES.clear();
         register(config, "aamissile", "aamissile", GuidedNativeBehavior.ENTITY_SEEKER,
-                "ENTITY", 0.0D, true);
+                "ENTITY");
         register(config, "atmissile", "atmissile", GuidedNativeBehavior.ENTITY_SEEKER,
-                "ENTITY,SQUARE", 0.0D, true);
+                "ENTITY,SQUARE");
         register(config, "asmissile", "asmissile", GuidedNativeBehavior.COORDINATE_BALLISTIC,
-                "SQUARE", 0.0D, true);
+                "SQUARE");
         register(config, "tvmissile", "tvmissile", GuidedNativeBehavior.COORDINATE_TV_LASER,
-                "ENTITY,SQUARE", 0.0D, true);
+                "ENTITY,SQUARE");
         for (String category : config.getCategoryNames()) {
             if (!category.startsWith("weapon.") || isBuiltIn(category.substring("weapon.".length()))) {
                 continue;
@@ -88,8 +88,7 @@ public final class GuidedWeaponRegistry {
     }
 
     private static void register(Configuration c, String key, String definition,
-                                 GuidedNativeBehavior defaultBehavior, String defaultObjectives,
-                                 double defaultMaxSpeed, boolean defaultNoOrbit) {
+                                 GuidedNativeBehavior defaultBehavior, String defaultObjectives) {
         String category = "weapon." + key;
         definition = c.getString("definition", category, definition, "Exact McHeli weapon definition name");
         String type = c.getString("type", category, key, "McHeli MCH_WeaponInfo.type");
@@ -97,7 +96,7 @@ public final class GuidedWeaponRegistry {
                 "Verified native guidance boundary");
         String objectiveNames = c.getString("objectives", category, defaultObjectives,
                 "Comma-separated ENTITY and/or SQUARE");
-        double maxSpeed = c.get(category, "maximumAircraftSpeed", defaultMaxSpeed,
+        double maxSpeed = c.get(category, "maximumAircraftSpeed", 0.0,
                 "Reject release above this aircraft speed; zero disables cap.", 0.0D, 1000.0D)
                 .getDouble();
         double minAltitude = c.get(category, "minimumAltitude", 0.0D,
@@ -111,7 +110,7 @@ public final class GuidedWeaponRegistry {
         long correctionInterval = c.get(category, "coordinateCorrectionInterval",
                 2, "Minimum ticks between coordinate corrections.", 1, 40)
                 .getInt();
-        boolean noOrbit = c.getBoolean("noOrbit", category, defaultNoOrbit,
+        boolean noOrbit = c.getBoolean("noOrbit", category, true,
                 "Do not append a loiter node for terminal guidance.");
         GuidedNativeBehavior behavior;
         try { behavior = GuidedNativeBehavior.valueOf(behaviorName.trim().toUpperCase(Locale.ROOT)); }

@@ -21,7 +21,7 @@ import net.vas.rdp.uav.RdpUavDebug;
  * writes projectile motion, or changes gravity, collision, fuse, or impact.
  */
 public final class MissileGuidanceController {
-    private static final Map<UUID, Assignment> ASSIGNMENTS = new HashMap<UUID, Assignment>();
+    private static final Map<UUID, Assignment> ASSIGNMENTS = new HashMap<>();
     private static final Map<UUID, ProjectileGuidanceMission> PROJECTILES =
             new HashMap<>();
     private static final Map<UUID, AvoidancePlan> AVOIDANCE_PLANS =
@@ -41,8 +41,14 @@ public final class MissileGuidanceController {
 
     public static synchronized void authorize(UUID aircraftId, String weapon,
                                               GuidedStrikeObjective objective) {
-        if (aircraftId == null || weapon == null || objective == null) return;
-        ASSIGNMENTS.put(aircraftId, new Assignment(weapon, objective));
+        if (
+                aircraftId == null
+                || weapon == null
+                || objective == null
+        ) return;
+
+        ASSIGNMENTS.put(aircraftId,
+                new Assignment(weapon, objective));
         RdpUavDebug.event("Guidance", "assignment_authorized",
                 "aircraft", aircraftId, "weapon", weapon,
                 "objective", objective.getObjectiveId(), "objectiveType", objective.getType(),
@@ -58,8 +64,11 @@ public final class MissileGuidanceController {
 
     public static synchronized void abort(UUID aircraftId) {
         if (aircraftId != null) {
+
             Assignment assignment = ASSIGNMENTS.get(aircraftId);
+
             if (assignment != null) assignment.mode = GuidanceControlMode.ABORTED;
+
             ASSIGNMENTS.remove(aircraftId);
             RdpUavDebug.event("Guidance", "assignment_aborted", "aircraft", aircraftId);
             RdpUavDebug.debug("Guidance", "aircraft={} owner=PLAYER/native action=TAKEOVER", aircraftId);
@@ -96,8 +105,13 @@ public final class MissileGuidanceController {
         if (aircraftId == null || objective == null) return false;
         Assignment assignment = ASSIGNMENTS.get(aircraftId);
         if (assignment == null) return false;
-        ASSIGNMENTS.put(aircraftId, new Assignment(assignment.weapon, objective, assignment.filter));
-        return true;
+        for (Map.Entry<UUID, ProjectileGuidanceMission> entry : PROJECTILES.entrySet()) {
+            ProjectileGuidanceMission projectile = entry.getValue();
+            if (aircraftId.equals(projectile.getAircraftId())) {
+                return reassign(aircraftId, entry.getKey(), objective);
+            }
+        }
+        return false;
     }
 
     public static synchronized boolean adopt(World world, UUID aircraftId, UUID projectileId,
@@ -112,7 +126,7 @@ public final class MissileGuidanceController {
             Entity shooter = missile.shootingAircraft == null
                     ? missile.shootingEntity : missile.shootingAircraft;
             if (shooter == null || !aircraftId.equals(shooter.getUniqueID())
-                    || !matchesNative(missile)) return false;
+                    || matchesNative(missile)) return false;
             String weapon = missile.getInfo() == null ? "" : missile.getInfo().name;
             if (weapon.isEmpty() || ASSIGNMENTS.containsKey(aircraftId)) return false;
             Assignment assignment = new Assignment(weapon, objective);
@@ -124,13 +138,13 @@ public final class MissileGuidanceController {
     }
 
     public static synchronized List<WeaponTelemetry> telemetry(World world, UUID aircraftId) {
-        List<WeaponTelemetry> result = new ArrayList<WeaponTelemetry>();
+        List<WeaponTelemetry> result = new ArrayList<>();
         if (world == null || aircraftId == null) return result;
         Assignment assignment = ASSIGNMENTS.get(aircraftId);
         for (Entity entity : world.loadedEntityList) {
             if (!(entity instanceof MCH_EntityBaseBullet)) continue;
             MCH_EntityBaseBullet missile = (MCH_EntityBaseBullet) entity;
-            if (!aircraftId.equals(shooterId(missile)) || !matchesNative(missile)) continue;
+            if (!aircraftId.equals(shooterId(missile)) || matchesNative(missile)) continue;
             ProjectileGuidanceMission projectile = PROJECTILES.get(missile.getUniqueID());
             String state = projectile == null ? "NATIVE" : projectile.getState().name();
             String weapon = missile.getInfo() == null ? "" : missile.getInfo().name;
@@ -144,16 +158,16 @@ public final class MissileGuidanceController {
     }
 
     private static boolean matchesNative(MCH_EntityBaseBullet missile) {
-        return missile instanceof MCH_EntityASMissile
-                || missile instanceof MCH_EntityTvMissile
-                || (missile.getInfo() != null
-                && ("aamissile".equalsIgnoreCase(missile.getInfo().type)
-                || "atmissile".equalsIgnoreCase(missile.getInfo().type)));
+        return !(missile instanceof MCH_EntityASMissile)
+                && !(missile instanceof MCH_EntityTvMissile)
+                && (missile.getInfo() == null
+                || (!"aamissile".equalsIgnoreCase(missile.getInfo().type)
+                && !"atmissile".equalsIgnoreCase(missile.getInfo().type)));
     }
 
     public static void tick(World world) {
         if (world == null || world.isRemote) return;
-        Set<UUID> liveProjectiles = new HashSet<UUID>();
+        Set<UUID> liveProjectiles = new HashSet<>();
         for (Entity entity : world.loadedEntityList) {
             if (!(entity instanceof MCH_EntityBaseBullet)) continue;
             MCH_EntityBaseBullet missile = (MCH_EntityBaseBullet) entity;
@@ -165,10 +179,16 @@ public final class MissileGuidanceController {
             synchronized (MissileGuidanceController.class) {
                 assignment = ASSIGNMENTS.get(shooter.getUniqueID());
             }
-            if (assignment == null || assignment.mode != GuidanceControlMode.AI_GUIDANCE) continue;
+            if (assignment == null
+                    || assignment.mode
+                    != GuidanceControlMode.AI_GUIDANCE)
+                continue;
+
             if (!matches(assignment.weapon, missile)) continue;
+
             ProjectileGuidanceMission projectile = projectileMission(missile, shooter, assignment);
             projectile.nativeGuidanceActive();
+
             if (assignment.filter != null && assignment.objective.getType() == GuidedObjectiveType.ENTITY) {
                 Entity selected = assignment.filter.select(world, missile);
                 if (selected != null && !selected.getUniqueID().equals(assignment.objective.getContactId())) {
@@ -251,11 +271,9 @@ public final class MissileGuidanceController {
         y = aim.y;
         z = aim.z;
         CoordinatePoint corrected = applyCoordinatePolicy(world, missile, x, y, z);
-        if (corrected != null) {
-            x = corrected.x;
-            y = corrected.y;
-            z = corrected.z;
-        }
+        x = corrected.x;
+        y = corrected.y;
+        z = corrected.z;
         if (aim.avoiding) {
             boolean firstAvoidance =
                     projectile.getState() != ProjectileGuidanceState.AVOIDANCE_ACTIVE;
@@ -281,7 +299,7 @@ public final class MissileGuidanceController {
             tv.targetPosZ = z;
         } else if (missile instanceof MCH_EntityASMissile) {
             MCH_EntityASMissile as = (MCH_EntityASMissile) missile;
-            // ASM/Maverick retains its native flight, gravity, seeker, and
+            // asmissile retains its native flight, gravity, seeker, and
             // impact behavior; only the native target coordinates are updated.
             as.targetPosX = x;
             as.targetPosY = y;
@@ -289,7 +307,7 @@ public final class MissileGuidanceController {
         }
         long now = world.getTotalWorldTime();
         Long previous = LAST_COORDINATE_LOG.get(missile.getUniqueID());
-        if (previous == null || now - previous.longValue() >= AVOIDANCE_PLAN_TICKS) {
+        if (previous == null || now - previous >= AVOIDANCE_PLAN_TICKS) {
             LAST_COORDINATE_LOG.put(missile.getUniqueID(), now);
             RdpUavDebug.event("Guidance", "native_target_update",
                     "aircraft", shooterId(missile),
@@ -315,7 +333,7 @@ public final class MissileGuidanceController {
         Long previousTick = LAST_CORRECTION_TICK.get(missile.getUniqueID());
         CoordinatePoint previous = LAST_COORDINATES.get(missile.getUniqueID());
         if (previous != null && previousTick != null
-                && now - previousTick.longValue() < profile.getCoordinateCorrectionInterval()) {
+                && now - previousTick < profile.getCoordinateCorrectionInterval()) {
             return previous;
         }
         if (previous == null) {
@@ -331,7 +349,7 @@ public final class MissileGuidanceController {
         double dy = y - previous.y;
         double dz = z - previous.z;
         double distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        if (distance > maximum && distance > 0.0D) {
+        if (distance > maximum) {
             double scale = maximum / distance;
             x = previous.x + dx * scale;
             y = previous.y + dy * scale;
@@ -409,7 +427,7 @@ public final class MissileGuidanceController {
         };
         AimPoint best = null;
         double bestScore = Double.MAX_VALUE;
-        for (int i = 0; i < Math.min(MAX_AVOIDANCE_CANDIDATES, offsets.length); i++) {
+        for (int i = 0; i < MAX_AVOIDANCE_CANDIDATES; i++) {
             double candidateX = x + offsets[i][0] * AVOIDANCE_OFFSET;
             double candidateY = Math.max(1.0D, y + offsets[i][1] * AVOIDANCE_OFFSET);
             double candidateZ = z + offsets[i][2] * AVOIDANCE_OFFSET;

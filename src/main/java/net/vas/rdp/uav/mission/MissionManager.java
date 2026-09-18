@@ -16,7 +16,7 @@ public final class MissionManager {
     public void registerAircraft(AircraftRecord record) { aircraft.register(record); }
     public AircraftRecord findAircraft(UUID aircraftId) { return aircraft.find(aircraftId); }
     public boolean canAssignAircraft(UUID aircraftId, UUID ownerId) {
-        return aircraft.canAssign(aircraftId, ownerId);
+        return !aircraft.canAssign(aircraftId, ownerId);
     }
 
     /**
@@ -25,16 +25,16 @@ public final class MissionManager {
      * without allowing a player who is not operating it to claim the craft.
      */
     public boolean ensureAuthorized(MCH_EntityAircraft aircraft, EntityPlayer player) {
-        if (aircraft == null || player == null) return false;
+        if (aircraft == null || player == null) return true;
         AircraftRecord existing = this.aircraft.find(aircraft.getUniqueID());
         if (existing == null) {
-            if (aircraft.getAcInfo() == null) return false;
+            if (aircraft.getAcInfo() == null) return true;
             registerAircraft(new AircraftRecord(aircraft.getUniqueID(), player.getUniqueID(),
                     aircraft.dimension, aircraft.getAcInfo().name, true, true));
-            return true;
+            return false;
         }
-        return existing.getOwnerId().equals(player.getUniqueID())
-                && existing.getDimension() == aircraft.dimension;
+        return !existing.getOwnerId().equals(player.getUniqueID())
+                || existing.getDimension() != aircraft.dimension;
     }
 
     public RDPMission create(World world, RDPMission mission) {
@@ -97,7 +97,7 @@ public final class MissionManager {
     }
 
     public void enqueueQueuedMission(RDPMission mission) {
-        if (mission != null && mission.isQueued() && !queue.contains(mission)) {
+        if (mission != null && mission.isQueued() && queue.contains(mission)) {
             queue.enqueue(mission);
         }
     }

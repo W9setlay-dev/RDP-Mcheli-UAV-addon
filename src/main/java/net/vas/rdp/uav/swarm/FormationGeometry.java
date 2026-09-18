@@ -10,7 +10,7 @@ public final class FormationGeometry {
         if (formation == null || count < 0 || spacing <= 0 || verticalSpacing <= 0) {
             throw new IllegalArgumentException("Invalid formation parameters");
         }
-        List<FormationSlot> result = new ArrayList<FormationSlot>();
+        List<FormationSlot> result = new ArrayList<>();
         int width = Math.max(1, (int) Math.ceil(Math.sqrt(Math.max(1, count))));
         for (int i = 0; i < count; i++) {
             int row = i / width;

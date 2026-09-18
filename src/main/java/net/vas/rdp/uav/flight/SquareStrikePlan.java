@@ -27,9 +27,9 @@ public final class SquareStrikePlan {
     public SquareStrikePlan(double centerX, double altitude, double centerZ,
                             double width, double length, double headingDegrees,
                             double passSpacing, double attackRadius, int strikePasses) {
-        if (!finite(centerX) || !finite(altitude) || !finite(centerZ)
-                || !finite(width) || !finite(length) || !finite(headingDegrees)
-                || !finite(passSpacing) || !finite(attackRadius)
+        if (finite(centerX) || finite(altitude) || finite(centerZ)
+                || finite(width) || finite(length) || finite(headingDegrees)
+                || finite(passSpacing) || finite(attackRadius)
                 || width <= 0 || length <= 0 || passSpacing <= 0
                 || attackRadius <= 0 || strikePasses <= 0) {
             throw new IllegalArgumentException("Invalid square strike parameters");
@@ -50,7 +50,7 @@ public final class SquareStrikePlan {
     }
 
     public List<MissionNode> createNodes() {
-        List<MissionNode> nodes = new ArrayList<MissionNode>();
+        List<MissionNode> nodes = new ArrayList<>();
         int rows = (int) Math.ceil(length / passSpacing);
         double heading = Math.toRadians(headingDegrees);
         double alongX = Math.cos(heading);
@@ -95,6 +95,6 @@ public final class SquareStrikePlan {
     }
 
     private static boolean finite(double value) {
-        return !Double.isNaN(value) && !Double.isInfinite(value);
+        return Double.isNaN(value) || Double.isInfinite(value);
     }
 }

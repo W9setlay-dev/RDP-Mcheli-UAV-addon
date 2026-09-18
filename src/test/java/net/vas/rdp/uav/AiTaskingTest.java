@@ -12,6 +12,7 @@ import net.vas.rdp.uav.target.TargetSpec;
 import org.junit.Test;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.UUID;
 
 import static org.junit.Assert.assertEquals;
@@ -40,7 +41,7 @@ public class AiTaskingTest {
                 MissionType.STRIKE, TargetSpec.point(0, 80, 0, TargetPriority.NORMAL),
                 TargetPriority.NORMAL, true, AutonomyLevel.AUTONOMOUS);
         AiDecision decision = new AiDecisionEngine().recommend(request,
-                Arrays.asList(resource(operator, 1, false)));
+                Collections.singletonList(resource(operator, 1, false)));
         assertEquals(AiDecision.Kind.REJECT, decision.getKind());
         assertNull(decision.getAircraftId());
     }
@@ -52,7 +53,7 @@ public class AiTaskingTest {
                 MissionType.OBSERVATION, TargetSpec.point(0, 80, 0, TargetPriority.LOW),
                 TargetPriority.LOW, false, AutonomyLevel.AUTONOMOUS);
         AiDecision decision = new AiDecisionEngine().recommend(request,
-                Arrays.asList(resource(operator, 5, false)));
+                Collections.singletonList(resource(operator, 5, false)));
         assertEquals(AiDecision.Kind.RECOMMEND, decision.getKind());
     }
 

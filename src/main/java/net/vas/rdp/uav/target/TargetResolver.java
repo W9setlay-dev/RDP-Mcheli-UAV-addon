@@ -6,7 +6,6 @@ import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.world.World;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
@@ -39,14 +38,14 @@ public final class TargetResolver {
         if (world == null || specification == null || radius <= 0) {
             throw new IllegalArgumentException("World, target specification, and radius are required");
         }
-        List<EntityCandidate> result = new ArrayList<EntityCandidate>();
+        List<EntityCandidate> result = new ArrayList<>();
         double maxDistance = radius * radius;
         AxisAlignedBB searchBox = new AxisAlignedBB(
                 x - radius, y - radius, z - radius,
                 x + radius, y + radius, z + radius);
         for (Entity entity : world.getEntitiesWithinAABB(Entity.class, searchBox)) {
             if (entity == null || entity.isDead || entity.dimension != world.provider.getDimension()) continue;
-            if (!TargetPolicy.isSafeContact(world, entity)) continue;
+            if (TargetPolicy.isSafeContact(world, entity)) continue;
             double distance = entity.getDistanceSq(x, y, z);
             if (distance > maxDistance) continue;
             ResourceLocation key = EntityList.getKey(entity);
@@ -63,7 +62,7 @@ public final class TargetResolver {
             }
             if (matches) result.add(new EntityCandidate(entity, id, distance));
         }
-        Collections.sort(result, Comparator.comparingDouble(left -> left.distanceSquared));
+        result.sort(Comparator.comparingDouble(left -> left.distanceSquared));
         return result;
     }
 

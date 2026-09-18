@@ -60,11 +60,11 @@ public final class GuiMissionControl extends GuiScreen {
         if (weaponNames == null) {
             active.guidedWeaponNames = new String[0];
         } else {
-            List<String> names = new ArrayList<String>();
+            List<String> names = new ArrayList<>();
             for (String name : weaponNames) {
                 if (name != null && !name.trim().isEmpty()) names.add(name);
             }
-            active.guidedWeaponNames = names.toArray(new String[names.size()]);
+            active.guidedWeaponNames = names.toArray(new String[0]);
         }
         if (active.selectedGuidedWeapon >= active.guidedWeaponNames.length) {
             active.selectedGuidedWeapon = 0;
@@ -206,7 +206,7 @@ public final class GuiMissionControl extends GuiScreen {
         }
         buttonList.add(new GuiButton(12, right, 64, 220, 20, filterLabel()));
         for (int i = 0, shown = 0; i < missionRows.length && shown < 11; i++) {
-            if (!matchesFilter(missionRows[i])) continue;
+            if (matchesFilter(missionRows[i])) continue;
             buttonList.add(new GuiButton(100 + i, left, 108 + shown * 17, 205, 15,
                     (i == selected ? "> " : "  ") + missionRows[i]));
             shown++;
@@ -241,7 +241,7 @@ public final class GuiMissionControl extends GuiScreen {
             if (!mode.equals(lastMode)) {
                 lastMode = mode;
                 RdpUavDebug.debug("GUI", "mode={} aircraft={} guidance={}", mode,
-                        aircraft == null ? "none" : aircraft.getUniqueID(), guidanceSummary);
+                        aircraft.getUniqueID(), guidanceSummary);
             }
         }
 
@@ -250,19 +250,19 @@ public final class GuiMissionControl extends GuiScreen {
     }
 
     private boolean matchesFilter(String row) {
-        if (row == null) return false;
+        if (row == null) return true;
         String normalized = row.toLowerCase(java.util.Locale.ROOT);
         String query = filterField == null ? "" : filterField.getText().trim().toLowerCase(java.util.Locale.ROOT);
-        if (!query.isEmpty() && !normalized.contains(query)) return false;
+        if (!query.isEmpty() && !normalized.contains(query)) return true;
         if (filterMode == 1) {
-            return !normalized.contains("complete") && !normalized.contains("aborted")
-                    && !normalized.contains("failed") && !normalized.contains("detonated");
+            return normalized.contains("complete") || normalized.contains("aborted")
+                    || normalized.contains("failed") || normalized.contains("detonated");
         }
         if (filterMode == 2) {
-            return normalized.contains("failed") || normalized.contains("lost")
-                    || normalized.contains("out");
+            return !normalized.contains("failed") && !normalized.contains("lost")
+                    && !normalized.contains("out");
         }
-        return true;
+        return false;
     }
 
     private void requestData() { RdpUavNetwork.requestMissionData(); }
@@ -271,31 +271,17 @@ public final class GuiMissionControl extends GuiScreen {
         if (button.id == 0) requestData();
         else if (button.id == 1) { help = !help; rebuildButtons(); }
         else if (button.id == 2) mc.displayGuiScreen(null);
-        else if (button.id == 3) confirmDangerAction("authorize", new Runnable() {
-            @Override public void run() { authorizeSelected(); }
-        }, "Authorizing the selected mission will arm server-side controls.");
-        else if (button.id == 4) confirmDangerAction("abort", new Runnable() {
-            @Override public void run() { abortSelected(); }
-        }, "Aborting this mission will end the active task.");
-        else if (button.id == 14) confirmDangerAction("clear-selected", new Runnable() {
-            @Override public void run() { clearSelected(); }
-        }, "Clear the selected mission record?");
-        else if (button.id == 15) confirmDangerAction("clear-all", new Runnable() {
-            @Override public void run() { clearAll(); }
-        }, "Clear all of your mission records?");
-        else if (button.id == 16) confirmDangerAction("return-to-base", new Runnable() {
-            @Override public void run() { returnSelected(); }
-        }, "Request native McHeli return and landing for the selected mission?");
+        else if (button.id == 3) confirmDangerAction("authorize", () -> authorizeSelected(), "Authorizing the selected mission will arm server-side controls.");
+        else if (button.id == 4) confirmDangerAction("abort", () -> abortSelected(), "Aborting this mission will end the active task.");
+        else if (button.id == 14) confirmDangerAction("clear-selected", () -> clearSelected(), "Clear the selected mission record?");
+        else if (button.id == 15) confirmDangerAction("clear-all", () -> clearAll(), "Clear all of your mission records?");
+        else if (button.id == 16) confirmDangerAction("return-to-base", () -> returnSelected(), "Request native McHeli return and landing for the selected mission?");
         else if (button.id == 5) createEntityMission(false);
-        else if (button.id == 6) confirmDangerAction("attack", new Runnable() {
-            @Override public void run() { createEntityMission(true); }
-        }, "Launch an autonomous hostile-target attack?");
+        else if (button.id == 6) confirmDangerAction("attack", () -> createEntityMission(true), "Launch an autonomous hostile-target attack?");
         else if (button.id == 7) {
             RdpUavNetwork.createPointMission();
             status = "Point task submitted from your camera aim.";
-        } else if (button.id == 8) confirmDangerAction("nosedive", new Runnable() {
-            @Override public void run() { armKamikazeSelected(); status = "Nose-dive request submitted; only supported UAVs will arm."; }
-        }, "Arm the kamikaze dive for the selected aircraft?");
+        } else if (button.id == 8) confirmDangerAction("nosedive", () -> { armKamikazeSelected(); status = "Nose-dive request submitted; only supported UAVs will arm."; }, "Arm the kamikaze dive for the selected aircraft?");
         else if (button.id == 9) createSquareMission();
         else if (button.id == 10) lockCrosshairTarget();
         else if (button.id == 13) {
@@ -502,7 +488,7 @@ public final class GuiMissionControl extends GuiScreen {
         } else {
             int y = panelTop + 20;
             for (String row : missionRows) {
-                if (!matchesFilter(row)) continue;
+                if (matchesFilter(row)) continue;
                 drawString(fontRenderer, row, left, y, 0xFFFFFF);
                 y += 17;
                 if (y > height - 124) break;
@@ -532,7 +518,7 @@ public final class GuiMissionControl extends GuiScreen {
     }
 
     private List<String> collectThreatSuggestions() {
-        List<String> result = new ArrayList<String>();
+        List<String> result = new ArrayList<>();
         if (mc == null || mc.world == null || mc.player == null) return result;
         for (Entity entity : mc.world.loadedEntityList) {
             if (entity == null || entity.isDead || entity == mc.player) continue;

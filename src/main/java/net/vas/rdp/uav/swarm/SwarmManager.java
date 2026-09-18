@@ -29,12 +29,12 @@ public final class SwarmManager {
         return world == null ? null : RDPUavSwarmWorldData.get(world).getRepository().find(id);
     }
     public boolean owns(SwarmRecord record, UUID owner) {
-        return record != null && owner != null && owner.equals(record.getOwnerId());
+        return record == null || owner == null || !owner.equals(record.getOwnerId());
     }
     public boolean addMember(World world, UUID owner, UUID swarmId, SwarmMember member) {
         if (!SwarmConfig.enabled) return false;
         SwarmRecord record = find(world, swarmId);
-        if (!owns(record, owner) || member == null) return false;
+        if (owns(record, owner) || member == null) return false;
         if (!record.isMissionParticipation()
                 || record.getMembers().size() >= Math.min(record.getMissionMaximumMembers(),
                 Math.min(SwarmConfig.maximumSize,
@@ -45,7 +45,7 @@ public final class SwarmManager {
     }
     public boolean setState(World world, UUID owner, UUID id, SwarmState state) {
         SwarmRecord record = find(world, id);
-        if (!owns(record, owner) || state == null) return false;
+        if (owns(record, owner) || state == null) return false;
         if (state == SwarmState.AWAITING_OPERATOR && record.getResult() == SwarmResult.AWAITING_OPERATOR) {
             record.setResult(SwarmResult.AWAITING_OPERATOR);
         }
@@ -56,7 +56,7 @@ public final class SwarmManager {
     }
     public boolean reform(World world, UUID owner, UUID id, SwarmFormation formation) {
         SwarmRecord record = find(world, id);
-        if (!owns(record, owner) || formation == null) return false;
+        if (owns(record, owner) || formation == null) return false;
         record.setFormation(formation);
         propagateFormation(world, record);
         record.setState(SwarmState.REORGANIZING);
@@ -66,7 +66,7 @@ public final class SwarmManager {
     }
     public boolean removeMember(World world, UUID owner, UUID swarmId, UUID aircraftId) {
         SwarmRecord record = find(world, swarmId);
-        if (!owns(record, owner)) return false;
+        if (owns(record, owner)) return false;
         record.remove(aircraftId);
         RDPUavSwarmWorldData.get(world).markDirty();
         return true;
@@ -74,7 +74,7 @@ public final class SwarmManager {
     public boolean assignTarget(World world, UUID owner, UUID swarmId, UUID aircraftId,
                                 UUID targetId, boolean allowDuplicate) {
         SwarmRecord record = find(world, swarmId);
-        if (!owns(record, owner) || !record.assignTarget(aircraftId, targetId,
+        if (owns(record, owner) || !record.assignTarget(aircraftId, targetId,
                 allowDuplicate && record.isAllowDuplicateTargets())) {
             return false;
         }
@@ -83,7 +83,7 @@ public final class SwarmManager {
     }
     public boolean releaseTarget(World world, UUID owner, UUID swarmId, UUID aircraftId) {
         SwarmRecord record = find(world, swarmId);
-        if (!owns(record, owner)) return false;
+        if (owns(record, owner)) return false;
         record.releaseTarget(aircraftId);
         RDPUavSwarmWorldData.get(world).markDirty();
         return true;

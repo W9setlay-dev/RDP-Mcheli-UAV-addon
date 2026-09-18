@@ -11,7 +11,7 @@ import java.util.Map;
 
 public final class RDPScanReportRepository extends WorldSavedData {
     public static final String DATA_NAME = "rdpuav_reports";
-    private final Map<String, RDPScanReport> reports = new LinkedHashMap<String, RDPScanReport>();
+    private final Map<String, RDPScanReport> reports = new LinkedHashMap<>();
     public RDPScanReportRepository() { super(DATA_NAME); }
     public RDPScanReportRepository(String name) { super(name); }
     public static RDPScanReportRepository get(World world) {

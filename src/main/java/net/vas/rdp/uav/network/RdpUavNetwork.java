@@ -264,44 +264,42 @@ public final class RdpUavNetwork {
                 implements IMessageHandler<SwarmTargetUpdate, IMessage> {
             public IMessage onMessage(final SwarmTargetUpdate message, MessageContext context) {
                 final EntityPlayerMP player = context.getServerHandler().player;
-                Objects.requireNonNull(player.getServer()).addScheduledTask(new Runnable() {
-                    public void run() {
-                        try {
-                            java.util.UUID swarmId = java.util.UUID.fromString(message.swarmId);
-                            MCH_EntityAircraft aircraft =
-                                    net.vas.rdp.uav.mission.UavControlAccess.findControlledAircraft(player);
-                            if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, player)) {
+                Objects.requireNonNull(player.getServer()).addScheduledTask(() -> {
+                    try {
+                        java.util.UUID swarmId = java.util.UUID.fromString(message.swarmId);
+                        MCH_EntityAircraft aircraft =
+                                net.vas.rdp.uav.mission.UavControlAccess.findControlledAircraft(player);
+                        if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, player)) {
+                            player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                    "Swarm target rejected: operator control is required."));
+                            return;
+                        }
+                        boolean success;
+                        if (message.release) {
+                            success = RDPUavMod.swarms().releaseTarget(player.world,
+                                    player.getUniqueID(), swarmId, aircraft.getUniqueID());
+                        } else {
+                            java.util.UUID targetId = java.util.UUID.fromString(message.targetId);
+                            net.minecraft.entity.Entity target =
+                                    TARGET_RESOLVER.findLoaded(player.world, targetId);
+                            if (target == null || target == aircraft || target.isDead
+                                    || !target.canBeCollidedWith()) {
                                 player.sendMessage(new net.minecraft.util.text.TextComponentString(
-                                        "Swarm target rejected: operator control is required."));
+                                        "Swarm target rejected: target is unavailable."));
                                 return;
                             }
-                            boolean success;
-                            if (message.release) {
-                                success = RDPUavMod.swarms().releaseTarget(player.world,
-                                        player.getUniqueID(), swarmId, aircraft.getUniqueID());
-                            } else {
-                                java.util.UUID targetId = java.util.UUID.fromString(message.targetId);
-                                net.minecraft.entity.Entity target =
-                                        TARGET_RESOLVER.findLoaded(player.world, targetId);
-                                if (target == null || target == aircraft || target.isDead
-                                        || !target.canBeCollidedWith()) {
-                                    player.sendMessage(new net.minecraft.util.text.TextComponentString(
-                                            "Swarm target rejected: target is unavailable."));
-                                    return;
-                                }
-                                success = RDPUavMod.swarms().assignTarget(player.world,
-                                        player.getUniqueID(), swarmId, aircraft.getUniqueID(),
-                                        targetId, message.allowDuplicate);
-                            }
-                            player.sendMessage(new net.minecraft.util.text.TextComponentString(
-                                    success ? (message.release ? "Swarm target released."
-                                            : "Swarm target assigned.")
-                                            : "Swarm target rejected: swarm/member authorization or duplicate policy."));
-                            if (success) syncSwarmTelemetry(player);
-                        } catch (IllegalArgumentException invalid) {
-                            player.sendMessage(new net.minecraft.util.text.TextComponentString(
-                                    "Swarm target rejected: invalid swarm or target ID."));
+                            success = RDPUavMod.swarms().assignTarget(player.world,
+                                    player.getUniqueID(), swarmId, aircraft.getUniqueID(),
+                                    targetId, message.allowDuplicate);
                         }
+                        player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                success ? (message.release ? "Swarm target released."
+                                        : "Swarm target assigned.")
+                                        : "Swarm target rejected: swarm/member authorization or duplicate policy."));
+                        if (success) syncSwarmTelemetry(player);
+                    } catch (IllegalArgumentException invalid) {
+                        player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                "Swarm target rejected: invalid swarm or target ID."));
                     }
                 });
                 return null;
@@ -339,28 +337,26 @@ public final class RdpUavNetwork {
                 implements IMessageHandler<SwarmConfigUpdate, IMessage> {
             public IMessage onMessage(final SwarmConfigUpdate message, MessageContext context) {
                 final EntityPlayerMP player = context.getServerHandler().player;
-                Objects.requireNonNull(player.getServer()).addScheduledTask(new Runnable() {
-                    public void run() {
-                        try {
-                            java.util.UUID id = java.util.UUID.fromString(message.swarmId);
-                            net.vas.rdp.uav.swarm.SwarmRecord record =
-                                    RDPUavMod.swarms().find(player.world, id);
-                            if (!RDPUavMod.swarms().owns(record, player.getUniqueID())) {
-                                player.sendMessage(new net.minecraft.util.text.TextComponentString(
-                                        "Swarm configuration rejected: owner authorization is required."));
-                                return;
-                            }
-                            record.setMissionMaximumMembers(message.maximumMembers);
-                            record.setMissionParticipation(message.participation);
-                            record.setAllowDuplicateTargets(message.allowDuplicates);
-                            net.vas.rdp.uav.persistence.RDPUavSwarmWorldData.get(player.world).markDirty();
+                Objects.requireNonNull(player.getServer()).addScheduledTask(() -> {
+                    try {
+                        java.util.UUID id = java.util.UUID.fromString(message.swarmId);
+                        net.vas.rdp.uav.swarm.SwarmRecord record =
+                                RDPUavMod.swarms().find(player.world, id);
+                        if (RDPUavMod.swarms().owns(record, player.getUniqueID())) {
                             player.sendMessage(new net.minecraft.util.text.TextComponentString(
-                                    "Swarm configuration updated."));
-                            syncSwarmTelemetry(player);
-                        } catch (IllegalArgumentException failure) {
-                            player.sendMessage(new net.minecraft.util.text.TextComponentString(
-                                    "Swarm configuration rejected: invalid swarm ID."));
+                                    "Swarm configuration rejected: owner authorization is required."));
+                            return;
                         }
+                        record.setMissionMaximumMembers(message.maximumMembers);
+                        record.setMissionParticipation(message.participation);
+                        record.setAllowDuplicateTargets(message.allowDuplicates);
+                        net.vas.rdp.uav.persistence.RDPUavSwarmWorldData.get(player.world).markDirty();
+                        player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                "Swarm configuration updated."));
+                        syncSwarmTelemetry(player);
+                    } catch (IllegalArgumentException failure) {
+                        player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                "Swarm configuration rejected: invalid swarm ID."));
                     }
                 });
                 return null;
@@ -398,32 +394,30 @@ public final class RdpUavNetwork {
             implements IMessageHandler<ReturnToBase, IMessage> {
         public IMessage onMessage(final ReturnToBase message, MessageContext context) {
             final EntityPlayerMP player = context.getServerHandler().player;
-            Objects.requireNonNull(player.getServer()).addScheduledTask(new Runnable() {
-                public void run() {
-                    try {
-                        java.util.UUID id = java.util.UUID.fromString(message.missionId);
-                        net.vas.rdp.uav.mission.RDPMission mission =
-                                net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
-                                        .getRepository().find(id);
-                        if (mission == null || !player.getUniqueID().equals(mission.getOwnerId())
-                                || mission.isTerminal()) return;
-                        MCH_EntityAircraft aircraft = null;
-                        for (net.minecraft.entity.Entity entity : player.world.loadedEntityList) {
-                            if (entity instanceof MCH_EntityAircraft
-                                    && mission.getAircraftId().equals(entity.getUniqueID())) {
-                                aircraft = (MCH_EntityAircraft) entity;
-                                break;
-                            }
+            Objects.requireNonNull(player.getServer()).addScheduledTask(() -> {
+                try {
+                    java.util.UUID id = java.util.UUID.fromString(message.missionId);
+                    net.vas.rdp.uav.mission.RDPMission mission =
+                            net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
+                                    .getRepository().find(id);
+                    if (mission == null || !player.getUniqueID().equals(mission.getOwnerId())
+                            || mission.isTerminal()) return;
+                    MCH_EntityAircraft aircraft = null;
+                    for (net.minecraft.entity.Entity entity : player.world.loadedEntityList) {
+                        if (entity instanceof MCH_EntityAircraft
+                                && mission.getAircraftId().equals(entity.getUniqueID())) {
+                            aircraft = (MCH_EntityAircraft) entity;
+                            break;
                         }
-                        if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, player)
-                                || !FLIGHT_ADAPTER.requestReturn(aircraft, "RDP_PLAYER_RTB")) return;
-                        mission.transitionTo(net.vas.rdp.uav.mission.MissionState.RETURNING,
-                                player.world.getTotalWorldTime());
-                        net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world).markDirty();
-                        sendMissionData(player);
-                    } catch (IllegalArgumentException ignored) {
-                        RdpUavDebug.debug("Network", "RTB rejected invalid mission={}", message.missionId);
                     }
+                    if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, player)
+                            || FLIGHT_ADAPTER.requestReturn(aircraft, "RDP_PLAYER_RTB")) return;
+                    mission.transitionTo(net.vas.rdp.uav.mission.MissionState.RETURNING,
+                            player.world.getTotalWorldTime());
+                    net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world).markDirty();
+                    sendMissionData(player);
+                } catch (IllegalArgumentException ignored) {
+                    RdpUavDebug.debug("Network", "RTB rejected invalid mission={}", message.missionId);
                 }
             });
             return null;
@@ -577,57 +571,55 @@ public final class RdpUavNetwork {
                 implements IMessageHandler<AreaLock, IMessage> {
             public IMessage onMessage(final AreaLock message, MessageContext context) {
                 final EntityPlayerMP player = context.getServerHandler().player;
-                Objects.requireNonNull(player.getServer()).addScheduledTask(new Runnable() {
-                    public void run() {
-                        MCH_EntityAircraft aircraft =
-                                net.vas.rdp.uav.mission.UavControlAccess.findControlledAircraft(player);
-                        if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, player)
-                                || !RDPUavMod.missions().ensureAuthorized(aircraft, player)) {
-                            player.sendMessage(new net.minecraft.util.text.TextComponentString(
-                                    "UAV area lock rejected: operator authorization is required."));
-                            return;
-                        }
-                        if (message.clear || !Double.isFinite(message.x)
-                                || !Double.isFinite(message.y) || !Double.isFinite(message.z)) {
-                            player.sendMessage(new net.minecraft.util.text.TextComponentString(
-                                    "UAV area lock rejected: invalid ground coordinate."));
-                            return;
-                        }
-                        java.util.UUID assigned = RDPUavMod.missions()
-                                .assignedMission(aircraft.getUniqueID());
-                        net.vas.rdp.uav.mission.RDPMission mission = assigned == null ? null
-                                : net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
-                                .getRepository().find(assigned);
-                        if (mission == null) {
-                            net.vas.rdp.uav.profile.UavVehicleProfile profile =
-                                    aircraft.getAcInfo() == null ? null
-                                    : net.vas.rdp.uav.profile.UavVehicleProfiles.forAircraft(
-                                    aircraft.getAcInfo().name);
-                            if (profile == null) {
-                                player.sendMessage(new net.minecraft.util.text.TextComponentString(
-                                        "UAV area lock rejected: aircraft profile is unavailable."));
-                                return;
-                            }
-                            mission = new net.vas.rdp.uav.mission.RDPMission(
-                                    java.util.UUID.randomUUID(), player.getUniqueID(),
-                                    aircraft.getUniqueID(), aircraft.getAcInfo().name,
-                                    net.vas.rdp.uav.mission.MissionType.RECONNAISSANCE,
-                                    net.vas.rdp.uav.target.TargetSpec.point(message.x, message.y,
-                                            message.z, net.vas.rdp.uav.target.TargetPriority.HIGH),
-                                    false, false, false, profile.getDetectionRange(), 8.0D,
-                                    player.world.getTotalWorldTime());
-                            mission.setDimension(player.dimension);
-                            RDPUavMod.missions().create(player.world, mission);
-                        } else {
-                            mission.applyOperatorAreaLock(message.x, message.y, message.z,
-                                    player.world.getTotalWorldTime());
-                        }
-                        net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world).markDirty();
+                Objects.requireNonNull(player.getServer()).addScheduledTask(() -> {
+                    MCH_EntityAircraft aircraft =
+                            net.vas.rdp.uav.mission.UavControlAccess.findControlledAircraft(player);
+                    if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, player)
+                            || RDPUavMod.missions().ensureAuthorized(aircraft, player)) {
                         player.sendMessage(new net.minecraft.util.text.TextComponentString(
-                                String.format(java.util.Locale.ROOT,
-                                        "UAV sight stabilization locked at %.1f %.1f %.1f.",
-                                        message.x, message.y, message.z)));
+                                "UAV area lock rejected: operator authorization is required."));
+                        return;
                     }
+                    if (message.clear || !Double.isFinite(message.x)
+                            || !Double.isFinite(message.y) || !Double.isFinite(message.z)) {
+                        player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                "UAV area lock rejected: invalid ground coordinate."));
+                        return;
+                    }
+                    java.util.UUID assigned = RDPUavMod.missions()
+                            .assignedMission(aircraft.getUniqueID());
+                    net.vas.rdp.uav.mission.RDPMission mission = assigned == null ? null
+                            : net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
+                            .getRepository().find(assigned);
+                    if (mission == null) {
+                        net.vas.rdp.uav.profile.UavVehicleProfile profile =
+                                aircraft.getAcInfo() == null ? null
+                                : net.vas.rdp.uav.profile.UavVehicleProfiles.forAircraft(
+                                aircraft.getAcInfo().name);
+                        if (profile == null) {
+                            player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                    "UAV area lock rejected: aircraft profile is unavailable."));
+                            return;
+                        }
+                        mission = new net.vas.rdp.uav.mission.RDPMission(
+                                java.util.UUID.randomUUID(), player.getUniqueID(),
+                                aircraft.getUniqueID(), aircraft.getAcInfo().name,
+                                net.vas.rdp.uav.mission.MissionType.RECONNAISSANCE,
+                                net.vas.rdp.uav.target.TargetSpec.point(message.x, message.y,
+                                        message.z, net.vas.rdp.uav.target.TargetPriority.HIGH),
+                                false, false, false, profile.getDetectionRange(), 8.0D,
+                                player.world.getTotalWorldTime());
+                        mission.setDimension(player.dimension);
+                        RDPUavMod.missions().create(player.world, mission);
+                    } else {
+                        mission.applyOperatorAreaLock(message.x, message.y, message.z,
+                                player.world.getTotalWorldTime());
+                    }
+                    net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world).markDirty();
+                    player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                            String.format(java.util.Locale.ROOT,
+                                    "UAV sight stabilization locked at %.1f %.1f %.1f.",
+                                    message.x, message.y, message.z)));
                 });
                 return null;
             }
@@ -678,8 +670,8 @@ public final class RdpUavNetwork {
                         + (mission.getFailureReason() == null ? ""
                         : "  [" + mission.getFailureReason() + "]");
             }
-            java.util.List<String> weaponRows = new java.util.ArrayList<String>();
-            java.util.List<String> weaponNames = new java.util.ArrayList<String>();
+            java.util.List<String> weaponRows = new java.util.ArrayList<>();
+            java.util.List<String> weaponNames = new java.util.ArrayList<>();
             MCH_EntityAircraft aircraft = net.vas.rdp.uav.mission.UavControlAccess
                     .findControlledAircraft(player);
             if (net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, player)
@@ -706,8 +698,8 @@ public final class RdpUavNetwork {
                             + " alt=" + formatCoordinate(telemetry.getY()));
                 }
             }
-            return new MissionData(rows, ids, weaponRows.toArray(new String[weaponRows.size()]),
-                    weaponNames.toArray(new String[weaponNames.size()]));
+            return new MissionData(rows, ids, weaponRows.toArray(new String[0]),
+                    weaponNames.toArray(new String[0]));
         }
         public String[] getRows() { return rows; }
         public String[] getIds() { return ids; }
@@ -821,7 +813,7 @@ public final class RdpUavNetwork {
                                     .getRepository().byOwner(player.getUniqueID());
                     net.vas.rdp.uav.mission.RDPMission selected = null;
                     for (net.vas.rdp.uav.mission.RDPMission mission : missions) {
-                        if (ridden != null && mission.getAircraftId().equals(ridden.getUniqueID())) {
+                        if (mission.getAircraftId().equals(ridden.getUniqueID())) {
                             selected = mission;
                             break;
                         }
@@ -959,9 +951,7 @@ public final class RdpUavNetwork {
     public static final class ServerMissionDataHandler implements IMessageHandler<RequestMissionData, IMessage> {
         public IMessage onMessage(RequestMissionData message, MessageContext context) {
             final EntityPlayerMP player = context.getServerHandler().player;
-            Objects.requireNonNull(player.getServer()).addScheduledTask(new Runnable() {
-                public void run() { sendMissionData(player); }
-            });
+            Objects.requireNonNull(player.getServer()).addScheduledTask(() -> sendMissionData(player));
             return null;
         }
     }
@@ -1012,40 +1002,38 @@ public final class RdpUavNetwork {
     public static final class ServerClearMissionsHandler implements IMessageHandler<ClearMissions, IMessage> {
         public IMessage onMessage(final ClearMissions message, MessageContext context) {
             final EntityPlayerMP player = context.getServerHandler().player;
-            Objects.requireNonNull(player.getServer()).addScheduledTask(new Runnable() {
-                public void run() {
-                    java.util.UUID selected = null;
-                    if (!message.all) {
-                        try { selected = java.util.UUID.fromString(message.missionId); }
-                        catch (IllegalArgumentException invalid) { return; }
-                    }
-                    boolean changed = false;
-                    for (net.vas.rdp.uav.mission.RDPMission mission :
-                            net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
-                                    .getRepository().byOwner(player.getUniqueID())) {
-                        if (!message.all && !mission.getMissionId().equals(selected)) continue;
-                        for (net.minecraft.entity.Entity entity : player.world.loadedEntityList) {
-                            if (entity instanceof MCH_EntityAircraft
-                                    && mission.getAircraftId().equals(entity.getUniqueID())) {
-                                FLIGHT_ADAPTER.release((MCH_EntityAircraft) entity);
-                                break;
-                            }
-                        }
-                        if (!mission.isTerminal()) {
-                            try {
-                                mission.transitionTo(net.vas.rdp.uav.mission.MissionState.ABORTED,
-                                        player.world.getTotalWorldTime());
-                            } catch (RuntimeException invalidState) { continue; }
-                        }
-                        RDPUavMod.missions().release(mission);
+            Objects.requireNonNull(player.getServer()).addScheduledTask(() -> {
+                java.util.UUID selected = null;
+                if (!message.all) {
+                    try { selected = java.util.UUID.fromString(message.missionId); }
+                    catch (IllegalArgumentException invalid) { return; }
+                }
+                boolean changed = false;
+                for (net.vas.rdp.uav.mission.RDPMission mission :
                         net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
-                                .remove(mission.getMissionId());
-                        changed = true;
+                                .getRepository().byOwner(player.getUniqueID())) {
+                    if (!message.all && !mission.getMissionId().equals(selected)) continue;
+                    for (net.minecraft.entity.Entity entity : player.world.loadedEntityList) {
+                        if (entity instanceof MCH_EntityAircraft
+                                && mission.getAircraftId().equals(entity.getUniqueID())) {
+                            FLIGHT_ADAPTER.release((MCH_EntityAircraft) entity);
+                            break;
+                        }
                     }
-                    if (changed) {
-                        net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world).markDirty();
-                        sendMissionData(player);
+                    if (!mission.isTerminal()) {
+                        try {
+                            mission.transitionTo(net.vas.rdp.uav.mission.MissionState.ABORTED,
+                                    player.world.getTotalWorldTime());
+                        } catch (RuntimeException invalidState) { continue; }
                     }
+                    RDPUavMod.missions().release(mission);
+                    net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
+                            .remove(mission.getMissionId());
+                    changed = true;
+                }
+                if (changed) {
+                    net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world).markDirty();
+                    sendMissionData(player);
                 }
             });
             return null;
@@ -1056,81 +1044,79 @@ public final class RdpUavNetwork {
             implements IMessageHandler<AuthorizeAttack, IMessage> {
         public IMessage onMessage(final AuthorizeAttack message, MessageContext context) {
             final EntityPlayerMP player = context.getServerHandler().player;
-            Objects.requireNonNull(player.getServer()).addScheduledTask(new Runnable() {
-                public void run() {
-                    try {
-                        java.util.UUID id = java.util.UUID.fromString(message.missionId);
-                        net.vas.rdp.uav.mission.RDPMission mission =
-                                net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
-                                        .getRepository().find(id);
-                        if (mission == null || !mission.isAttack()
-                                || !player.getUniqueID().equals(mission.getOwnerId())
-                                || mission.getState() != net.vas.rdp.uav.mission.MissionState.TARGET_LOCKED) {
-                            return;
-                        }
-
-                        MCH_EntityAircraft aircraft = null;
-                        for (net.minecraft.entity.Entity entity : player.world.loadedEntityList) {
-                            if (entity instanceof MCH_EntityAircraft
-                                    && mission.getAircraftId().equals(entity.getUniqueID())) {
-                                aircraft = (MCH_EntityAircraft) entity;
-                                break;
-                            }
-                        }
-                        if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, player)) return;
-                        double x = mission.getTargetSpec().getX();
-                        double y = mission.getTargetSpec().getY();
-                        double z = mission.getTargetSpec().getZ();
-                        if (mission.getTargetId() != null) {
-                            net.minecraft.entity.Entity target = TARGET_RESOLVER.findLoaded(player.world, mission.getTargetId());
-                            if (target == null) {
-                                return;
-                            }
-                            x = target.posX;
-                            y = target.posY;
-                            z = target.posZ;
-                        }
-                        assert aircraft.getAcInfo() != null;
-                        net.vas.rdp.uav.profile.UavVehicleProfile profile =
-                                net.vas.rdp.uav.profile.UavVehicleProfiles
-                                        .forAircraft(aircraft.getAcInfo().name);
-                        GuidedStrikeObjective objective = mission.getTargetId() == null
-                                ? GuidedStrikeObjective.square(mission.getMissionId(),
-                                player.world.provider.getDimension(), x, y, z,
-                                player.world.getTotalWorldTime())
-                                : GuidedStrikeObjective.entity(mission.getMissionId(),
-                                mission.getTargetId(), player.world.provider.getDimension(),
-                                x, y, z, player.world.getTotalWorldTime());
-                        objective.authorize();
-                        objective.beginTracking();
-                        GuidedWeaponDecision guided = GUIDED_ADAPTER.arm(player.world, aircraft,
-                                objective, Math.sqrt(aircraft.motionX * aircraft.motionX
-                                        + aircraft.motionY * aircraft.motionY
-                                        + aircraft.motionZ * aircraft.motionZ),
-                                profile.getAttackEnvelope(), true,
-                                mission.getGuidedWeapon() == null
-                                        ? profile.getAttackWeaponPriority()
-                                        : mission.getGuidedWeapon());
-                        if (!guided.isAccepted() && !"NO_GUIDED_WEAPON".equals(guided.getReason())) {
-                            RdpUavDebug.debug("Network",
-                                    "mission {} guided authorize decision={} aircraft={}",
-                                    mission.getMissionId(), guided.getReason(), aircraft.getUniqueID());
-                            return;
-                        }
-                        if (!guided.isAccepted() && !FLIGHT_ADAPTER.armAttack(
-                                aircraft, x, y, z, mission.getObservationDistance(), mission.getTargetId(),
-                                mission.getGuidedWeapon() == null
-                                        ? profile.getAttackWeaponPriority()
-                                        : mission.getGuidedWeapon())) {
-                            return;
-                        }
-                        mission.transitionTo(net.vas.rdp.uav.mission.MissionState.ATTACK_TARGET,
-                                player.world.getTotalWorldTime());
-                        net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world).markDirty();
-                        sendMissionData(player);
-                    } catch (IllegalArgumentException ignored) {
-                        // Invalid client input is rejected without changing mission state.
+            Objects.requireNonNull(player.getServer()).addScheduledTask(() -> {
+                try {
+                    java.util.UUID id = java.util.UUID.fromString(message.missionId);
+                    net.vas.rdp.uav.mission.RDPMission mission =
+                            net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
+                                    .getRepository().find(id);
+                    if (mission == null || !mission.isAttack()
+                            || !player.getUniqueID().equals(mission.getOwnerId())
+                            || mission.getState() != net.vas.rdp.uav.mission.MissionState.TARGET_LOCKED) {
+                        return;
                     }
+
+                    MCH_EntityAircraft aircraft = null;
+                    for (net.minecraft.entity.Entity entity : player.world.loadedEntityList) {
+                        if (entity instanceof MCH_EntityAircraft
+                                && mission.getAircraftId().equals(entity.getUniqueID())) {
+                            aircraft = (MCH_EntityAircraft) entity;
+                            break;
+                        }
+                    }
+                    if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, player)) return;
+                    double x = mission.getTargetSpec().getX();
+                    double y = mission.getTargetSpec().getY();
+                    double z = mission.getTargetSpec().getZ();
+                    if (mission.getTargetId() != null) {
+                        net.minecraft.entity.Entity target = TARGET_RESOLVER.findLoaded(player.world, mission.getTargetId());
+                        if (target == null) {
+                            return;
+                        }
+                        x = target.posX;
+                        y = target.posY;
+                        z = target.posZ;
+                    }
+                    assert aircraft.getAcInfo() != null;
+                    net.vas.rdp.uav.profile.UavVehicleProfile profile =
+                            net.vas.rdp.uav.profile.UavVehicleProfiles
+                                    .forAircraft(aircraft.getAcInfo().name);
+                    GuidedStrikeObjective objective = mission.getTargetId() == null
+                            ? GuidedStrikeObjective.square(mission.getMissionId(),
+                            player.world.provider.getDimension(), x, y, z,
+                            player.world.getTotalWorldTime())
+                            : GuidedStrikeObjective.entity(mission.getMissionId(),
+                            mission.getTargetId(), player.world.provider.getDimension(),
+                            x, y, z, player.world.getTotalWorldTime());
+                    objective.authorize();
+                    objective.beginTracking();
+                    GuidedWeaponDecision guided = GUIDED_ADAPTER.arm(player.world, aircraft,
+                            objective, Math.sqrt(aircraft.motionX * aircraft.motionX
+                                    + aircraft.motionY * aircraft.motionY
+                                    + aircraft.motionZ * aircraft.motionZ),
+                            profile.getAttackEnvelope(), true,
+                            mission.getGuidedWeapon() == null
+                                    ? profile.getAttackWeaponPriority()
+                                    : mission.getGuidedWeapon());
+                    if (!guided.isAccepted() && !"NO_GUIDED_WEAPON".equals(guided.getReason())) {
+                        RdpUavDebug.debug("Network",
+                                "mission {} guided authorize decision={} aircraft={}",
+                                mission.getMissionId(), guided.getReason(), aircraft.getUniqueID());
+                        return;
+                    }
+                    if (!guided.isAccepted() && !FLIGHT_ADAPTER.armAttack(
+                            aircraft, x, y, z, mission.getObservationDistance(), mission.getTargetId(),
+                            mission.getGuidedWeapon() == null
+                                    ? profile.getAttackWeaponPriority()
+                                    : mission.getGuidedWeapon())) {
+                        return;
+                    }
+                    mission.transitionTo(net.vas.rdp.uav.mission.MissionState.ATTACK_TARGET,
+                            player.world.getTotalWorldTime());
+                    net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world).markDirty();
+                    sendMissionData(player);
+                } catch (IllegalArgumentException ignored) {
+                    // Invalid client input is rejected without changing mission state.
                 }
             });
             return null;
@@ -1167,7 +1153,7 @@ public final class RdpUavNetwork {
                         if (target == null) return;
                         x = target.posX; y = target.posY; z = target.posZ;
                     }
-                    if (!FLIGHT_ADAPTER.armKamikaze(aircraft, x, y, z,
+                    if (FLIGHT_ADAPTER.armKamikaze(aircraft, x, y, z,
                             mission.getObservationDistance(), mission.getTargetId())) return;
                     // Reusable and long-range airframes may only enter a
                     // destructive route through this operator-authenticated request.
@@ -1187,17 +1173,15 @@ public final class RdpUavNetwork {
             implements IMessageHandler<FireSelfDestruct, IMessage> {
         public IMessage onMessage(final FireSelfDestruct message, MessageContext context) {
             final EntityPlayerMP player = context.getServerHandler().player;
-            Objects.requireNonNull(player.getServer()).addScheduledTask(new Runnable() {
-                public void run() {
-                    MCH_EntityAircraft aircraft =
-                            net.vas.rdp.uav.mission.UavControlAccess.findControlledAircraft(player);
-                    if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, player)) return;
-                    if (!FLIGHT_ADAPTER.supportsKamikaze(aircraft)
-                            || !FLIGHT_ADAPTER.hasSelfDestructWeaponWithAmmo(aircraft)) return;
-                    if (FLIGHT_ADAPTER.fireSelfDestructWeapon(aircraft)) {
-                        RdpUavDebug.debug("Network", "player fired SelfDestruct aircraft={} player={}",
-                                aircraft.getUniqueID(), player.getUniqueID());
-                    }
+            Objects.requireNonNull(player.getServer()).addScheduledTask(() -> {
+                MCH_EntityAircraft aircraft =
+                        net.vas.rdp.uav.mission.UavControlAccess.findControlledAircraft(player);
+                if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, player)) return;
+                if (FLIGHT_ADAPTER.supportsKamikaze(aircraft)
+                        || !FLIGHT_ADAPTER.hasSelfDestructWeaponWithAmmo(aircraft)) return;
+                if (FLIGHT_ADAPTER.fireSelfDestructWeapon(aircraft)) {
+                    RdpUavDebug.debug("Network", "player fired SelfDestruct aircraft={} player={}",
+                            aircraft.getUniqueID(), player.getUniqueID());
                 }
             });
             return null;
@@ -1208,44 +1192,42 @@ public final class RdpUavNetwork {
             implements IMessageHandler<CreateMission, IMessage> {
         public IMessage onMessage(final CreateMission message, MessageContext context) {
             final EntityPlayerMP player = context.getServerHandler().player;
-            Objects.requireNonNull(player.getServer()).addScheduledTask(new Runnable() {
-                public void run() {
-                    if (!message.point && (message.target == null
-                            || !message.target.matches(
-                            "(?i)(mod=[A-Za-z0-9_.-]+|[A-Za-z0-9_.-]+:[A-Za-z0-9_./-]+)"))) {
-                        return;
-                    }
+            Objects.requireNonNull(player.getServer()).addScheduledTask(() -> {
+                if (!message.point && (message.target == null
+                        || !message.target.matches(
+                        "(?i)(mod=[A-Za-z0-9_.-]+|[A-Za-z0-9_.-]+:[A-Za-z0-9_./-]+)"))) {
+                    return;
+                }
 
-                    MCH_EntityAircraft aircraft = net.vas.rdp.uav.mission.UavControlAccess
-                            .findControlledAircraft(player);
-                    if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, player)) return;
-                    if (message.attack && message.weapon != null
-                            && !message.weapon.trim().isEmpty()
-                            && !hasSupportedWeapon(aircraft, message.weapon)) {
-                        player.sendMessage(new net.minecraft.util.text.TextComponentString(
-                                "Mission rejected: selected guided weapon is unavailable or unsupported."));
-                        return;
-                    }
-                    String command = message.point
-                            ? "rdpuav mission attack-point"
-                            : "rdpuav mission create " + message.target
-                                    + (message.attack ? " attack" : "")
-                                    + " " + priorityName(message.priority);
-                    Objects.requireNonNull(player.getServer()).getCommandManager().executeCommand(player, command);
-                    if (message.attack && message.weapon != null
-                            && !message.weapon.trim().isEmpty()) {
-                        java.util.List<net.vas.rdp.uav.mission.RDPMission> missions =
-                                net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
-                                        .getRepository().byOwner(player.getUniqueID());
-                        for (int i = missions.size() - 1; i >= 0; i--) {
-                            net.vas.rdp.uav.mission.RDPMission mission = missions.get(i);
-                            if (mission.getAircraftId().equals(aircraft.getUniqueID())
-                                    && !mission.isTerminal()) {
-                                mission.setGuidedWeapon(message.weapon);
-                                net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
-                                        .markDirty();
-                                break;
-                            }
+                MCH_EntityAircraft aircraft = net.vas.rdp.uav.mission.UavControlAccess
+                        .findControlledAircraft(player);
+                if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, player)) return;
+                if (message.attack && message.weapon != null
+                        && !message.weapon.trim().isEmpty()
+                        && !hasSupportedWeapon(aircraft, message.weapon)) {
+                    player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                            "Mission rejected: selected guided weapon is unavailable or unsupported."));
+                    return;
+                }
+                String command = message.point
+                        ? "rdpuav mission attack-point"
+                        : "rdpuav mission create " + message.target
+                                + (message.attack ? " attack" : "")
+                                + " " + priorityName(message.priority);
+                Objects.requireNonNull(player.getServer()).getCommandManager().executeCommand(player, command);
+                if (message.attack && message.weapon != null
+                        && !message.weapon.trim().isEmpty()) {
+                    java.util.List<net.vas.rdp.uav.mission.RDPMission> missions =
+                            net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
+                                    .getRepository().byOwner(player.getUniqueID());
+                    for (int i = missions.size() - 1; i >= 0; i--) {
+                        net.vas.rdp.uav.mission.RDPMission mission = missions.get(i);
+                        if (mission.getAircraftId().equals(aircraft.getUniqueID())
+                                && !mission.isTerminal()) {
+                            mission.setGuidedWeapon(message.weapon);
+                            net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
+                                    .markDirty();
+                            break;
                         }
                     }
                 }
@@ -1278,44 +1260,42 @@ public final class RdpUavNetwork {
             implements IMessageHandler<AdoptProjectile, IMessage> {
         public IMessage onMessage(final AdoptProjectile message, MessageContext context) {
             final EntityPlayerMP player = context.getServerHandler().player;
-            Objects.requireNonNull(player.getServer()).addScheduledTask(new Runnable() {
-                public void run() {
-                    MCH_EntityAircraft aircraft =
-                            net.vas.rdp.uav.mission.UavControlAccess.findControlledAircraft(player);
-                    if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, player)) {
-                        player.sendMessage(new net.minecraft.util.text.TextComponentString(
-                                "Missile adoption rejected: controlled-aircraft operator authorization is required."));
-                        return;
-                    }
-
-                    for (net.minecraft.entity.Entity entity : player.world.loadedEntityList) {
-                        if (!(entity instanceof MCH_EntityBaseBullet)) continue;
-                        MCH_EntityBaseBullet missile = (MCH_EntityBaseBullet) entity;
-                        net.minecraft.entity.Entity shooter = missile.shootingAircraft == null
-                                ? missile.shootingEntity : missile.shootingAircraft;
-                        if (shooter == null || !aircraft.getUniqueID().equals(shooter.getUniqueID())) {
-                            continue;
-                        }
-                        net.vas.rdp.uav.weapon.GuidedStrikeObjective objective =
-                                net.vas.rdp.uav.weapon.GuidedStrikeObjective.square(
-                                java.util.UUID.randomUUID(), player.world.provider.getDimension(),
-                                missile.posX, missile.posY, missile.posZ,
-                                player.world.getTotalWorldTime());
-                        objective.authorize();
-                        objective.beginTracking();
-                        if (net.vas.rdp.uav.weapon.MissileGuidanceController.adopt(
-                                player.world, aircraft.getUniqueID(), missile.getUniqueID(), objective)) {
-                            player.sendMessage(new net.minecraft.util.text.TextComponentString(
-                                    "Missile adopted by AI guidance: " + missile.getUniqueID()));
-                        } else {
-                            player.sendMessage(new net.minecraft.util.text.TextComponentString(
-                                    "Missile adoption rejected: unsupported, already owned, or unavailable."));
-                        }
-                        return;
-                    }
+            Objects.requireNonNull(player.getServer()).addScheduledTask(() -> {
+                MCH_EntityAircraft aircraft =
+                        net.vas.rdp.uav.mission.UavControlAccess.findControlledAircraft(player);
+                if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, player)) {
                     player.sendMessage(new net.minecraft.util.text.TextComponentString(
-                            "Missile adoption rejected: no compatible launched missile was found."));
+                            "Missile adoption rejected: controlled-aircraft operator authorization is required."));
+                    return;
                 }
+
+                for (net.minecraft.entity.Entity entity : player.world.loadedEntityList) {
+                    if (!(entity instanceof MCH_EntityBaseBullet)) continue;
+                    MCH_EntityBaseBullet missile = (MCH_EntityBaseBullet) entity;
+                    net.minecraft.entity.Entity shooter = missile.shootingAircraft == null
+                            ? missile.shootingEntity : missile.shootingAircraft;
+                    if (shooter == null || !aircraft.getUniqueID().equals(shooter.getUniqueID())) {
+                        continue;
+                    }
+                    GuidedStrikeObjective objective =
+                            GuidedStrikeObjective.square(
+                            java.util.UUID.randomUUID(), player.world.provider.getDimension(),
+                            missile.posX, missile.posY, missile.posZ,
+                            player.world.getTotalWorldTime());
+                    objective.authorize();
+                    objective.beginTracking();
+                    if (net.vas.rdp.uav.weapon.MissileGuidanceController.adopt(
+                            player.world, aircraft.getUniqueID(), missile.getUniqueID(), objective)) {
+                        player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                "Missile adopted by AI guidance: " + missile.getUniqueID()));
+                    } else {
+                        player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                "Missile adoption rejected: unsupported, already owned, or unavailable."));
+                    }
+                    return;
+                }
+                player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                        "Missile adoption rejected: no compatible launched missile was found."));
             });
             return null;
         }
@@ -1325,50 +1305,48 @@ public final class RdpUavNetwork {
             implements IMessageHandler<ReassignGuided, IMessage> {
         public IMessage onMessage(final ReassignGuided message, MessageContext context) {
             final EntityPlayerMP player = context.getServerHandler().player;
-            Objects.requireNonNull(player.getServer()).addScheduledTask(new Runnable() {
-                public void run() {
-                    try {
-                        java.util.UUID missionId = java.util.UUID.fromString(message.missionId);
-                        java.util.UUID targetId = java.util.UUID.fromString(message.targetId);
-                        net.vas.rdp.uav.mission.RDPMission mission =
-                                net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
-                                .getRepository().find(missionId);
-                        MCH_EntityAircraft aircraft =
-                                net.vas.rdp.uav.mission.UavControlAccess.findControlledAircraft(player);
-                        net.minecraft.entity.Entity target = TARGET_RESOLVER.findLoaded(
-                                player.world, targetId);
-                        if (mission == null || mission.isTerminal()
-                                || !player.getUniqueID().equals(mission.getOwnerId())
-                                || mission.getGuidedWeapon() == null
-                                || !net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, player)
-                                || target == null || target == aircraft || target.isDead) {
-                            player.sendMessage(new net.minecraft.util.text.TextComponentString(
-                                    "Guided reassignment rejected: mission, operator, or target is invalid."));
-                            return;
-                        }
-                        long tick = player.world.getTotalWorldTime();
-                        net.vas.rdp.uav.weapon.GuidedStrikeObjective objective =
-                                net.vas.rdp.uav.weapon.GuidedStrikeObjective.entity(
-                                mission.getMissionId(), targetId,
-                                player.world.provider.getDimension(), target.posX,
-                                target.posY, target.posZ, tick);
-                        objective.authorize();
-                        objective.beginTracking();
-                        if (!net.vas.rdp.uav.weapon.MissileGuidanceController.reassign(
-                                aircraft.getUniqueID(), objective)) {
-                            player.sendMessage(new net.minecraft.util.text.TextComponentString(
-                                    "Guided reassignment rejected: no active AI projectile assignment."));
-                            return;
-                        }
-                        mission.applyOperatorEntityLock(targetId, tick);
-                        net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world).markDirty();
+            Objects.requireNonNull(player.getServer()).addScheduledTask(() -> {
+                try {
+                    java.util.UUID missionId = java.util.UUID.fromString(message.missionId);
+                    java.util.UUID targetId = java.util.UUID.fromString(message.targetId);
+                    net.vas.rdp.uav.mission.RDPMission mission =
+                            net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
+                            .getRepository().find(missionId);
+                    MCH_EntityAircraft aircraft =
+                            net.vas.rdp.uav.mission.UavControlAccess.findControlledAircraft(player);
+                    net.minecraft.entity.Entity target = TARGET_RESOLVER.findLoaded(
+                            player.world, targetId);
+                    if (mission == null || mission.isTerminal()
+                            || !player.getUniqueID().equals(mission.getOwnerId())
+                            || mission.getGuidedWeapon() == null
+                            || !net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, player)
+                            || target == null || target == aircraft || target.isDead) {
                         player.sendMessage(new net.minecraft.util.text.TextComponentString(
-                                "Guided mission reassigned to " + target.getName() + "."));
-                        sendMissionData(player);
-                    } catch (IllegalArgumentException invalid) {
-                        player.sendMessage(new net.minecraft.util.text.TextComponentString(
-                                "Guided reassignment rejected: invalid identity."));
+                                "Guided reassignment rejected: mission, operator, or target is invalid."));
+                        return;
                     }
+                    long tick = player.world.getTotalWorldTime();
+                    GuidedStrikeObjective objective =
+                            GuidedStrikeObjective.entity(
+                            mission.getMissionId(), targetId,
+                            player.world.provider.getDimension(), target.posX,
+                            target.posY, target.posZ, tick);
+                    objective.authorize();
+                    objective.beginTracking();
+                    if (!net.vas.rdp.uav.weapon.MissileGuidanceController.reassign(
+                            aircraft.getUniqueID(), objective)) {
+                        player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                "Guided reassignment rejected: no active AI projectile assignment."));
+                        return;
+                    }
+                    mission.applyOperatorEntityLock(targetId, tick);
+                    net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world).markDirty();
+                    player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                            "Guided mission reassigned to " + target.getName() + "."));
+                    sendMissionData(player);
+                } catch (IllegalArgumentException invalid) {
+                    player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                            "Guided reassignment rejected: invalid identity."));
                 }
             });
             return null;
@@ -1379,31 +1357,29 @@ public final class RdpUavNetwork {
             implements IMessageHandler<SquareStrike, IMessage> {
         public IMessage onMessage(final SquareStrike message, MessageContext context) {
             final EntityPlayerMP player = context.getServerHandler().player;
-            Objects.requireNonNull(player.getServer()).addScheduledTask(new Runnable() {
-                public void run() {
-                    MCH_EntityAircraft aircraft =
-                            net.vas.rdp.uav.mission.UavControlAccess.findControlledAircraft(player);
-                    if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, player)
-                            || message.parameters == null
-                            || !message.parameters.matches("-?[0-9.]+\\s+-?[0-9.]+\\s+-?[0-9.]+(\\s+[0-9.]+)?")) {
-                        return;
-                    }
+            Objects.requireNonNull(player.getServer()).addScheduledTask(() -> {
+                MCH_EntityAircraft aircraft =
+                        net.vas.rdp.uav.mission.UavControlAccess.findControlledAircraft(player);
+                if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, player)
+                        || message.parameters == null
+                        || !message.parameters.matches("-?[0-9.]+\\s+-?[0-9.]+\\s+-?[0-9.]+(\\s+[0-9.]+)?")) {
+                    return;
+                }
 
-                    Objects.requireNonNull(player.getServer()).getCommandManager().executeCommand(player,
-                            "rdpuav mission square " + message.parameters);
-                    if (message.weapon != null && !message.weapon.trim().isEmpty()) {
-                        java.util.List<net.vas.rdp.uav.mission.RDPMission> missions =
-                                net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
-                                        .getRepository().byOwner(player.getUniqueID());
-                        for (int i = missions.size() - 1; i >= 0; i--) {
-                            net.vas.rdp.uav.mission.RDPMission mission = missions.get(i);
-                            if (mission.getAircraftId().equals(aircraft.getUniqueID())
-                                    && !mission.isTerminal()) {
-                                mission.setGuidedWeapon(message.weapon);
-                                net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
-                                        .markDirty();
-                                break;
-                            }
+                Objects.requireNonNull(player.getServer()).getCommandManager().executeCommand(player,
+                        "rdpuav mission square " + message.parameters);
+                if (message.weapon != null && !message.weapon.trim().isEmpty()) {
+                    java.util.List<net.vas.rdp.uav.mission.RDPMission> missions =
+                            net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
+                                    .getRepository().byOwner(player.getUniqueID());
+                    for (int i = missions.size() - 1; i >= 0; i--) {
+                        net.vas.rdp.uav.mission.RDPMission mission = missions.get(i);
+                        if (mission.getAircraftId().equals(aircraft.getUniqueID())
+                                && !mission.isTerminal()) {
+                            mission.setGuidedWeapon(message.weapon);
+                            net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
+                                    .markDirty();
+                            break;
                         }
                     }
                 }
@@ -1416,122 +1392,120 @@ public final class RdpUavNetwork {
             implements IMessageHandler<AiTargetLock, IMessage> {
         public IMessage onMessage(final AiTargetLock message, MessageContext context) {
             final EntityPlayerMP player = context.getServerHandler().player;
-            Objects.requireNonNull(player.getServer()).addScheduledTask(new Runnable() {
-                public void run() {
-                    MCH_EntityAircraft aircraft =
-                            net.vas.rdp.uav.mission.UavControlAccess.findControlledAircraft(player);
-                    if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, player)
-                            || !RDPUavMod.missions().ensureAuthorized(aircraft, player)) {
-                        player.sendMessage(new net.minecraft.util.text.TextComponentString(
-                                "UAV target lock rejected: operator authorization is required."));
-                        return;
-                    }
-                    if (!message.clear && (message.targetId == null
-                            || message.targetId.trim().isEmpty())
-                            && KamikazePilotOverride.targetFor(aircraft.getUniqueID()) != null) {
-                        clearTargetLock(player, aircraft);
-                        return;
-                    }
-                    if (message.clear) {
-                        clearTargetLock(player, aircraft);
-                        return;
-                    }
-                    try {
-                        net.vas.rdp.uav.profile.UavVehicleProfile profile =
-                                aircraft.getAcInfo() == null ? null
-                                : net.vas.rdp.uav.profile.UavVehicleProfiles.forAircraft(
-                                aircraft.getAcInfo().name);
-                        java.util.UUID targetId = message.targetId == null
-                                || message.targetId.trim().isEmpty() ? null
-                                : java.util.UUID.fromString(message.targetId);
-                        net.minecraft.entity.Entity target = targetId == null ? null
-                                : TARGET_RESOLVER.findLoaded(player.world, targetId);
-                        if (target == null && targetId == null && profile != null) {
-                            double bestDistance = Double.MAX_VALUE;
-                            for (net.minecraft.entity.Entity candidate
-                                    : player.world.loadedEntityList) {
-                                if (candidate == null || candidate == aircraft
-                                        || candidate.isDead || !candidate.canBeCollidedWith()
-                                        || candidate.getDistance(aircraft) > profile.getLockRange()
-                                        || !net.vas.rdp.uav.target.TargetPolicy.isSelectableContact(
-                                        player.world, candidate, player)) {
-                                    continue;
-                                }
-                                double distance = candidate.getDistanceSq(aircraft);
-                                if (distance < bestDistance) {
-                                    bestDistance = distance;
-                                    target = candidate;
-                                }
+            Objects.requireNonNull(player.getServer()).addScheduledTask(() -> {
+                MCH_EntityAircraft aircraft =
+                        net.vas.rdp.uav.mission.UavControlAccess.findControlledAircraft(player);
+                if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, player)
+                        || RDPUavMod.missions().ensureAuthorized(aircraft, player)) {
+                    player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                            "UAV target lock rejected: operator authorization is required."));
+                    return;
+                }
+                if (!message.clear && (message.targetId == null
+                        || message.targetId.trim().isEmpty())
+                        && KamikazePilotOverride.targetFor(aircraft.getUniqueID()) != null) {
+                    clearTargetLock(player, aircraft);
+                    return;
+                }
+                if (message.clear) {
+                    clearTargetLock(player, aircraft);
+                    return;
+                }
+                try {
+                    net.vas.rdp.uav.profile.UavVehicleProfile profile =
+                            aircraft.getAcInfo() == null ? null
+                            : net.vas.rdp.uav.profile.UavVehicleProfiles.forAircraft(
+                            aircraft.getAcInfo().name);
+                    java.util.UUID targetId = message.targetId == null
+                            || message.targetId.trim().isEmpty() ? null
+                            : java.util.UUID.fromString(message.targetId);
+                    net.minecraft.entity.Entity target = targetId == null ? null
+                            : TARGET_RESOLVER.findLoaded(player.world, targetId);
+                    if (target == null && targetId == null && profile != null) {
+                        double bestDistance = Double.MAX_VALUE;
+                        for (net.minecraft.entity.Entity candidate
+                                : player.world.loadedEntityList) {
+                            if (candidate == null || candidate == aircraft
+                                    || candidate.isDead || !candidate.canBeCollidedWith()
+                                    || candidate.getDistance(aircraft) > profile.getLockRange()
+                                    || !net.vas.rdp.uav.target.TargetPolicy.isSelectableContact(
+                                    player.world, candidate, player)) {
+                                continue;
                             }
-                            if (target != null) {
-                                targetId = target.getUniqueID();
-                                RdpUavDebug.debug("Network",
-                                        "AI target lock source=FILTER_FALLBACK aircraft={} target={}",
-                                        aircraft.getUniqueID(), targetId);
+                            double distance = candidate.getDistanceSq(aircraft);
+                            if (distance < bestDistance) {
+                                bestDistance = distance;
+                                target = candidate;
                             }
                         }
-                        if (target == null || target == aircraft || !target.canBeCollidedWith()
-                                || aircraft.getAcInfo() == null) {
-                            player.sendMessage(new net.minecraft.util.text.TextComponentString(
-                                    "UAV target lock rejected: target is unavailable."));
-                            return;
+                        if (target != null) {
+                            targetId = target.getUniqueID();
+                            RdpUavDebug.debug("Network",
+                                    "AI target lock source=FILTER_FALLBACK aircraft={} target={}",
+                                    aircraft.getUniqueID(), targetId);
                         }
-                        if (!net.vas.rdp.uav.target.TargetPolicy.isSelectableContact(
-                                player.world, target, player)) {
-                            player.sendMessage(new net.minecraft.util.text.TextComponentString(
-                                    "UAV target lock rejected: target filter excludes this contact."));
-                            return;
-                        }
-                        assert profile != null;
-                        if (target.getDistance(aircraft) > profile.getLockRange()) {
-                            player.sendMessage(new net.minecraft.util.text.TextComponentString(
-                                    "UAV target lock rejected: target is outside lock range."));
-                            return;
-                        }
-                        net.minecraft.util.ResourceLocation key =
-                                net.minecraft.entity.EntityList.getKey(target);
-                        if (key == null) {
-                            player.sendMessage(new net.minecraft.util.text.TextComponentString(
-                                    "UAV target lock rejected: target type is unknown."));
-                            return;
-                        }
-                        java.util.UUID assigned = RDPUavMod.missions()
-                                .assignedMission(aircraft.getUniqueID());
-                        net.vas.rdp.uav.mission.RDPMission mission = assigned == null ? null
-                                : net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
-                                .getRepository().find(assigned);
-                        if (mission == null) {
-                            mission = new net.vas.rdp.uav.mission.RDPMission(
-                                    java.util.UUID.randomUUID(), player.getUniqueID(),
-                                    aircraft.getUniqueID(), aircraft.getAcInfo().name,
-                                    net.vas.rdp.uav.mission.MissionType.RECONNAISSANCE,
-                                    net.vas.rdp.uav.target.TargetSpec.manual(
-                                            key.toString(),
-                                            net.vas.rdp.uav.target.TargetPriority.HIGH),
-                                    false, false, false, profile.getDetectionRange(), 8.0D,
-                                    player.world.getTotalWorldTime());
-                            mission.setDimension(player.dimension);
-                            RDPUavMod.missions().create(player.world, mission);
-                            mission.applyOperatorEntityLock(targetId,
-                                    player.world.getTotalWorldTime());
-                        } else {
-                            mission.applyOperatorEntityLock(targetId,
-                                    player.world.getTotalWorldTime());
-                        }
-                        net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world).markDirty();
-                        KamikazePilotOverride.lock(aircraft.getUniqueID(), targetId);
-                        player.sendMessage(new net.minecraft.util.text.TextComponentString(
-                                "UAV target lock accepted: AI control override active for "
-                                        + key.toString()
-                                        + ". Press the target-lock key again to restore player control."));
-                        RdpUavDebug.debug("Network", "AI target lock accepted player={} aircraft={} target={}",
-                                player.getUniqueID(), aircraft.getUniqueID(), targetId);
-                    } catch (IllegalArgumentException failure) {
-                        player.sendMessage(new net.minecraft.util.text.TextComponentString(
-                                "UAV target lock rejected: invalid target."));
-                        RdpUavDebug.debug("Network", "AI target lock rejected invalid target={}",
-                                message.targetId);
                     }
+                    if (target == null || target == aircraft || !target.canBeCollidedWith()
+                            || aircraft.getAcInfo() == null) {
+                        player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                "UAV target lock rejected: target is unavailable."));
+                        return;
+                    }
+                    if (!net.vas.rdp.uav.target.TargetPolicy.isSelectableContact(
+                            player.world, target, player)) {
+                        player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                "UAV target lock rejected: target filter excludes this contact."));
+                        return;
+                    }
+                    assert profile != null;
+                    if (target.getDistance(aircraft) > profile.getLockRange()) {
+                        player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                "UAV target lock rejected: target is outside lock range."));
+                        return;
+                    }
+                    ResourceLocation key =
+                            net.minecraft.entity.EntityList.getKey(target);
+                    if (key == null) {
+                        player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                "UAV target lock rejected: target type is unknown."));
+                        return;
+                    }
+                    java.util.UUID assigned = RDPUavMod.missions()
+                            .assignedMission(aircraft.getUniqueID());
+                    net.vas.rdp.uav.mission.RDPMission mission = assigned == null ? null
+                            : net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
+                            .getRepository().find(assigned);
+                    if (mission == null) {
+                        mission = new net.vas.rdp.uav.mission.RDPMission(
+                                java.util.UUID.randomUUID(), player.getUniqueID(),
+                                aircraft.getUniqueID(), aircraft.getAcInfo().name,
+                                net.vas.rdp.uav.mission.MissionType.RECONNAISSANCE,
+                                net.vas.rdp.uav.target.TargetSpec.manual(
+                                        key.toString(),
+                                        net.vas.rdp.uav.target.TargetPriority.HIGH),
+                                false, false, false, profile.getDetectionRange(), 8.0D,
+                                player.world.getTotalWorldTime());
+                        mission.setDimension(player.dimension);
+                        RDPUavMod.missions().create(player.world, mission);
+                        mission.applyOperatorEntityLock(targetId,
+                                player.world.getTotalWorldTime());
+                    } else {
+                        mission.applyOperatorEntityLock(targetId,
+                                player.world.getTotalWorldTime());
+                    }
+                    net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world).markDirty();
+                    KamikazePilotOverride.lock(aircraft.getUniqueID(), targetId);
+                    player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                            "UAV target lock accepted: AI control override active for "
+                                    + key.toString()
+                                    + ". Press the target-lock key again to restore player control."));
+                    RdpUavDebug.debug("Network", "AI target lock accepted player={} aircraft={} target={}",
+                            player.getUniqueID(), aircraft.getUniqueID(), targetId);
+                } catch (IllegalArgumentException failure) {
+                    player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                            "UAV target lock rejected: invalid target."));
+                    RdpUavDebug.debug("Network", "AI target lock rejected invalid target={}",
+                            message.targetId);
                 }
             });
             return null;
@@ -1560,49 +1534,39 @@ public final class RdpUavNetwork {
 
     public static final class ClientMissionControlHandler implements IMessageHandler<OpenMissionControl, IMessage> {
         public IMessage onMessage(OpenMissionControl message, MessageContext context) {
-            net.minecraft.client.Minecraft.getMinecraft().addScheduledTask(new Runnable() {
-                public void run() {
-                    net.minecraft.client.Minecraft.getMinecraft().displayGuiScreen(
-                            new net.vas.rdp.uav.client.GuiMissionControl());
-                }
-            });
+            net.minecraft.client.Minecraft.getMinecraft().addScheduledTask(() -> net.minecraft.client.Minecraft.getMinecraft().displayGuiScreen(
+                    new net.vas.rdp.uav.client.GuiMissionControl()));
             return null;
         }
     }
 
     public static final class ClientMissionDataHandler implements IMessageHandler<MissionData, IMessage> {
         public IMessage onMessage(final MissionData message, MessageContext context) {
-            net.minecraft.client.Minecraft.getMinecraft().addScheduledTask(new Runnable() {
-                public void run() {
-                    net.vas.rdp.uav.client.GuiMissionControl.receiveMissionData(
-                            message.getRows(), message.getIds(),
-                            message.getWeaponRows(), message.getWeaponNames());
-                }
-            });
+            net.minecraft.client.Minecraft.getMinecraft().addScheduledTask(() -> net.vas.rdp.uav.client.GuiMissionControl.receiveMissionData(
+                    message.getRows(), message.getIds(),
+                    message.getWeaponRows(), message.getWeaponNames()));
             return null;
         }
 
         public static final class ClientTargetTelemetryHandler
                 implements IMessageHandler<RdpUavNetwork.TargetTelemetry, IMessage> {
             public IMessage onMessage(final RdpUavNetwork.TargetTelemetry message, MessageContext context) {
-                net.minecraft.client.Minecraft.getMinecraft().addScheduledTask(new Runnable() {
-                    public void run() {
-                        net.vas.rdp.uav.client.RdpUavTargetHud.Telemetry hud =
-                                new net.vas.rdp.uav.client.RdpUavTargetHud.Telemetry(
-                                        message.active, message.hasPosition, message.missionId,
-                                        message.aircraftType, message.missionState, message.targetState,
-                                        message.registryId.isEmpty() ? null : message.registryId,
-                                        message.entityName,
-                                        message.targetUuid.isEmpty() ? null : message.targetUuid,
-                                        message.priority, message.scanState, message.deepScanState,
-                                        message.failureReason, message.wingmanState, message.wingmanNode,
-                                        message.dimension, message.outOfRange,
-                                        message.x, message.y, message.z, message.distance);
-                        hud.setRichTelemetry(message.velocityX, message.velocityY, message.velocityZ,
-                                message.confidence, message.bearing, message.elevation,
-                                message.visible, message.lifecycle, message.markerState);
-                        net.vas.rdp.uav.client.RdpUavTargetHud.instance().receive(hud);
-                    }
+                net.minecraft.client.Minecraft.getMinecraft().addScheduledTask(() -> {
+                    net.vas.rdp.uav.client.RdpUavTargetHud.Telemetry hud =
+                            new net.vas.rdp.uav.client.RdpUavTargetHud.Telemetry(
+                                    message.active, message.hasPosition, message.missionId,
+                                    message.aircraftType, message.missionState, message.targetState,
+                                    message.registryId.isEmpty() ? null : message.registryId,
+                                    message.entityName,
+                                    message.targetUuid.isEmpty() ? null : message.targetUuid,
+                                    message.priority, message.scanState, message.deepScanState,
+                                    message.failureReason, message.wingmanState, message.wingmanNode,
+                                    message.dimension, message.outOfRange,
+                                    message.x, message.y, message.z, message.distance);
+                    hud.setRichTelemetry(message.velocityX, message.velocityY, message.velocityZ,
+                            message.confidence, message.bearing, message.elevation,
+                            message.visible, message.lifecycle, message.markerState);
+                    net.vas.rdp.uav.client.RdpUavTargetHud.instance().receive(hud);
                 });
                 return null;
             }

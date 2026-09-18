@@ -78,7 +78,7 @@ public final class RdpUavDebug {
         StringJoiner values = new StringJoiner(" ");
         if (fields != null) {
             for (int i = 0; i + 1 < fields.length; i += 2) {
-                values.add(String.valueOf(fields[i]) + "=" + String.valueOf(fields[i + 1]));
+                values.add(fields[i] + "=" + fields[i + 1]);
             }
         }
         LOGGER.info("[DEBUG][{}] event={} {}", component, event, values.toString());

@@ -32,6 +32,7 @@ public final class GuidedSafetyPolicy {
         if (terrain == GuidedTerrainAnalyzer.Result.UNLOADED) return GuidedSafetyDecision.HOLD_CHUNK_UNLOADED;
         if (terrain != GuidedTerrainAnalyzer.Result.CLEAR) return GuidedSafetyDecision.HOLD_TERRAIN;
         if (requireLineOfSight) {
+
             Vec3d start = new Vec3d(aircraft.posX, aircraft.posY + aircraft.getEyeHeight(), aircraft.posZ);
             Vec3d end = new Vec3d(objective.getX(), objective.getY(), objective.getZ());
             RayTraceResult hit = world.rayTraceBlocks(start, end, false, true, false);

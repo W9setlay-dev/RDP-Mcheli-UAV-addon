@@ -76,9 +76,7 @@ public enum MissionState {
             case WAITING_FOR_FUEL:
             case EXECUTION_STALLED:
             case RECOVERING:
-                return next == REPLAN || next == WAITING_FOR_WORLD
-                        || next == WAITING_FOR_FUEL || next == EXECUTION_STALLED
-                        || next == RECOVERING;
+                return false;
             case REPLAN:
                 return next == SEARCHING || next == TARGET_LOCKED
                         || next == APPROACHING || next == ATTACK_TARGET;

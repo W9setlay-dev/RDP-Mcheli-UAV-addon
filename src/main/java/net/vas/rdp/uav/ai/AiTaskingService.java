@@ -15,7 +15,7 @@ import net.vas.rdp.uav.sensor.SensorFusion;
 public final class AiTaskingService {
     private final MissionManager missions;
     private final AiDecisionEngine decisions = new AiDecisionEngine();
-    private final Map<UUID, AiTaskRequest> pending = new HashMap<UUID, AiTaskRequest>();
+    private final Map<UUID, AiTaskRequest> pending = new HashMap<>();
 
     public AiTaskingService(MissionManager missions) {
         if (missions == null) throw new IllegalArgumentException("Mission manager is required");

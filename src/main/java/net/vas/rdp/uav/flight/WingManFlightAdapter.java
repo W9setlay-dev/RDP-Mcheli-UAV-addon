@@ -4,9 +4,7 @@ import com.norwood.mcheli.aircraft.MCH_EntityAircraft;
 import com.norwood.mcheli.helicopter.MCH_EntityHeli;
 import com.norwood.mcheli.MCH_Explosion;
 import com.norwood.mcheli.wingman.mission.MissionNode;
-import com.norwood.mcheli.wingman.mission.MissionOrder;
 import com.norwood.mcheli.wingman.mission.MissionPlan;
-import com.norwood.mcheli.wingman.mission.MissionType;
 import com.norwood.mcheli.wingman.mission.AutonomousState;
 import com.norwood.mcheli.wingman.wingman.WingmanEntry;
 import com.norwood.mcheli.wingman.wingman.WingmanRegistry;
@@ -28,7 +26,7 @@ import java.util.Set;
  * The only RDP-facing boundary for WingMan control.
  */
 public final class WingManFlightAdapter {
-    private final Set<UUID> nativeAttackCompletions = new HashSet<UUID>();
+    private final Set<UUID> nativeAttackCompletions = new HashSet<>();
     private static final double KAMIKAZE_ATTACK_ANGLE_DEGREES = 35.0D;
     private static final double MIN_DIVE_RUN_METERS = 32.0D;
     private static final double MAX_DIVE_RUN_METERS = 160.0D;
@@ -39,7 +37,7 @@ public final class WingManFlightAdapter {
 
     public boolean dispatch(MCH_EntityAircraft aircraft, double x, double y, double z,
                             double orbitRadius, int orbitTicks, boolean attack, UUID targetId) {
-        if (!supportsAutonomousRoute(aircraft)) {
+        if (supportsAutonomousRoute(aircraft)) {
             RdpUavDebug.debug("WingMan",
                     "dispatch rejected: aircraft={} definition={} isUav={} profile={}",
                     aircraft == null ? null : aircraft.getUniqueID(),
@@ -106,7 +104,7 @@ public final class WingManFlightAdapter {
      */
     public boolean refreshObservationRoute(MCH_EntityAircraft aircraft, double x, double y, double z,
                                            double orbitRadius, boolean orbit, UUID targetId) {
-        if (!supportsAutonomousRoute(aircraft)) return false;
+        if (supportsAutonomousRoute(aircraft)) return false;
         WingmanEntry entry = WingmanRegistry.get(aircraft.getUniqueID());
         if (entry == null || entry.mission == null || entry.autoState == AutonomousState.RTB
                 || entry.autoState == AutonomousState.LANDING
@@ -190,7 +188,7 @@ public final class WingManFlightAdapter {
 
     public boolean armAttack(MCH_EntityAircraft aircraft, double x, double y, double z,
                              double attackRadius, UUID targetId, String weaponPriority) {
-        if (!supportsAutonomousRoute(aircraft)) return false;
+        if (supportsAutonomousRoute(aircraft)) return false;
         WingmanEntry entry = WingmanRegistry.get(aircraft.getUniqueID());
         if (entry == null || entry.mission == null) return false;
         entry.attackMode = WingmanEntry.ATK_AUTO;
@@ -233,7 +231,7 @@ public final class WingManFlightAdapter {
 
     public boolean armSquareStrike(MCH_EntityAircraft aircraft, SquareStrikePlan plan,
                                    UUID targetId) {
-        if (plan == null || !supportsAutonomousRoute(aircraft)) return false;
+        if (plan == null || supportsAutonomousRoute(aircraft)) return false;
         WingmanEntry entry = WingmanRegistry.get(aircraft.getUniqueID());
         if (entry == null || entry.mission == null) return false;
         if (!hasAttackAmmunition(aircraft) && !hasSelfDestructWeaponWithAmmo(aircraft)) return false;
@@ -245,11 +243,11 @@ public final class WingManFlightAdapter {
 
     public boolean armKamikaze(MCH_EntityAircraft aircraft, double x, double y, double z,
                                double attackRadius, UUID targetId) {
-        if (!supportsKamikaze(aircraft)) return false;
+        if (supportsKamikaze(aircraft)) return true;
         int weaponId = selectSelfDestructWeapon(aircraft);
-        if (weaponId < 0) return false;
+        if (weaponId < 0) return true;
         WingmanEntry entry = WingmanRegistry.get(aircraft.getUniqueID());
-        if (entry == null || entry.mission == null) return false;
+        if (entry == null || entry.mission == null) return true;
         entry.attackMode = WingmanEntry.ATK_AUTO;
         entry.currentAutoTarget = targetId;
         entry.autoTargetX = x;
@@ -264,7 +262,7 @@ public final class WingManFlightAdapter {
         aircraft.getEntityData().setBoolean(KamikazeConfig.ARMED_KEY, true);
         aircraft.getEntityData().setDouble(KamikazeConfig.MIN_SPEED_KEY,
                 KamikazeConfig.minimumImpactSpeed);
-        return true;
+        return false;
     }
 
     public boolean fireSelfDestructWeapon(MCH_EntityAircraft aircraft) {
@@ -339,16 +337,16 @@ public final class WingManFlightAdapter {
     }
 
     public boolean supportsKamikaze(MCH_EntityAircraft aircraft) {
-        if (!supportsAutonomousRoute(aircraft)) return false;
-        return hasSelfDestructWeapon(aircraft);
+        if (supportsAutonomousRoute(aircraft)) return true;
+        return !hasSelfDestructWeapon(aircraft);
     }
 
     private boolean supportsAutonomousRoute(MCH_EntityAircraft aircraft) {
-        if (aircraft == null) return false;
-        if (aircraft.isUAV()) return true;
-        return aircraft.getAcInfo() != null
-                && UavVehicleProfiles.forAircraft(aircraft.getAcInfo().name)
-                .getExecutionProfile() == UavExecutionProfile.ONE_WAY;
+        if (aircraft == null) return true;
+        if (aircraft.isUAV()) return false;
+        return aircraft.getAcInfo() == null
+                || UavVehicleProfiles.forAircraft(aircraft.getAcInfo().name)
+                .getExecutionProfile() != UavExecutionProfile.ONE_WAY;
     }
 
     public boolean hasSelfDestructWeapon(MCH_EntityAircraft aircraft) {
@@ -375,11 +373,11 @@ public final class WingManFlightAdapter {
     }
 
     public boolean hasFuelForMission(MCH_EntityAircraft aircraft) {
-        if (aircraft == null) return false;
-        if (UavEnergyHandler.hasOperatingEnergy(aircraft)) return true;
-        if (!aircraft.canUseFuel()) return true;
-        return aircraft.getMaxFuel() > 0
-                && aircraft.getFuel() > Math.max(1, aircraft.getMaxFuel() / 5);
+        if (aircraft == null) return true;
+        if (UavEnergyHandler.hasOperatingEnergy(aircraft)) return false;
+        if (!aircraft.canUseFuel()) return false;
+        return aircraft.getMaxFuel() <= 0
+                || aircraft.getFuel() <= Math.max(1, aircraft.getMaxFuel() / 5);
     }
 
     public boolean hasAttackAmmunition(MCH_EntityAircraft aircraft) {
@@ -453,14 +451,14 @@ public final class WingManFlightAdapter {
         if (entry == null) {
             RdpUavDebug.debug("WingMan", "return rejected: missing entry aircraft={}",
                     aircraft == null ? null : aircraft.getUniqueID());
-            return false;
+            return true;
         }
         entry.attackMode = WingmanEntry.ATK_NONE;
         entry.rtbReason = reason == null ? "RDP_MISSION_COMPLETE" : reason;
         entry.autoState = AutonomousState.RTB;
         RdpUavDebug.debug("WingMan", "return requested aircraft={} reason={}",
                 aircraft.getUniqueID(), entry.rtbReason);
-        return true;
+        return false;
     }
 
     public boolean isReturning(MCH_EntityAircraft aircraft) {
@@ -513,6 +511,6 @@ public final class WingManFlightAdapter {
         if (name == null || name.trim().isEmpty() || nodes == null || nodes.isEmpty()) {
             throw new IllegalArgumentException("WingMan plan name and nodes are required");
         }
-        MissionPlan.put(name, new ArrayList<MissionNode>(nodes));
+        MissionPlan.put(name, new ArrayList<>(nodes));
     }
 }

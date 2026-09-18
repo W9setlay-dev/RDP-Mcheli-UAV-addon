@@ -20,7 +20,7 @@ public final class SquareStrikeConstraints {
                                    int maxEngagements, int maxTargetCount,
                                    boolean returnAfterObjective, double rtbThreshold) {
         if (area == null || searchPattern == null || targetPolicy == null || weaponPolicy == null
-                || !finite(minAltitude) || !finite(maxAltitude) || minAltitude > maxAltitude
+                || finite(minAltitude) || finite(maxAltitude) || minAltitude > maxAltitude
                 || priority < 0 || timeLimitTicks <= 0L || maxEngagements < 0
                 || maxTargetCount < 0 || rtbThreshold < 0.0D || rtbThreshold > 1.0D) {
             throw new IllegalArgumentException("Invalid square strike constraints");
@@ -66,6 +66,6 @@ public final class SquareStrikeConstraints {
     public double getRtbThreshold() { return rtbThreshold; }
 
     private static boolean finite(double value) {
-        return !Double.isNaN(value) && !Double.isInfinite(value);
+        return Double.isNaN(value) || Double.isInfinite(value);
     }
 }

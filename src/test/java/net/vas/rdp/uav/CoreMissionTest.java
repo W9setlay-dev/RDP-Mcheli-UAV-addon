@@ -14,6 +14,7 @@ import net.vas.rdp.uav.mission.MissionQueue;
 import net.vas.rdp.uav.flight.SquareStrikePlan;
 import com.norwood.mcheli.wingman.mission.MissionNode;
 
+import java.util.Collections;
 import java.util.UUID;
 
 public final class CoreMissionTest {
@@ -62,7 +63,7 @@ public final class CoreMissionTest {
         check(registry.find(aircraft).getStatus() == net.vas.rdp.uav.mission.AircraftStatus.ON_MISSION,
                 "aircraft assignment changes status");
 
-        TargetAcquisition<String> acquisition = new TargetAcquisition<String>();
+        TargetAcquisition<String> acquisition = new TargetAcquisition<>();
         String selected = acquisition.acquire(
                 TargetSpec.automatic("srparasites", TargetPriority.NORMAL),
                 java.util.Arrays.<TargetSelector.Candidate<String>>asList(
@@ -71,7 +72,7 @@ public final class CoreMissionTest {
         check("critical".equals(selected), "automatic selection respects priority");
         selected = acquisition.acquire(
                 TargetSpec.manual("srparasites:rupter", TargetPriority.HIGH),
-                java.util.Arrays.asList(
+                Collections.singletonList(
                         candidate("srparasites:beckon", 1, TargetPriority.CRITICAL, "wrong")));
         check(selected == null, "manual selection never substitutes a target");
 

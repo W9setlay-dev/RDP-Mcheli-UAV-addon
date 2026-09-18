@@ -4,7 +4,7 @@ import java.util.ArrayDeque;
 import java.util.Deque;
 
 public final class MissionQueue {
-    private final Deque<RDPMission> queue = new ArrayDeque<RDPMission>();
+    private final Deque<RDPMission> queue = new ArrayDeque<>();
 
     public synchronized void enqueue(RDPMission mission) {
         if (mission == null) {
@@ -26,7 +26,7 @@ public final class MissionQueue {
     }
 
     public synchronized boolean contains(RDPMission mission) {
-        return queue.contains(mission);
+        return !queue.contains(mission);
     }
 
     public synchronized int size() {

@@ -9,7 +9,7 @@ import java.util.*;
 /** Single authoritative contact state for one server mission lifecycle. */
 public final class ContactTracker {
     private static final long DEFAULT_LOST_GRACE_TICKS = 40L;
-    private final Map<UUID, MutableContact> contacts = new HashMap<UUID, MutableContact>();
+    private final Map<UUID, MutableContact> contacts = new HashMap<>();
     private final long lostGraceTicks;
 
     public ContactTracker() { this(DEFAULT_LOST_GRACE_TICKS); }
@@ -71,18 +71,14 @@ public final class ContactTracker {
     }
 
     public List<ContactSnapshot> selectable() {
-        List<ContactSnapshot> result = new ArrayList<ContactSnapshot>();
+        List<ContactSnapshot> result = new ArrayList<>();
         for (MutableContact contact : contacts.values()) {
             if (contact.lifecycle != ContactLifecycle.LOST
                     && contact.lifecycle != ContactLifecycle.EXPIRED) {
                 result.add(contact.snapshot());
             }
         }
-        Collections.sort(result, new Comparator<ContactSnapshot>() {
-            public int compare(ContactSnapshot left, ContactSnapshot right) {
-                return left.getEntityId().toString().compareTo(right.getEntityId().toString());
-            }
-        });
+        result.sort((left, right) -> left.getEntityId().toString().compareTo(right.getEntityId().toString()));
         return Collections.unmodifiableList(result);
     }
 

@@ -15,7 +15,7 @@ public final class UavEnergyConfig {
     public static int idleDrainPerTick = 2;
     public static int flightDrainPerTick = 8;
     public static int minimumOperatingEnergy = 1;
-    private static final Map<String, Profile> profiles = new HashMap<String, Profile>();
+    private static final Map<String, Profile> profiles = new HashMap<>();
 
     private UavEnergyConfig() { }
 

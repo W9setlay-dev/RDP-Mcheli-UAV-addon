@@ -6,7 +6,6 @@ import net.minecraft.world.World;
 import net.vas.rdp.uav.target.TargetPolicy;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
 
 /** Immutable, server-owned filter for dynamic projectile target selection. */
@@ -25,21 +24,19 @@ public final class GuidedTargetFilter {
 
     public Entity select(World world, Entity origin) {
         if (world == null || origin == null) return null;
-        List<Entity> candidates = new ArrayList<Entity>();
+        List<Entity> candidates = new ArrayList<>();
         double rangeSq = maximumRange * maximumRange;
         for (Entity entity : world.loadedEntityList) {
             if (entity == null || entity.isDead || entity == origin
                     || entity.dimension != origin.dimension
                     || origin.getDistanceSq(entity) > rangeSq
-                    || !TargetPolicy.isSafeContact(world, entity)) continue;
+                    || TargetPolicy.isSafeContact(world, entity)) continue;
             if (priority(entity) >= 0) candidates.add(entity);
         }
-        Collections.sort(candidates, new Comparator<Entity>() {
-            public int compare(Entity left, Entity right) {
-                int priority = Integer.compare(priority(right), priority(left));
-                if (priority != 0) return priority;
-                return Double.compare(origin.getDistanceSq(left), origin.getDistanceSq(right));
-            }
+        candidates.sort((left, right) -> {
+            int priority = Integer.compare(priority(right), priority(left));
+            if (priority != 0) return priority;
+            return Double.compare(origin.getDistanceSq(left), origin.getDistanceSq(right));
         });
         return candidates.isEmpty() ? null : candidates.get(0);
     }

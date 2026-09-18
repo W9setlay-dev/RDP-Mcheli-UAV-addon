@@ -15,7 +15,7 @@ public final class SwarmConfig {
     public static double minimumVerticalSeparation = 6D;
     public static int memberTimeoutTicks = 100;
     public static int degradedThreshold = 1;
-    private static final Map<String, Integer> profileLimits = new HashMap<String, Integer>();
+    private static final Map<String, Integer> profileLimits = new HashMap<>();
     private SwarmConfig() { }
     public static void load(File dir) {
         Configuration c = new Configuration(new File(dir, "rdp-uav-swarm.cfg"));

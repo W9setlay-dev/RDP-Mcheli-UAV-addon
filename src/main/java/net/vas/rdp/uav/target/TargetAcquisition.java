@@ -3,7 +3,7 @@ package net.vas.rdp.uav.target;
 import java.util.List;
 
 public final class TargetAcquisition<T> {
-    private final TargetSelector<T> selector = new TargetSelector<T>();
+    private final TargetSelector<T> selector = new TargetSelector<>();
 
     public T acquire(TargetSpec specification, List<TargetSelector.Candidate<T>> candidates) {
         if (specification == null || candidates == null) {

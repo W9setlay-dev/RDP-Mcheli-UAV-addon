@@ -7,7 +7,7 @@ public final class SquareArea {
     private final double halfDepth;
 
     public SquareArea(double centerX, double centerZ, double width, double depth) {
-        if (!finite(centerX) || !finite(centerZ) || !finite(width) || !finite(depth)
+        if (finite(centerX) || finite(centerZ) || finite(width) || finite(depth)
                 || width <= 0.0D || depth <= 0.0D) {
             throw new IllegalArgumentException("Area dimensions must be finite and positive");
         }
@@ -31,6 +31,6 @@ public final class SquareArea {
     public double getDepth() { return halfDepth * 2.0D; }
 
     private static boolean finite(double value) {
-        return !Double.isNaN(value) && !Double.isInfinite(value);
+        return Double.isNaN(value) || Double.isInfinite(value);
     }
 }

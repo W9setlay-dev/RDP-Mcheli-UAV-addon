@@ -14,7 +14,7 @@ public final class OpticsLock {
     private long lastSeenTick = -1L;
 
     public void area(double x, double y, double z, long tick) {
-        if (!finite(x) || !finite(y) || !finite(z)) {
+        if (finite(x) || finite(y) || finite(z)) {
             throw new IllegalArgumentException("Area lock coordinates must be finite");
         }
         mode = Mode.AREA;
@@ -43,6 +43,6 @@ public final class OpticsLock {
     public long getLastSeenTick() { return lastSeenTick; }
 
     private static boolean finite(double value) {
-        return !Double.isNaN(value) && !Double.isInfinite(value);
+        return Double.isNaN(value) || Double.isInfinite(value);
     }
 }

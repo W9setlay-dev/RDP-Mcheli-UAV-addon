@@ -10,7 +10,7 @@ public final class SwarmRecord {
     private final UUID swarmId;
     private final UUID ownerId;
     private final String name;
-    private final List<SwarmMember> members = new ArrayList<SwarmMember>();
+    private final List<SwarmMember> members = new ArrayList<>();
     private SwarmState state = SwarmState.FORMING;
     private SwarmLeadership leadership = SwarmLeadership.DYNAMIC_LEADER;
     private SwarmFormation formation = SwarmFormation.LINE;

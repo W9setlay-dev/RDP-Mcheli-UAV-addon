@@ -12,7 +12,7 @@ import java.util.Map;
 import java.util.UUID;
 
 public final class UavEnergyHandler {
-    private final Map<UUID, Integer> lastFuel = new HashMap<UUID, Integer>();
+    private final Map<UUID, Integer> lastFuel = new HashMap<>();
 
     @SubscribeEvent
     public void attach(AttachCapabilitiesEvent<Entity> event) {

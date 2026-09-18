@@ -6,6 +6,8 @@ import net.minecraft.world.World;
 import net.minecraft.world.storage.MapStorage;
 import net.minecraft.world.storage.WorldSavedData;
 import net.vas.rdp.uav.swarm.*;
+import org.jetbrains.annotations.NotNull;
+
 import java.util.UUID;
 
 public final class RDPUavSwarmWorldData extends WorldSavedData {
@@ -79,7 +81,8 @@ public final class RDPUavSwarmWorldData extends WorldSavedData {
             repository.put(swarm);
         }
     }
-    @Override public NBTTagCompound writeToNBT(NBTTagCompound tag) {
+    @NotNull
+    @Override public NBTTagCompound writeToNBT(@NotNull NBTTagCompound tag) {
         NBTTagList swarms = new NBTTagList();
         for (SwarmRecord swarm : repository.snapshot()) {
             NBTTagCompound value = new NBTTagCompound();

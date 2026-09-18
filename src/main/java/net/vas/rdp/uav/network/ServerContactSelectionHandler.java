@@ -13,13 +13,11 @@ public final class ServerContactSelectionHandler
         implements IMessageHandler<ContactSelection, IMessage> {
     public IMessage onMessage(final ContactSelection message, MessageContext context) {
         final EntityPlayerMP player = context.getServerHandler().player;
-        Objects.requireNonNull(player.getServer()).addScheduledTask(new Runnable() {
-            public void run() {
-                MCH_EntityAircraft aircraft = UavControlAccess.findControlledAircraft(player);
-                if (!UavControlAccess.isOperator(aircraft, player)) return;
-                if (message.clear) RDPUavMod.clearContact(player.world, aircraft);
-                else RDPUavMod.cycleContact(player.world, aircraft, player, message.next);
-            }
+        Objects.requireNonNull(player.getServer()).addScheduledTask(() -> {
+            MCH_EntityAircraft aircraft = UavControlAccess.findControlledAircraft(player);
+            if (!UavControlAccess.isOperator(aircraft, player)) return;
+            if (message.clear) RDPUavMod.clearContact(player.world, aircraft);
+            else RDPUavMod.cycleContact(player.world, aircraft, player, message.next);
         });
         return null;
     }

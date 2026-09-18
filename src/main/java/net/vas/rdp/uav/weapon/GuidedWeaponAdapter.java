@@ -268,7 +268,7 @@ public final class GuidedWeaponAdapter {
         for (Entity candidate : world.getEntitiesWithinAABB(Entity.class, area)) {
             if (candidate == null || candidate.isDead
                     || candidate.dimension != world.provider.getDimension()
-                    || !TargetPolicy.isSafeContact(world, candidate)) continue;
+                    || TargetPolicy.isSafeContact(world, candidate)) continue;
             double distance = candidate.getDistanceSq(objective.getX(), objective.getY(), objective.getZ());
             if (distance < selectedDistance) {
                 selected = candidate;

@@ -28,10 +28,8 @@ public enum SquareStrikeState {
     public boolean canTransitionTo(SquareStrikeState next) {
         if (next == null || this == COMPLETED || this == ABORTED) return false;
         if (next == ABORTED || next == EMERGENCY || next == OPERATOR_OVERRIDE) return true;
-        if (this == OPERATOR_OVERRIDE) return next == PAUSED || next == RESUME_SEARCH
-                || next == RTB || next == ABORTED;
-        if (this == PAUSED) return next == RESUME_SEARCH || next == RTB
-                || next == OPERATOR_OVERRIDE || next == ABORTED;
+        if (this == OPERATOR_OVERRIDE) return next == PAUSED || next == RESUME_SEARCH || next == RTB;
+        if (this == PAUSED) return next == RESUME_SEARCH || next == RTB;
         switch (this) {
             case CREATED: return next == VALIDATING;
             case VALIDATING: return next == QUEUED;

@@ -7,7 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 public final class AircraftRegistry {
-    private final Map<UUID, AircraftRecord> records = new LinkedHashMap<UUID, AircraftRecord>();
+    private final Map<UUID, AircraftRecord> records = new LinkedHashMap<>();
     public synchronized void register(AircraftRecord record) { records.put(record.getAircraftId(), record); }
     public synchronized void unregister(UUID id) { records.remove(id); }
     public synchronized AircraftRecord find(UUID id) { return records.get(id); }
@@ -31,6 +31,6 @@ public final class AircraftRegistry {
         }
     }
     public synchronized List<AircraftRecord> snapshot() {
-        return new ArrayList<AircraftRecord>(records.values());
+        return new ArrayList<>(records.values());
     }
 }

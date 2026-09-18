@@ -21,6 +21,7 @@ import net.vas.rdp.uav.target.TargetSpec;
 import org.junit.Test;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 
@@ -46,7 +47,7 @@ public class AutonomousMissionTest {
                 "switchblade", true, true);
 
         AiDecision decision = new AiDecisionEngine().recommend(request,
-                Arrays.asList(new AiResource(aircraft, 42.0D, true)));
+                Collections.singletonList(new AiResource(aircraft, 42.0D, true)));
 
         assertEquals(AiDecision.Kind.RECOMMEND, decision.getKind());
         assertEquals(aircraftId, decision.getAircraftId());
@@ -78,7 +79,7 @@ public class AutonomousMissionTest {
                 "switchblade", true, true), 8.0D, true);
 
         AiDecision decision = new AiDecisionEngine().recommend(request,
-                Arrays.asList(resource));
+                Collections.singletonList(resource));
 
         assertEquals(AiDecision.Kind.REQUEST_APPROVAL, decision.getKind());
         assertEquals(FlightIntent.APPROACH, decision.getIntent());
@@ -254,7 +255,7 @@ public class AutonomousMissionTest {
 
     @Test
     public void targetSelectorPrefersHigherThreatClassificationBeforeDistance() {
-        TargetSelector<String> selector = new TargetSelector<String>();
+        TargetSelector<String> selector = new TargetSelector<>();
         String selected = selector.select(TargetSpec.hostile(TargetPriority.HIGH),
                 Arrays.asList(
                         candidate("minecraft:zombie", "zombie", 100.0D),
@@ -266,13 +267,13 @@ public class AutonomousMissionTest {
     public void targetSelectorDoesNotSubstituteWhenManualTargetIsMissing() {
         TargetSelector<String> selector = new TargetSelector<>();
         String selected = selector.select(TargetSpec.manual("hostile:target", TargetPriority.HIGH),
-                Arrays.asList(candidate("hostile:other", "wrong")));
+                Collections.singletonList(candidate("hostile:other", "wrong")));
         assertNull(selected);
     }
 
     @Test
     public void targetSelectorMatchesHostileNamespaceCandidates() {
-        TargetSelector<String> selector = new TargetSelector<String>();
+        TargetSelector<String> selector = new TargetSelector<>();
         String selected = selector.select(TargetSpec.hostile(TargetPriority.HIGH),
                 Arrays.asList(
                         candidate("minecraft:zombie", "zombie"),

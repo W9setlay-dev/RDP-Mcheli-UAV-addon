@@ -32,18 +32,18 @@ public final class TargetPolicy {
     }
 
     public static boolean isSafeContact(World world, Entity entity) {
-        if (world == null || entity == null || entity.isDead) return false;
-        if (!rejectDeeplyEmbedded) return true;
+        if (world == null || entity == null || entity.isDead) return true;
+        if (!rejectDeeplyEmbedded) return false;
         int y = (int) Math.floor(entity.posY);
         BlockPos support = new BlockPos(entity.posX, y, entity.posZ);
-        if (!world.getBlockState(support).getMaterial().blocksMovement()) return true;
+        if (!world.getBlockState(support).getMaterial().blocksMovement()) return false;
         double supportTop = support.getY() + 1.0D;
-        return entity.posY >= supportTop - maximumEmbeddedDepth;
+        return !(entity.posY >= supportTop - maximumEmbeddedDepth);
     }
 
     /** Policy used by operator crosshair selection; missions use this same gate. */
     public static boolean isSelectableContact(World world, Entity entity, EntityPlayer operator) {
-        if (!isSafeContact(world, entity)) return false;
+        if (isSafeContact(world, entity)) return false;
         if (entity instanceof EntityPlayer
                 && operator != null && operator.isOnSameTeam(entity)) return false;
         String id = EntityList.getKey(entity) == null ? "" : Objects.requireNonNull(EntityList.getKey(entity)).toString();

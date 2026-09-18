@@ -8,11 +8,11 @@ import java.util.Set;
 import java.util.UUID;
 
 public final class MissionCoordinator {
-    private final Map<UUID, UUID> aircraftByTarget = new HashMap<UUID, UUID>();
-    private final Map<UUID, Set<UUID>> targetsByAircraft = new HashMap<UUID, Set<UUID>>();
-    private final Map<UUID, String> rolesByAircraft = new HashMap<UUID, String>();
-    private final Map<UUID, String> coverageByAircraft = new HashMap<UUID, String>();
-    private final Map<UUID, String> coverageByTarget = new HashMap<UUID, String>();
+    private final Map<UUID, UUID> aircraftByTarget = new HashMap<>();
+    private final Map<UUID, Set<UUID>> targetsByAircraft = new HashMap<>();
+    private final Map<UUID, String> rolesByAircraft = new HashMap<>();
+    private final Map<UUID, String> coverageByAircraft = new HashMap<>();
+    private final Map<UUID, String> coverageByTarget = new HashMap<>();
 
     public synchronized void setRole(UUID aircraftId, String role) {
         if (aircraftId == null) throw new IllegalArgumentException("Aircraft id is required");
@@ -57,7 +57,7 @@ public final class MissionCoordinator {
             coverageByTarget.put(targetId, coverageZone.trim());
         }
         if (!targetsByAircraft.containsKey(aircraftId)) {
-            targetsByAircraft.put(aircraftId, new HashSet<UUID>());
+            targetsByAircraft.put(aircraftId, new HashSet<>());
         }
         targetsByAircraft.get(aircraftId).add(targetId);
         aircraftByTarget.put(targetId, aircraftId);
@@ -139,7 +139,7 @@ public final class MissionCoordinator {
     public synchronized Set<UUID> targetsFor(UUID aircraftId) {
         if (aircraftId == null) return Collections.emptySet();
         Set<UUID> targets = targetsByAircraft.get(aircraftId);
-        return targets == null ? Collections.<UUID>emptySet() : new HashSet<UUID>(targets);
+        return targets == null ? Collections.emptySet() : new HashSet<UUID>(targets);
     }
 
     public synchronized int activeMissionCount() {

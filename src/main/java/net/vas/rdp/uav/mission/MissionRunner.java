@@ -10,10 +10,10 @@ public final class MissionRunner {
         void onExit(RDPMission mission);
         long timeoutTicks();
     }
-    private final Map<MissionState, Handler> handlers = new EnumMap<MissionState, Handler>(MissionState.class);
+    private final Map<MissionState, Handler> handlers = new EnumMap<>(MissionState.class);
     private final MissionQueue queue;
     private final MissionManager manager;
-    private final Map<java.util.UUID, Long> enteredAt = new java.util.HashMap<java.util.UUID, Long>();
+    private final Map<java.util.UUID, Long> enteredAt = new java.util.HashMap<>();
 
     public MissionRunner(MissionManager manager, MissionQueue queue) {
         this.manager = manager;

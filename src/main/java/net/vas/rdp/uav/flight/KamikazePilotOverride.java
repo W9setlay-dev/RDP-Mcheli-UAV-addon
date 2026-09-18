@@ -11,7 +11,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * active operator input and must be re-established after a restart.</p>
  */
 public final class KamikazePilotOverride {
-    private static final Map<UUID, UUID> LOCKS = new ConcurrentHashMap<UUID, UUID>();
+    private static final Map<UUID, UUID> LOCKS = new ConcurrentHashMap<>();
 
     private KamikazePilotOverride() { }
 
