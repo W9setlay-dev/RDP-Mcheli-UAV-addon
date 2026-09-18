@@ -56,6 +56,8 @@ public final class RdpUavNetwork {
                 AiTargetLock.AreaLock.class, 15, Side.SERVER);
         CHANNEL.registerMessage(ClientSwarmTelemetryHandler.ServerSwarmConfigHandler.class,
                 ClientSwarmTelemetryHandler.SwarmConfigUpdate.class, 16, Side.SERVER);
+        CHANNEL.registerMessage(ClientSwarmTelemetryHandler.ServerSwarmTargetHandler.class,
+                ClientSwarmTelemetryHandler.SwarmTargetUpdate.class, 17, Side.SERVER);
     }
 
     public static void openMissionControl(EntityPlayerMP player) {
@@ -146,6 +148,19 @@ public final class RdpUavNetwork {
                 participation, allowDuplicates));
     }
 
+    public static void assignSwarmTarget(String swarmId, java.util.UUID targetId,
+                                         boolean allowDuplicate) {
+        if (swarmId == null || swarmId.trim().isEmpty() || targetId == null) return;
+        CHANNEL.sendToServer(new ClientSwarmTelemetryHandler.SwarmTargetUpdate(
+                swarmId, targetId, false, allowDuplicate));
+    }
+
+    public static void releaseSwarmTarget(String swarmId) {
+        if (swarmId == null || swarmId.trim().isEmpty()) return;
+        CHANNEL.sendToServer(new ClientSwarmTelemetryHandler.SwarmTargetUpdate(
+                swarmId, null, true, false));
+    }
+
     static void sendMissionData(EntityPlayerMP player) {
         CHANNEL.sendTo(MissionData.from(player), player);
     }
@@ -190,6 +205,85 @@ public final class RdpUavNetwork {
     public static final class ClientSwarmTelemetryHandler implements IMessageHandler<SwarmTelemetry, IMessage> {
         public IMessage onMessage(SwarmTelemetry message, MessageContext context) {
             return null;
+        }
+
+        public static final class SwarmTargetUpdate implements IMessage {
+            private String swarmId = "";
+            private String targetId = "";
+            private boolean release;
+            private boolean allowDuplicate;
+
+            public SwarmTargetUpdate() { }
+
+            public SwarmTargetUpdate(String swarmId, java.util.UUID targetId,
+                                     boolean release, boolean allowDuplicate) {
+                this.swarmId = swarmId == null ? "" : swarmId;
+                this.targetId = targetId == null ? "" : targetId.toString();
+                this.release = release;
+                this.allowDuplicate = allowDuplicate;
+            }
+
+            public void fromBytes(ByteBuf buffer) {
+                swarmId = readString(buffer);
+                targetId = readString(buffer);
+                release = buffer.readBoolean();
+                allowDuplicate = buffer.readBoolean();
+            }
+
+            public void toBytes(ByteBuf buffer) {
+                writeString(buffer, swarmId);
+                writeString(buffer, targetId);
+                buffer.writeBoolean(release);
+                buffer.writeBoolean(allowDuplicate);
+            }
+        }
+
+        public static final class ServerSwarmTargetHandler
+                implements IMessageHandler<SwarmTargetUpdate, IMessage> {
+            public IMessage onMessage(final SwarmTargetUpdate message, MessageContext context) {
+                final EntityPlayerMP player = context.getServerHandler().player;
+                Objects.requireNonNull(player.getServer()).addScheduledTask(new Runnable() {
+                    public void run() {
+                        try {
+                            java.util.UUID swarmId = java.util.UUID.fromString(message.swarmId);
+                            MCH_EntityAircraft aircraft =
+                                    net.vas.rdp.uav.mission.UavControlAccess.findControlledAircraft(player);
+                            if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, player)) {
+                                player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                        "Swarm target rejected: operator control is required."));
+                                return;
+                            }
+                            boolean success;
+                            if (message.release) {
+                                success = RDPUavMod.swarms().releaseTarget(player.world,
+                                        player.getUniqueID(), swarmId, aircraft.getUniqueID());
+                            } else {
+                                java.util.UUID targetId = java.util.UUID.fromString(message.targetId);
+                                net.minecraft.entity.Entity target =
+                                        TARGET_RESOLVER.findLoaded(player.world, targetId);
+                                if (target == null || target == aircraft || target.isDead
+                                        || !target.canBeCollidedWith()) {
+                                    player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                            "Swarm target rejected: target is unavailable."));
+                                    return;
+                                }
+                                success = RDPUavMod.swarms().assignTarget(player.world,
+                                        player.getUniqueID(), swarmId, aircraft.getUniqueID(),
+                                        targetId, message.allowDuplicate);
+                            }
+                            player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                    success ? (message.release ? "Swarm target released."
+                                            : "Swarm target assigned.")
+                                            : "Swarm target rejected: swarm/member authorization or duplicate policy."));
+                            if (success) syncSwarmTelemetry(player);
+                        } catch (IllegalArgumentException invalid) {
+                            player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                    "Swarm target rejected: invalid swarm or target ID."));
+                        }
+                    }
+                });
+                return null;
+            }
         }
 
         public static final class SwarmConfigUpdate implements IMessage {

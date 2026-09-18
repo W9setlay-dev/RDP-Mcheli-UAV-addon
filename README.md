@@ -69,7 +69,10 @@ recovery. Locking does not require a destructive weapon and does not bypass
 aircraft ownership or target validation. For entity missions, enter the exact
 registry ID in the `ENTITY ID FILTER` field and cycle `Target priority` in the
 GUI before pressing Recon or Attack; the selected LOW/NORMAL/HIGH/CRITICAL
-value is validated server-side. Abort requests are checked server-side against the player's UUID,
+value is validated server-side. In the swarm controls, enter the swarm UUID,
+aim at an entity, and use `Assign crosshair` to invoke server-authorized
+`assignTarget`; `Release target` invokes `releaseTarget` for the controlled
+swarm member. Abort requests are checked server-side against the player's UUID,
 mission ownership, and terminal state. Authorization requires the player to
 be the McHeli UAV pilot; another player cannot create a mission for that UAV.
 Attack-intent missions begin in reconnaissance mode and automatically arm
@@ -514,3 +517,18 @@ geometry is an objective/slot description only; it never teleports aircraft or
 competes with WingMan. Operator-controlled members are excluded from automatic
 allocation. Capability filtering and stable UUID ordering provide deterministic
 task candidates.
+### Guided-weapon diagnostics
+
+Enable `debug.enabled=true` in `rdp-uav-debug.cfg` to trace a guided launch
+through native projectile execution. Guidance events use the existing
+`[DEBUG][Guidance]` log prefix and include correlation fields such as
+`aircraft`, `projectile`, `objective`, `weapon`, `target`, `mode`, and
+`reason`. Launch validation, native launch acceptance/rejection, target
+switch/loss, obstacle decisions, throttled native coordinate updates, aborts,
+and projectile state transitions are recorded. Coordinate updates are
+rate-limited; state changes and failures are always emitted.
+
+For a complete trace, filter `latest.log` by the aircraft UUID or objective
+UUID and follow `assignment_authorized`, `native_launch_accepted` or
+`native_launch_rejected`, `projectile_state`, `native_target_update`,
+`target_lost`/`avoidance_waypoint`, and the terminal state event.

@@ -7,6 +7,7 @@ import org.apache.logging.log4j.Logger;
 import java.io.File;
 import java.util.Locale;
 import java.util.IllegalFormatException;
+import java.util.StringJoiner;
 
 /**
  * Central, runtime-toggleable diagnostics for the server-side addon.
@@ -66,6 +67,21 @@ public final class RdpUavDebug {
 
     public static void debug(String component, String format, Object... arguments) {
         if (enabled) LOGGER.info("[DEBUG][{}] {}", component, formatMessage(format, arguments));
+    }
+
+    /**
+     * Emits a stable key/value event that can be filtered and correlated from
+     * latest.log without requiring callers to hand-build format strings.
+     */
+    public static void event(String component, String event, Object... fields) {
+        if (!enabled) return;
+        StringJoiner values = new StringJoiner(" ");
+        if (fields != null) {
+            for (int i = 0; i + 1 < fields.length; i += 2) {
+                values.add(String.valueOf(fields[i]) + "=" + String.valueOf(fields[i + 1]));
+            }
+        }
+        LOGGER.info("[DEBUG][{}] event={} {}", component, event, values.toString());
     }
 
     public static void warn(String component, String message) {

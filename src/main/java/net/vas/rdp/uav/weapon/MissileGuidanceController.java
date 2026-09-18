@@ -25,6 +25,8 @@ public final class MissileGuidanceController {
             new HashMap<UUID, ProjectileGuidanceMission>();
     private static final Map<UUID, AvoidancePlan> AVOIDANCE_PLANS =
             new HashMap<UUID, AvoidancePlan>();
+    private static final Map<UUID, Long> LAST_COORDINATE_LOG =
+            new HashMap<UUID, Long>();
     private static final int MAX_ROUTE_SAMPLES = 12;
     private static final int MAX_AVOIDANCE_CANDIDATES = 8;
     private static final double AVOIDANCE_OFFSET = 4.0D;
@@ -36,6 +38,10 @@ public final class MissileGuidanceController {
                                               GuidedStrikeObjective objective) {
         if (aircraftId == null || weapon == null || objective == null) return;
         ASSIGNMENTS.put(aircraftId, new Assignment(weapon, objective));
+        RdpUavDebug.event("Guidance", "assignment_authorized",
+                "aircraft", aircraftId, "weapon", weapon,
+                "objective", objective.getObjectiveId(), "objectiveType", objective.getType(),
+                "target", objective.getContactId());
     }
 
     public static synchronized void authorize(UUID aircraftId, String weapon,
@@ -50,6 +56,7 @@ public final class MissileGuidanceController {
             Assignment assignment = ASSIGNMENTS.get(aircraftId);
             if (assignment != null) assignment.mode = GuidanceControlMode.ABORTED;
             ASSIGNMENTS.remove(aircraftId);
+            RdpUavDebug.event("Guidance", "assignment_aborted", "aircraft", aircraftId);
             RdpUavDebug.debug("Guidance", "aircraft={} owner=PLAYER/native action=TAKEOVER", aircraftId);
         }
     }
@@ -94,6 +101,10 @@ public final class MissileGuidanceController {
                             selected.getUniqueID());
                     assignment.objective.switchContact(selected.getUniqueID(), selected.posX,
                             selected.posY, selected.posZ, world.getTotalWorldTime());
+                    RdpUavDebug.event("Guidance", "target_switched",
+                            "aircraft", shooter.getUniqueID(), "projectile", missile.getUniqueID(),
+                            "objective", assignment.objective.getObjectiveId(),
+                            "target", selected.getUniqueID());
                 }
             }
             apply(world, missile, assignment);
@@ -101,6 +112,7 @@ public final class MissileGuidanceController {
         synchronized (MissileGuidanceController.class) {
             PROJECTILES.keySet().retainAll(liveProjectiles);
             AVOIDANCE_PLANS.keySet().retainAll(liveProjectiles);
+            LAST_COORDINATE_LOG.keySet().retainAll(liveProjectiles);
         }
     }
 
@@ -126,21 +138,34 @@ public final class MissileGuidanceController {
                 x = target.posX; y = target.posY; z = target.posZ;
                 objective.updateContact(x, y, z, world.getTotalWorldTime());
             } else {
+                boolean firstLoss = projectile.getState() != ProjectileGuidanceState.TARGET_LOST;
                 objective.loseContact();
                 projectile.targetLost();
+                if (firstLoss) {
+                    RdpUavDebug.event("Guidance", "target_lost",
+                            "aircraft", shooterId(missile),
+                            "projectile", missile.getUniqueID(), "objective", objective.getObjectiveId(),
+                            "target", objective.getContactId(), "weapon", assignment.weapon);
+                }
                 RdpUavDebug.debug("Guidance", "aircraft={} projectile target lost weapon={}",
-                        missile.shootingAircraft == null ? null
-                                : missile.shootingAircraft.getUniqueID(), assignment.weapon);
+                        shooterId(missile), assignment.weapon);
                 return;
             }
         }
         AimPoint aim = chooseAimPoint(world, missile, x, y, z);
         if (aim == null) {
+            boolean firstObstacleFailure =
+                    projectile.getState() != ProjectileGuidanceState.OBSTACLE_UNAVAILABLE;
             projectile.obstacleUnavailable();
+            if (firstObstacleFailure) {
+                RdpUavDebug.event("Guidance", "obstacle_unavailable",
+                        "aircraft", shooterId(missile),
+                        "projectile", missile.getUniqueID(), "objective", objective.getObjectiveId(),
+                        "weapon", assignment.weapon);
+            }
             RdpUavDebug.debug("Guidance",
                     "aircraft={} projectile={} avoidance no safe candidate weapon={}",
-                    missile.shootingAircraft == null ? null
-                            : missile.shootingAircraft.getUniqueID(),
+                    shooterId(missile),
                     missile.getUniqueID(), assignment.weapon);
             return;
         }
@@ -148,11 +173,18 @@ public final class MissileGuidanceController {
         y = aim.y;
         z = aim.z;
         if (aim.avoiding) {
+            boolean firstAvoidance =
+                    projectile.getState() != ProjectileGuidanceState.AVOIDANCE_ACTIVE;
             projectile.avoidanceActive();
+            if (firstAvoidance) {
+                RdpUavDebug.event("Guidance", "avoidance_waypoint",
+                        "aircraft", shooterId(missile),
+                        "projectile", missile.getUniqueID(), "objective", objective.getObjectiveId(),
+                        "x", x, "y", y, "z", z);
+            }
             RdpUavDebug.debug("Guidance",
                     "aircraft={} projectile={} native avoidance candidate=({}, {}, {})",
-                    missile.shootingAircraft == null ? null
-                            : missile.shootingAircraft.getUniqueID(),
+                    shooterId(missile),
                     missile.getUniqueID(), x, y, z);
         }
         if (missile instanceof MCH_EntityTvMissile) {
@@ -169,6 +201,16 @@ public final class MissileGuidanceController {
             as.targetPosX = x;
             as.targetPosY = y;
             as.targetPosZ = z;
+        }
+        long now = world.getTotalWorldTime();
+        Long previous = LAST_COORDINATE_LOG.get(missile.getUniqueID());
+        if (previous == null || now - previous.longValue() >= AVOIDANCE_PLAN_TICKS) {
+            LAST_COORDINATE_LOG.put(missile.getUniqueID(), now);
+            RdpUavDebug.event("Guidance", "native_target_update",
+                    "aircraft", shooterId(missile),
+                    "projectile", missile.getUniqueID(), "objective", objective.getObjectiveId(),
+                    "weapon", assignment.weapon, "mode", behaviorFor(missile),
+                    "x", x, "y", y, "z", z);
         }
     }
 
@@ -312,6 +354,12 @@ public final class MissileGuidanceController {
             if (entity != null && id.equals(entity.getUniqueID())) return entity;
         }
         return null;
+    }
+
+    private static UUID shooterId(MCH_EntityBaseBullet missile) {
+        Entity shooter = missile.shootingAircraft == null
+                ? missile.shootingEntity : missile.shootingAircraft;
+        return shooter == null ? null : shooter.getUniqueID();
     }
 
     private static final class Assignment {

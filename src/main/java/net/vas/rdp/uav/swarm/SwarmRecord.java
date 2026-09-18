@@ -39,11 +39,8 @@ public final class SwarmRecord {
             if (existing.getAircraftId().equals(member.getAircraftId())) return;
         }
         members.add(member);
-        members.sort(new Comparator<SwarmMember>() {
-            public int compare(SwarmMember left, SwarmMember right) {
-                return left.getAircraftId().toString().compareTo(right.getAircraftId().toString());
-            }
-        });
+        members.sort(Comparator.comparing(
+                left -> left.getAircraftId().toString()));
         assignSlots();
         if (state == SwarmState.FORMING) state = SwarmState.READY;
     }

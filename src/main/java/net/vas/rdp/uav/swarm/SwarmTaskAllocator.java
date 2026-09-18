@@ -10,7 +10,7 @@ public final class SwarmTaskAllocator {
         if (swarm == null || task == null || limit < 0) {
             throw new IllegalArgumentException("Swarm, task, and limit are required");
         }
-        List<SwarmMember> result = new ArrayList<SwarmMember>();
+        List<SwarmMember> result = new ArrayList<>();
         for (SwarmMember member : swarm.getMembers()) {
             if (!member.isAvailable() || member.isOperatorControlled()) continue;
             boolean needsPayload = task == SwarmTask.POINT_OBSERVATION
@@ -18,14 +18,10 @@ public final class SwarmTaskAllocator {
             if (needsPayload && !member.hasPayload()) continue;
             result.add(member);
         }
-        result.sort(new Comparator<SwarmMember>() {
-            public int compare(SwarmMember left, SwarmMember right) {
-                int profile = left.getProfile().compareTo(right.getProfile());
-                return profile != 0 ? profile
-                        : left.getAircraftId().toString().compareTo(right.getAircraftId().toString());
-            }
-        });
-        if (result.size() > limit) return new ArrayList<SwarmMember>(result.subList(0, limit));
+        result.sort(Comparator.comparing(SwarmMember::getProfile)
+                .thenComparing(left -> left.getAircraftId()
+                        .toString()));
+        if (result.size() > limit) return new ArrayList<>(result.subList(0, limit));
         return result;
     }
 }

@@ -1,6 +1,7 @@
 package net.vas.rdp.uav.weapon;
 
 import java.util.UUID;
+import net.vas.rdp.uav.RdpUavDebug;
 
 /**
  * Server-side identity for one native McHeli projectile execution.
@@ -63,8 +64,14 @@ public final class ProjectileGuidanceMission {
                 || state == ProjectileGuidanceState.TIMED_OUT) {
             return;
         }
+        if (state == next && reason.equals(nextReason)) return;
+        ProjectileGuidanceState previous = state;
         state = next;
         reason = nextReason;
+        RdpUavDebug.event("Guidance", "projectile_state",
+                "aircraft", aircraftId, "projectile", projectileId,
+                "weapon", weapon, "objective", objective.getObjectiveId(),
+                "from", previous, "to", next, "reason", nextReason);
     }
 
     public UUID getProjectileId() { return projectileId; }

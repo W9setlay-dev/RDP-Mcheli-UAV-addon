@@ -161,6 +161,10 @@ public final class GuiMissionControl extends GuiScreen {
                     "Target priority: " + targetPriorityLabel()));
             buttonList.add(new GuiButton(17, right, height - 106, 220, 20,
                     "Apply swarm mission settings"));
+            buttonList.add(new GuiButton(21, right, height - 158, 105, 20,
+                    "Assign crosshair"));
+            buttonList.add(new GuiButton(22, right + 110, height - 158, 110, 20,
+                    "Release target"));
             buttonList.add(new GuiButton(18, left, height - 132, 100, 20,
                     "Swarm " + (swarmParticipation ? "ON" : "OFF")));
             buttonList.add(new GuiButton(19, left + 105, height - 132, 100, 20,
@@ -277,6 +281,8 @@ public final class GuiMissionControl extends GuiScreen {
         else if (button.id == 18) { swarmParticipation = !swarmParticipation; rebuildButtons(); }
         else if (button.id == 19) { swarmAllowDuplicates = !swarmAllowDuplicates; rebuildButtons(); }
         else if (button.id == 20) { targetPriority = (targetPriority + 1) % 4; rebuildButtons(); }
+        else if (button.id == 21) assignSwarmCrosshair();
+        else if (button.id == 22) releaseSwarmTarget();
         else if (button.id == 12) {
             filterMode = (filterMode + 1) % 3;
             rebuildButtons();
@@ -343,6 +349,27 @@ public final class GuiMissionControl extends GuiScreen {
         }
         RdpUavNetwork.updateSwarmConfig(id, maximum, swarmParticipation, swarmAllowDuplicates);
         status = "Swarm mission settings submitted for server validation.";
+    }
+
+    private void assignSwarmCrosshair() {
+        String swarmId = swarmIdField == null ? "" : swarmIdField.getText().trim();
+        RayTraceResult hit = mc.objectMouseOver;
+        if (swarmId.isEmpty() || hit == null || hit.entityHit == null) {
+            status = "Enter a swarm ID and aim at an entity.";
+            return;
+        }
+        RdpUavNetwork.assignSwarmTarget(swarmId, hit.entityHit.getUniqueID(), swarmAllowDuplicates);
+        status = "Swarm target assignment submitted for server validation.";
+    }
+
+    private void releaseSwarmTarget() {
+        String swarmId = swarmIdField == null ? "" : swarmIdField.getText().trim();
+        if (swarmId.isEmpty()) {
+            status = "Enter a swarm ID first.";
+            return;
+        }
+        RdpUavNetwork.releaseSwarmTarget(swarmId);
+        status = "Swarm target release submitted for server validation.";
     }
 
     private void createSquareMission() {

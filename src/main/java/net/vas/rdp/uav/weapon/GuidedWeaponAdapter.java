@@ -87,6 +87,9 @@ public final class GuidedWeaponAdapter {
             selectedPriority = available == null ? "" : available.getName();
         }
         if (findWeapon(aircraft, selectedPriority) == null) {
+            RdpUavDebug.event("Guidance", "validation_rejected",
+                    "aircraft", aircraft == null ? null : aircraft.getUniqueID(),
+                    "weapon", selectedPriority, "reason", "NO_GUIDED_WEAPON");
             return GuidedWeaponDecision.reject("NO_GUIDED_WEAPON");
         }
         GuidedWeaponDecision decision = validate(aircraft, objective, aircraftSpeed, selectedPriority);
@@ -98,6 +101,9 @@ public final class GuidedWeaponAdapter {
         }
         GuidedWeaponCapability capability = capabilityFor(aircraft, decision.getWeapon());
         if (capability == null || capability.getBehavior() == GuidedNativeBehavior.UNSUPPORTED) {
+            RdpUavDebug.event("Guidance", "validation_rejected",
+                    "aircraft", aircraft.getUniqueID(), "weapon", decision.getWeapon(),
+                    "objective", objective.getType(), "reason", "UNSUPPORTED_GUIDANCE");
             return GuidedWeaponDecision.reject("UNSUPPORTED_GUIDANCE");
         }
         if (!GuidedNativeContract.supportsAiGuidance(capability.getBehavior())) {
@@ -108,6 +114,9 @@ public final class GuidedWeaponAdapter {
         GuidedSafetyDecision safety = GuidedSafetyPolicy.evaluate(world, aircraft, objective,
                 requireLineOfSight, capability.getTerminalProfile());
         if (safety != GuidedSafetyDecision.ALLOW) {
+            RdpUavDebug.event("Guidance", "safety_rejected",
+                    "aircraft", aircraft.getUniqueID(), "weapon", decision.getWeapon(),
+                    "objective", objective.getType(), "reason", safetyReason(safety));
             return GuidedWeaponDecision.reject(safetyReason(safety));
         }
         if (capability.getBehavior() == GuidedNativeBehavior.ENTITY_SEEKER) {
@@ -117,9 +126,17 @@ public final class GuidedWeaponAdapter {
                     target != null);
             if (!"OK".equals(nativeDecision)) return GuidedWeaponDecision.reject(nativeDecision);
             if (!fireNativeEntitySeeker(aircraft, decision.getWeapon(), target)) {
+                RdpUavDebug.event("Guidance", "native_launch_rejected",
+                        "aircraft", aircraft.getUniqueID(), "weapon", decision.getWeapon(),
+                        "objective", objective.getObjectiveId(), "target", objective.getContactId(),
+                        "mode", "ENTITY_SEEKER");
                 return GuidedWeaponDecision.reject("NATIVE_SEEKER_LAUNCH_REJECTED");
             }
             MissileGuidanceController.authorize(aircraft.getUniqueID(), decision.getWeapon(), objective);
+            RdpUavDebug.event("Guidance", "native_launch_accepted",
+                    "aircraft", aircraft.getUniqueID(), "weapon", decision.getWeapon(),
+                    "objective", objective.getObjectiveId(), "target", objective.getContactId(),
+                    "mode", "ENTITY_SEEKER");
             RdpUavDebug.debug("Guidance", "aircraft={} weapon={} owner=AI objective=ENTITY launch=native",
                     aircraft.getUniqueID(), decision.getWeapon());
             flight.markNativeAttackComplete(aircraft);
@@ -132,8 +149,19 @@ public final class GuidedWeaponAdapter {
         } else {
             armed = fireNativeCoordinateWeapon(aircraft, decision.getWeapon(), objective);
         }
-        if (!armed) return GuidedWeaponDecision.reject("NATIVE_WINGMAN_REJECTED");
+        if (!armed) {
+            RdpUavDebug.event("Guidance", "native_launch_rejected",
+                    "aircraft", aircraft.getUniqueID(), "weapon", decision.getWeapon(),
+                    "objective", objective.getObjectiveId(), "mode",
+                    aircraft.isUAV() && !directLaunch ? "WINGMAN" : "NATIVE_DIRECT",
+                    "reason", "NATIVE_WINGMAN_REJECTED");
+            return GuidedWeaponDecision.reject("NATIVE_WINGMAN_REJECTED");
+        }
         MissileGuidanceController.authorize(aircraft.getUniqueID(), decision.getWeapon(), objective);
+        RdpUavDebug.event("Guidance", "native_launch_accepted",
+                "aircraft", aircraft.getUniqueID(), "weapon", decision.getWeapon(),
+                "objective", objective.getObjectiveId(), "objectiveType", objective.getType(),
+                "mode", aircraft.isUAV() && !directLaunch ? "WINGMAN" : "NATIVE_DIRECT");
         RdpUavDebug.debug("Guidance", "aircraft={} weapon={} owner=AI objective={} launch={}",
                 aircraft.getUniqueID(), decision.getWeapon(), objective.getType(),
                 aircraft.isUAV() && !directLaunch ? "WINGMAN" : "NATIVE_DIRECT");
