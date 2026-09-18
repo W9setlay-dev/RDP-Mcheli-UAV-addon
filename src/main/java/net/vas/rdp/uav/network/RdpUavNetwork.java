@@ -13,7 +13,6 @@ import net.vas.rdp.uav.RDPUavMod;
 import com.norwood.mcheli.aircraft.MCH_EntityAircraft;
 import com.norwood.mcheli.weapon.MCH_WeaponSet;
 import com.norwood.mcheli.weapon.MCH_EntityBaseBullet;
-import com.norwood.mcheli.wingman.wingman.WingmanRegistry;
 import net.vas.rdp.uav.RdpUavDebug;
 import net.vas.rdp.uav.flight.KamikazePilotOverride;
 import net.vas.rdp.uav.weapon.GuidedStrikeObjective;

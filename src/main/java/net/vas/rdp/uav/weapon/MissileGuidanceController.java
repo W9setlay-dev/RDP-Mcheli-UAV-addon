@@ -23,15 +23,15 @@ import net.vas.rdp.uav.RdpUavDebug;
 public final class MissileGuidanceController {
     private static final Map<UUID, Assignment> ASSIGNMENTS = new HashMap<UUID, Assignment>();
     private static final Map<UUID, ProjectileGuidanceMission> PROJECTILES =
-            new HashMap<UUID, ProjectileGuidanceMission>();
+            new HashMap<>();
     private static final Map<UUID, AvoidancePlan> AVOIDANCE_PLANS =
-            new HashMap<UUID, AvoidancePlan>();
+            new HashMap<>();
     private static final Map<UUID, Long> LAST_COORDINATE_LOG =
-            new HashMap<UUID, Long>();
+            new HashMap<>();
     private static final Map<UUID, CoordinatePoint> LAST_COORDINATES =
-            new HashMap<UUID, CoordinatePoint>();
+            new HashMap<>();
     private static final Map<UUID, Long> LAST_CORRECTION_TICK =
-            new HashMap<UUID, Long>();
+            new HashMap<>();
     private static final int MAX_ROUTE_SAMPLES = 12;
     private static final int MAX_AVOIDANCE_CANDIDATES = 8;
     private static final double AVOIDANCE_OFFSET = 4.0D;

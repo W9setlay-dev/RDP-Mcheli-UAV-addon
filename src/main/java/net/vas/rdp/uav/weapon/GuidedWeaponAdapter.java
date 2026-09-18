@@ -136,7 +136,7 @@ public final class GuidedWeaponAdapter {
             GuidedStrikeObjective nativeObjective = objective;
             Entity target = findLoadedTarget(world, objective.getContactId());
             if (objective.getType() == GuidedObjectiveType.SQUARE) {
-                target = findSquareTarget(world, objective, 8.0D);
+                target = findSquareTarget(world, objective);
                 if (target == null) {
                     RdpUavDebug.event("Guidance", "area_target_unavailable",
                             "aircraft", aircraft.getUniqueID(), "weapon", decision.getWeapon(),
@@ -159,6 +159,7 @@ public final class GuidedWeaponAdapter {
                     target != null);
             if (!"OK".equals(nativeDecision)) return GuidedWeaponDecision.reject(nativeDecision);
             if (!fireNativeEntitySeeker(aircraft, decision.getWeapon(), target)) {
+                assert target != null;
                 RdpUavDebug.event("Guidance", "native_launch_rejected",
                         "aircraft", aircraft.getUniqueID(), "weapon", decision.getWeapon(),
                         "objective", nativeObjective.getObjectiveId(), "target", target.getUniqueID(),
@@ -166,6 +167,7 @@ public final class GuidedWeaponAdapter {
                 return GuidedWeaponDecision.reject("NATIVE_SEEKER_LAUNCH_REJECTED");
             }
             MissileGuidanceController.authorize(aircraft.getUniqueID(), decision.getWeapon(), nativeObjective);
+            assert target != null;
             RdpUavDebug.event("Guidance", "native_launch_accepted",
                     "aircraft", aircraft.getUniqueID(), "weapon", decision.getWeapon(),
                     "objective", nativeObjective.getObjectiveId(), "target", target.getUniqueID(),
@@ -257,10 +259,10 @@ public final class GuidedWeaponAdapter {
         return null;
     }
 
-    private Entity findSquareTarget(World world, GuidedStrikeObjective objective, double radius) {
-        AxisAlignedBB area = new AxisAlignedBB(objective.getX() - radius, objective.getY() - radius,
-                objective.getZ() - radius, objective.getX() + radius, objective.getY() + radius,
-                objective.getZ() + radius);
+    private Entity findSquareTarget(World world, GuidedStrikeObjective objective) {
+        AxisAlignedBB area = new AxisAlignedBB(objective.getX() - 8.0, objective.getY() - 8.0,
+                objective.getZ() - 8.0, objective.getX() + 8.0, objective.getY() + 8.0,
+                objective.getZ() + 8.0);
         Entity selected = null;
         double selectedDistance = Double.MAX_VALUE;
         for (Entity candidate : world.getEntitiesWithinAABB(Entity.class, area)) {
