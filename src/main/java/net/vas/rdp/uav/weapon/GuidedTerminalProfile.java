@@ -40,7 +40,7 @@ public final class GuidedTerminalProfile {
     }
 
     public double getMaximumAircraftSpeed() { return maximumAircraftSpeed; }
-    public boolean isNoOrbit() { return noOrbit; }
+
     public double getMinimumAltitude() { return minimumAltitude; }
     public double getMaximumAltitude() { return maximumAltitude; }
     public double getMaximumCoordinateCorrection() { return maximumCoordinateCorrection; }

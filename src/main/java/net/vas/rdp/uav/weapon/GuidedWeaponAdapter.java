@@ -24,33 +24,6 @@ public final class GuidedWeaponAdapter {
         this.flight = flight;
     }
 
-    public GuidedWeaponDecision validate(MCH_EntityAircraft aircraft, GuidedStrikeObjective objective,
-                                         double aircraftSpeed) {
-        MCH_WeaponSet weapon = findAnyGuidedWeapon(aircraft);
-        return validate(aircraft, objective, aircraftSpeed,
-                weapon == null ? "" : weapon.getName());
-    }
-
-    /**
-     * Arms native WingMan attack routing after validation. Entity seekers keep
-     * the authoritative UUID; coordinate/TV/laser weapons receive coordinates.
-     */
-    public GuidedWeaponDecision arm(MCH_EntityAircraft aircraft, GuidedStrikeObjective objective,
-                                    double aircraftSpeed, double attackEnvelope) {
-        return GuidedWeaponDecision.reject("GUIDED_SAFETY_CONTEXT_REQUIRED");
-    }
-
-    /**
-     * Validates the world-facing release gates before handing a native attack
-     * node to WingMan.
-     */
-    public GuidedWeaponDecision arm(World world, MCH_EntityAircraft aircraft,
-                                    GuidedStrikeObjective objective, double aircraftSpeed,
-                                    double attackEnvelope, boolean requireLineOfSight) {
-        return arm(world, aircraft, objective, aircraftSpeed, attackEnvelope,
-                requireLineOfSight, "");
-    }
-
     /**
      * The priority is also the opt-in boundary for guided dispatch.  An empty
      * priority deliberately leaves the existing conventional WingMan path
@@ -136,12 +109,19 @@ public final class GuidedWeaponAdapter {
         GuidedSafetyDecision safety = GuidedSafetyPolicy.evaluate(world, aircraft, objective,
                 requireLineOfSight, capability.getTerminalProfile(), allowUnloadedTarget);
         if (safety != GuidedSafetyDecision.ALLOW) {
-            GuidedTerrainAnalyzer.Result terrain = GuidedTerrainAnalyzer.analyze(
+            GuidedTerrainAnalyzer.Analysis terrain = GuidedTerrainAnalyzer.analyzeDetailed(
                     world, aircraft, objective, capability.getTerminalProfile());
             RdpUavDebug.event("Guidance", "safety_rejected",
                     "aircraft", aircraft.getUniqueID(), "weapon", decision.getWeapon(),
                     "objective", objective.getType(), "reason", safetyReason(safety),
-                    "terrainResult", terrain,
+                    "terrainResult", terrain.getResult(),
+                    "terrainReason", terrain.getReason(),
+                    "terrainSample", terrain.getSample() + "/" + terrain.getSampleCount(),
+                    "terrainSampleX", terrain.getX(),
+                    "terrainSampleZ", terrain.getZ(),
+                    "routeY", terrain.getRouteY(),
+                    "terrainTop", terrain.getTerrainTop(),
+                    "clearance", terrain.getClearance(),
                     "targetBlockLoaded", world.isBlockLoaded(new BlockPos(
                             objective.getX(), objective.getY(), objective.getZ())),
                     "target", objective.getX() + "," + objective.getY() + "," + objective.getZ());

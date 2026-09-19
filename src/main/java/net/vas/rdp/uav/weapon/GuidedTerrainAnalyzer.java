@@ -16,26 +16,27 @@ public final class GuidedTerrainAnalyzer {
     private static final int MAX_CACHE = 256;
     private static final long CACHE_TICKS = 10L;
     private static final int MAX_SAMPLES = 32;
-    private static final Map<Key, Result> CACHE = new LinkedHashMap<Key, Result>(MAX_CACHE, .75F, true) {
-        @Override protected boolean removeEldestEntry(Map.Entry<Key, Result> eldest) {
+    private static final Map<Key, Analysis> CACHE = new LinkedHashMap<Key, Analysis>(MAX_CACHE, .75F, true) {
+        @Override protected boolean removeEldestEntry(Map.Entry<Key, Analysis> eldest) {
             return size() > MAX_CACHE;
         }
+
     };
 
     private GuidedTerrainAnalyzer() { }
 
-    public static synchronized Result analyze(World world, Entity aircraft,
-                                               GuidedStrikeObjective objective,
-                                               GuidedTerminalProfile profile) {
+    public static synchronized Analysis analyzeDetailed(World world, Entity aircraft,
+                                                        GuidedStrikeObjective objective,
+                                                        GuidedTerminalProfile profile) {
         if (world == null || aircraft == null || objective == null || profile == null) {
-            return Result.REJECTED;
+            return Analysis.rejected();
         }
         long bucket = world.getTotalWorldTime() / CACHE_TICKS;
         Key key = new Key(world.provider.getDimension(), bucket,
                 floor(aircraft.posX), floor(aircraft.posY), floor(aircraft.posZ),
                 floor(objective.getX()), floor(objective.getY()), floor(objective.getZ()),
                 profile.getMinimumAltitude(), profile.getMaximumAltitude());
-        Result cached = CACHE.get(key);
+        Analysis cached = CACHE.get(key);
         if (cached != null) return cached;
 
         double dx = objective.getX() - aircraft.posX;
@@ -49,24 +50,39 @@ public final class GuidedTerrainAnalyzer {
             double routeY = aircraft.posY + (objective.getY() - aircraft.posY) * fraction;
             BlockPos column = new BlockPos(x, objective.getY(), z);
             if (!world.isBlockLoaded(column)) {
-                Result result = Result.UNLOADED;
+                Analysis result = new Analysis(Result.UNLOADED, "COLUMN_UNLOADED",
+                        i, samples, x, z, routeY, Double.NaN, Double.NaN);
                 CACHE.put(key, result);
                 return result;
             }
             int top = world.getTopSolidOrLiquidBlock(new BlockPos(x, 0, z)).getY();
             double clearance = routeY - top;
             boolean terminal = i == samples;
-            if ((!terminal && clearance < 2.0D)
-                    || objective.getY() < profile.getMinimumAltitude()
+            if (objective.getY() < profile.getMinimumAltitude()
                     || objective.getY() > profile.getMaximumAltitude()) {
-                Result result = Result.BLOCKED;
+                Analysis result = new Analysis(Result.BLOCKED, "ALTITUDE_ENVELOPE",
+                        i, samples, x, z, routeY, top, clearance);
+                CACHE.put(key, result);
+                return result;
+            }
+            if (!terminal && clearance < 2.0D) {
+                Analysis result = new Analysis(Result.BLOCKED, "INSUFFICIENT_CLEARANCE",
+                        i, samples, x, z, routeY, top, clearance);
                 CACHE.put(key, result);
                 return result;
             }
         }
-        Result result = Result.CLEAR;
+        Analysis result = new Analysis(Result.CLEAR, "CLEAR",
+                samples, samples, objective.getX(), objective.getZ(),
+                objective.getY(), Double.NaN, Double.NaN);
         CACHE.put(key, result);
         return result;
+    }
+
+    public static synchronized Result analyze(World world, Entity aircraft,
+                                               GuidedStrikeObjective objective,
+                                               GuidedTerminalProfile profile) {
+        return analyzeDetailed(world, aircraft, objective, profile).getResult();
     }
 
     public static synchronized void clear() { CACHE.clear(); }
@@ -75,6 +91,42 @@ public final class GuidedTerrainAnalyzer {
 
     public enum Result {
         CLEAR, BLOCKED, UNLOADED, REJECTED
+    }
+
+    public static final class Analysis {
+        private final Result result;
+        private final String reason;
+        private final int sample;
+        private final int sampleCount;
+        private final double x, z, routeY, terrainTop, clearance;
+
+        private Analysis(Result result, String reason, int sample, int sampleCount,
+                         double x, double z, double routeY, double terrainTop, double clearance) {
+            this.result = result;
+            this.reason = reason;
+            this.sample = sample;
+            this.sampleCount = sampleCount;
+            this.x = x;
+            this.z = z;
+            this.routeY = routeY;
+            this.terrainTop = terrainTop;
+            this.clearance = clearance;
+        }
+
+        private static Analysis rejected() {
+            return new Analysis(Result.REJECTED, "INVALID_INPUT", 0, 0,
+                    Double.NaN, Double.NaN, Double.NaN, Double.NaN, Double.NaN);
+        }
+
+        public Result getResult() { return result; }
+        public String getReason() { return reason; }
+        public int getSample() { return sample; }
+        public int getSampleCount() { return sampleCount; }
+        public double getX() { return x; }
+        public double getZ() { return z; }
+        public double getRouteY() { return routeY; }
+        public double getTerrainTop() { return terrainTop; }
+        public double getClearance() { return clearance; }
     }
 
     private static final class Key {
