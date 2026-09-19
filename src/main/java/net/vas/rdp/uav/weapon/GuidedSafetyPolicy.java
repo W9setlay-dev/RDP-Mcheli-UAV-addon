@@ -39,10 +39,8 @@ public final class GuidedSafetyPolicy {
         }
         GuidedTerrainAnalyzer.Result terrain = GuidedTerrainAnalyzer.analyze(
                 world, aircraft, objective, profile);
-        if (terrain == GuidedTerrainAnalyzer.Result.UNLOADED && !allowUnloadedTarget) {
-            return GuidedSafetyDecision.HOLD_CHUNK_UNLOADED;
-        }
-        if (terrain != GuidedTerrainAnalyzer.Result.CLEAR) return GuidedSafetyDecision.HOLD_TERRAIN;
+        GuidedSafetyDecision terrainDecision = terrainDecision(terrain, allowUnloadedTarget);
+        if (terrainDecision != GuidedSafetyDecision.ALLOW) return terrainDecision;
         if (requireLineOfSight) {
 
             Vec3d start = new Vec3d(aircraft.posX, aircraft.posY + aircraft.getEyeHeight(), aircraft.posZ);
@@ -57,5 +55,15 @@ public final class GuidedSafetyPolicy {
             }
         }
         return GuidedSafetyDecision.ALLOW;
+    }
+
+    public static GuidedSafetyDecision terrainDecision(GuidedTerrainAnalyzer.Result terrain,
+                                                       boolean allowUnloadedTarget) {
+        if (terrain == GuidedTerrainAnalyzer.Result.UNLOADED) {
+            return allowUnloadedTarget
+                    ? GuidedSafetyDecision.ALLOW : GuidedSafetyDecision.HOLD_CHUNK_UNLOADED;
+        }
+        return terrain == GuidedTerrainAnalyzer.Result.CLEAR
+                ? GuidedSafetyDecision.ALLOW : GuidedSafetyDecision.HOLD_TERRAIN;
     }
 }

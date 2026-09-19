@@ -5,8 +5,11 @@ import net.vas.rdp.uav.weapon.GuidedNativeBehavior;
 import net.vas.rdp.uav.weapon.GuidedNativeContract;
 import net.vas.rdp.uav.weapon.GuidedObjectiveState;
 import net.vas.rdp.uav.weapon.GuidedObjectiveType;
+import net.vas.rdp.uav.weapon.GuidedSafetyDecision;
+import net.vas.rdp.uav.weapon.GuidedSafetyPolicy;
 import net.vas.rdp.uav.weapon.GuidedStrikeObjective;
 import net.vas.rdp.uav.weapon.GuidedTerminalProfile;
+import net.vas.rdp.uav.weapon.GuidedTerrainAnalyzer;
 import net.vas.rdp.uav.weapon.GuidedWeaponCapability;
 import net.vas.rdp.uav.weapon.GuidedWeaponRegistry;
 import net.vas.rdp.uav.weapon.ProjectileGuidanceMission;
@@ -73,6 +76,16 @@ public class GuidedWeaponTest {
         assertTrue(GuidedChunkCapability.allowUnloadedTarget(false, true));
         assertTrue(GuidedChunkCapability.allowUnloadedTarget(true, false));
         assertTrue(GuidedChunkCapability.allowUnloadedTarget(true, true));
+    }
+
+    @Test
+    public void mcheliChunkCapabilityDoesNotMisclassifyUnloadedTerrainAsBlocked() {
+        assertEquals(GuidedSafetyDecision.HOLD_CHUNK_UNLOADED,
+                GuidedSafetyPolicy.terrainDecision(GuidedTerrainAnalyzer.Result.UNLOADED, false));
+        assertEquals(GuidedSafetyDecision.ALLOW,
+                GuidedSafetyPolicy.terrainDecision(GuidedTerrainAnalyzer.Result.UNLOADED, true));
+        assertEquals(GuidedSafetyDecision.HOLD_TERRAIN,
+                GuidedSafetyPolicy.terrainDecision(GuidedTerrainAnalyzer.Result.BLOCKED, true));
     }
 
     @Test

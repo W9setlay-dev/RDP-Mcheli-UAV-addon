@@ -8,6 +8,7 @@ import net.vas.rdp.uav.flight.WingManFlightAdapter;
 import net.minecraft.world.World;
 import net.minecraft.entity.Entity;
 import net.minecraft.util.math.AxisAlignedBB;
+import net.minecraft.util.math.BlockPos;
 import net.vas.rdp.uav.RdpUavDebug;
 import net.vas.rdp.uav.target.TargetPolicy;
 
@@ -135,9 +136,15 @@ public final class GuidedWeaponAdapter {
         GuidedSafetyDecision safety = GuidedSafetyPolicy.evaluate(world, aircraft, objective,
                 requireLineOfSight, capability.getTerminalProfile(), allowUnloadedTarget);
         if (safety != GuidedSafetyDecision.ALLOW) {
+            GuidedTerrainAnalyzer.Result terrain = GuidedTerrainAnalyzer.analyze(
+                    world, aircraft, objective, capability.getTerminalProfile());
             RdpUavDebug.event("Guidance", "safety_rejected",
                     "aircraft", aircraft.getUniqueID(), "weapon", decision.getWeapon(),
-                    "objective", objective.getType(), "reason", safetyReason(safety));
+                    "objective", objective.getType(), "reason", safetyReason(safety),
+                    "terrainResult", terrain,
+                    "targetBlockLoaded", world.isBlockLoaded(new BlockPos(
+                            objective.getX(), objective.getY(), objective.getZ())),
+                    "target", objective.getX() + "," + objective.getY() + "," + objective.getZ());
             return GuidedWeaponDecision.reject(safetyReason(safety));
         }
         if (capability.getBehavior() == GuidedNativeBehavior.ENTITY_SEEKER) {
