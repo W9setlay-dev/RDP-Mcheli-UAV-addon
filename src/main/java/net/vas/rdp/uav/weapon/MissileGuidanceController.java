@@ -31,6 +31,10 @@ public final class MissileGuidanceController {
             new HashMap<>();
     private static final Map<UUID, CoordinatePoint> LAST_COORDINATES =
             new HashMap<>();
+    private static final Map<UUID, CoordinatePoint> LAST_APPLIED_NATIVE_TARGETS =
+            new HashMap<>();
+    private static final Map<UUID, Long> LAST_OVERRIDE_LOG =
+            new HashMap<>();
     private static final Map<UUID, Long> LAST_CORRECTION_TICK =
             new HashMap<>();
     private static final int MAX_ROUTE_SAMPLES = 12;
@@ -211,6 +215,8 @@ public final class MissileGuidanceController {
             AVOIDANCE_PLANS.keySet().retainAll(liveProjectiles);
             LAST_COORDINATE_LOG.keySet().retainAll(liveProjectiles);
             LAST_COORDINATES.keySet().retainAll(liveProjectiles);
+            LAST_APPLIED_NATIVE_TARGETS.keySet().retainAll(liveProjectiles);
+            LAST_OVERRIDE_LOG.keySet().retainAll(liveProjectiles);
             LAST_CORRECTION_TICK.keySet().retainAll(liveProjectiles);
         }
     }
@@ -291,6 +297,27 @@ public final class MissileGuidanceController {
                     shooterId(missile),
                     missile.getUniqueID(), x, y, z);
         }
+        CoordinatePoint previousNativeTarget = LAST_APPLIED_NATIVE_TARGETS.get(missile.getUniqueID());
+        CoordinatePoint currentNativeTarget = nativeTarget(missile);
+        if (previousNativeTarget != null && currentNativeTarget != null
+                && !samePoint(previousNativeTarget, currentNativeTarget)) {
+            long now = world.getTotalWorldTime();
+            Long previousLog = LAST_OVERRIDE_LOG.get(missile.getUniqueID());
+            if (previousLog == null || now - previousLog >= AVOIDANCE_PLAN_TICKS) {
+                LAST_OVERRIDE_LOG.put(missile.getUniqueID(), now);
+                RdpUavDebug.event("Guidance", "native_target_overwritten",
+                        "aircraft", shooterId(missile),
+                        "projectile", missile.getUniqueID(),
+                        "weapon", assignment.weapon,
+                        "previousX", previousNativeTarget.x,
+                        "previousY", previousNativeTarget.y,
+                        "previousZ", previousNativeTarget.z,
+                        "currentX", currentNativeTarget.x,
+                        "currentY", currentNativeTarget.y,
+                        "currentZ", currentNativeTarget.z,
+                        "owner", "MCHELI_NATIVE_OR_OTHER");
+            }
+        }
         if (missile instanceof MCH_EntityTvMissile) {
             MCH_EntityTvMissile tv = (MCH_EntityTvMissile) missile;
             // These are McHeli's native TV target fields. Do not replace
@@ -305,6 +332,11 @@ public final class MissileGuidanceController {
             as.targetPosX = x;
             as.targetPosY = y;
             as.targetPosZ = z;
+        }
+        if (missile instanceof MCH_EntityTvMissile
+                || missile instanceof MCH_EntityASMissile) {
+            LAST_APPLIED_NATIVE_TARGETS.put(missile.getUniqueID(),
+                    new CoordinatePoint(x, y, z));
         }
         long now = world.getTotalWorldTime();
         Long previous = LAST_COORDINATE_LOG.get(missile.getUniqueID());
@@ -365,6 +397,24 @@ public final class MissileGuidanceController {
                     "maximum", maximum, "x", x, "y", y, "z", z);
         }
         return result;
+    }
+
+    private static CoordinatePoint nativeTarget(MCH_EntityBaseBullet missile) {
+        if (missile instanceof MCH_EntityTvMissile) {
+            MCH_EntityTvMissile tv = (MCH_EntityTvMissile) missile;
+            return new CoordinatePoint(tv.targetPosX, tv.targetPosY, tv.targetPosZ);
+        }
+        if (missile instanceof MCH_EntityASMissile) {
+            MCH_EntityASMissile as = (MCH_EntityASMissile) missile;
+            return new CoordinatePoint(as.targetPosX, as.targetPosY, as.targetPosZ);
+        }
+        return null;
+    }
+
+    private static boolean samePoint(CoordinatePoint first, CoordinatePoint second) {
+        return Math.abs(first.x - second.x) < 0.001D
+                && Math.abs(first.y - second.y) < 0.001D
+                && Math.abs(first.z - second.z) < 0.001D;
     }
 
     private static synchronized ProjectileGuidanceMission projectileMission(
