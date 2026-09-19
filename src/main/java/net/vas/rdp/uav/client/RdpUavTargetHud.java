@@ -35,7 +35,7 @@ public final class RdpUavTargetHud {
     public void render(RenderGameOverlayEvent.Post event) {
         if (event.getType() != RenderGameOverlayEvent.ElementType.ALL
                 || !RdpUavHudConfig.enabled || telemetry == null || !telemetry.active) return;
-        Minecraft mc = Minecraft.getMinecraft();
+        Minecraft mc = net.minecraftforge.fml.client.FMLClientHandler.instance().getClient();
         if (mc.player == null || mc.world == null || System.currentTimeMillis() - receivedAt > 3000L) return;
         // Eligibility is decided on the server from McHeli's actual pilot/station
         // relationship. Repeating that lookup on the client breaks station-owned

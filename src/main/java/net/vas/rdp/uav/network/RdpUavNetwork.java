@@ -1534,7 +1534,7 @@ public final class RdpUavNetwork {
 
     public static final class ClientMissionControlHandler implements IMessageHandler<OpenMissionControl, IMessage> {
         public IMessage onMessage(OpenMissionControl message, MessageContext context) {
-            net.minecraft.client.Minecraft.getMinecraft().addScheduledTask(() -> net.minecraft.client.Minecraft.getMinecraft().displayGuiScreen(
+            net.minecraftforge.fml.client.FMLClientHandler.instance().getClient().addScheduledTask(() -> net.minecraftforge.fml.client.FMLClientHandler.instance().getClient().displayGuiScreen(
                     new net.vas.rdp.uav.client.GuiMissionControl()));
             return null;
         }
@@ -1542,7 +1542,7 @@ public final class RdpUavNetwork {
 
     public static final class ClientMissionDataHandler implements IMessageHandler<MissionData, IMessage> {
         public IMessage onMessage(final MissionData message, MessageContext context) {
-            net.minecraft.client.Minecraft.getMinecraft().addScheduledTask(() -> net.vas.rdp.uav.client.GuiMissionControl.receiveMissionData(
+            net.minecraftforge.fml.client.FMLClientHandler.instance().getClient().addScheduledTask(() -> net.vas.rdp.uav.client.GuiMissionControl.receiveMissionData(
                     message.getRows(), message.getIds(),
                     message.getWeaponRows(), message.getWeaponNames()));
             return null;
@@ -1551,7 +1551,7 @@ public final class RdpUavNetwork {
         public static final class ClientTargetTelemetryHandler
                 implements IMessageHandler<RdpUavNetwork.TargetTelemetry, IMessage> {
             public IMessage onMessage(final RdpUavNetwork.TargetTelemetry message, MessageContext context) {
-                net.minecraft.client.Minecraft.getMinecraft().addScheduledTask(() -> {
+                net.minecraftforge.fml.client.FMLClientHandler.instance().getClient().addScheduledTask(() -> {
                     net.vas.rdp.uav.client.RdpUavTargetHud.Telemetry hud =
                             new net.vas.rdp.uav.client.RdpUavTargetHud.Telemetry(
                                     message.active, message.hasPosition, message.missionId,

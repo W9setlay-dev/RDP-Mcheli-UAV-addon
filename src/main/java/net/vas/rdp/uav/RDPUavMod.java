@@ -44,7 +44,7 @@ public final class RDPUavMod {
         if (event.getSide() == Side.CLIENT) {
             net.vas.rdp.uav.client.RdpUavClientKeys.register();
             net.vas.rdp.uav.client.RdpUavHudConfig.load(
-                    net.minecraft.client.Minecraft.getMinecraft().gameDir);
+                    net.minecraftforge.fml.client.FMLClientHandler.instance().getClient().gameDir);
             net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(
                     net.vas.rdp.uav.client.RdpUavTargetHud.instance());
         }

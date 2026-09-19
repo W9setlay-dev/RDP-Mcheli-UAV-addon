@@ -82,7 +82,7 @@ public final class RdpUavClientKeys {
 
     @SubscribeEvent
     public void onKeyInput(InputEvent.KeyInputEvent event) {
-        Minecraft minecraft = Minecraft.getMinecraft();
+        Minecraft minecraft = net.minecraftforge.fml.client.FMLClientHandler.instance().getClient();
         if (minecraft.player == null) return;
         if (AI_TARGET_LOCK.isPressed()) lockAiTarget(minecraft);
         if (SIGHT_STABILIZATION.isPressed()) stabilizeSight(minecraft);
