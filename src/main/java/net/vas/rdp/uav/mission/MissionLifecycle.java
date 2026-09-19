@@ -45,6 +45,7 @@ public final class MissionLifecycle {
     private static final Logger LOGGER = LogManager.getLogger("RDP-UAV/MissionLifecycle");
     private static final long MISSION_TIMEOUT = 12000L;
     private static final long WINGMAN_ENTRY_GRACE_TICKS = 20L;
+    private static final long GUIDANCE_RETRY_INTERVAL = 10L;
 
     private final MissionManager manager;
     private final WingManFlightAdapter flight = new WingManFlightAdapter();
@@ -140,7 +141,7 @@ public final class MissionLifecycle {
             return;
         }
 
-        Target target = locateTarget(world, aircraft, mission, true);
+        Target target = locateTarget(world, aircraft, mission);
         RdpUavDebug.debug("Lifecycle", "mission {} target lookup result={} state={}",
                 mission.getMissionId(), formatTarget(target), mission.getState());
         if (target == null) {
@@ -441,6 +442,9 @@ public final class MissionLifecycle {
         if (mission.isTerminal()) return false;
         if (mission.getState() == MissionState.REPLAN && target != null
                 && isDirectNativeWeaponMission(mission, aircraft)) {
+            if (tick - mission.getLastUpdateTick() < GUIDANCE_RETRY_INTERVAL) {
+                return false;
+            }
             launchDirectWeapon(world, mission, aircraft, target, tick);
             return true;
         }
@@ -816,13 +820,11 @@ public final class MissionLifecycle {
         return Target.entity(reacquired);
     }
 
-    private Target locateTarget(World world, MCH_EntityAircraft aircraft, RDPMission mission,
-                                boolean allowAcquire) {
+    private Target locateTarget(World world, MCH_EntityAircraft aircraft, RDPMission mission) {
         if (mission.getTargetSelectionMode() == TargetSelectionMode.POINT) {
             return resolvePointTarget(world, mission.getTargetSpec().getX(),
                     mission.getTargetSpec().getY(), mission.getTargetSpec().getZ());
         }
-        if (!allowAcquire) return null;
         Entity current = targets.findLoaded(world, mission.getTargetId());
         if (current == null && mission.getTargetSelectionMode() == TargetSelectionMode.MANUAL) {
             current = targets.findLoadedByRegistryId(world, mission.getTargetSpec().getRegistryId());
@@ -1112,8 +1114,7 @@ public final class MissionLifecycle {
                     formatTarget(target));
             if (isPermanentGuidanceFailure(decision.getReason())) {
                 fail(world, mission, decision.getReason(), tick);
-            } else if (!decision.getReason().startsWith("GUIDED_HOLD_")
-                    && !decision.getReason().startsWith("GUIDED_WAIT_")) {
+            } else {
                 defer(world, mission, decision.getReason(),
                         guidanceRecoveryState(decision.getReason()), tick);
             }

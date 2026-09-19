@@ -36,6 +36,18 @@ public class MissionGuidanceFailureTest {
     }
 
     @Test
+    public void terrainHoldIsRecoverableAndDoesNotBecomeObjectiveFailure() {
+        RDPMission mission = mission();
+        assertTrue(mission.defer("GUIDED_HOLD_TERRAIN", MissionState.REPLAN, 1));
+        assertEquals(MissionState.REPLAN, mission.getState());
+        assertEquals("GUIDED_HOLD_TERRAIN", mission.getRecoveryReason());
+        assertFalse(mission.isTerminal());
+        assertTrue(mission.defer("GUIDED_HOLD_TERRAIN", MissionState.REPLAN, 11));
+        assertEquals(2, mission.getRecoveryAttempts());
+        assertFalse(mission.isTerminal());
+    }
+
+    @Test
     public void everyKnownGuidanceFailureHasAnExplicitLifecycleClass() {
         String[] permanent = {
                 "UNSUPPORTED_GUIDANCE",
