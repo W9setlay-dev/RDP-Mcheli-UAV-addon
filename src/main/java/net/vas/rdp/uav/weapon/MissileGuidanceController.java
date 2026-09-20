@@ -4,6 +4,7 @@ import com.norwood.mcheli.weapon.MCH_EntityASMissile;
 import com.norwood.mcheli.weapon.MCH_EntityBaseBullet;
 import com.norwood.mcheli.weapon.MCH_EntityTvMissile;
 import net.minecraft.entity.Entity;
+import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 
 import java.util.HashMap;
@@ -277,6 +278,10 @@ public final class MissileGuidanceController {
         x = aim.x;
         y = aim.y;
         z = aim.z;
+        CoordinatePoint nativeAim = normalizeNativeTarget(world, missile, x, y, z);
+        x = nativeAim.x;
+        y = nativeAim.y;
+        z = nativeAim.z;
         CoordinatePoint corrected = applyCoordinatePolicy(world, missile, x, y, z);
         x = corrected.x;
         y = corrected.y;
@@ -355,7 +360,9 @@ public final class MissileGuidanceController {
                                                           MCH_EntityBaseBullet missile,
                                                           double x, double y, double z) {
         if (!(missile instanceof MCH_EntityASMissile)
-                || missile.getInfo() == null) return new CoordinatePoint(x, y, z);
+                || missile.getInfo() == null) {
+            return new CoordinatePoint(x, y, z);
+        }
         GuidedWeaponCapability capability = GuidedWeaponRegistry.find(
                 missile.getInfo().name, missile.getInfo().type);
         if (capability == null) return new CoordinatePoint(x, y, z);
@@ -397,6 +404,44 @@ public final class MissileGuidanceController {
                     "maximum", maximum, "x", x, "y", y, "z", z);
         }
         return result;
+    }
+
+    /**
+     * McHeli's AS/TV native guidance branches only steer when their target
+     * BlockPos contains a movement-blocking material. Mission coordinates are
+     * points and may legitimately be in air above the strike block, so resolve
+     * a loaded air point to the nearest solid block below it without touching
+     * projectile motion.
+     */
+    private static CoordinatePoint normalizeNativeTarget(World world,
+                                                          MCH_EntityBaseBullet missile,
+                                                          double x, double y, double z) {
+        if (!(missile instanceof MCH_EntityASMissile)
+                && !(missile instanceof MCH_EntityTvMissile)) {
+            return new CoordinatePoint(x, y, z);
+        }
+        BlockPos requested = new BlockPos(x, y, z);
+        if (!world.isBlockLoaded(requested)
+                || world.getBlockState(requested).getMaterial().blocksMovement()) {
+            return new CoordinatePoint(x, y, z);
+        }
+        int minY = Math.max(0, requested.getY() - 32);
+        for (int candidateY = requested.getY() - 1; candidateY >= minY; candidateY--) {
+            BlockPos candidate = new BlockPos(requested.getX(), candidateY, requested.getZ());
+            if (world.getBlockState(candidate).getMaterial().blocksMovement()) {
+                RdpUavDebug.event("Guidance", "native_target_normalized",
+                        "projectile", missile.getUniqueID(),
+                        "weapon", missile.getInfo() == null ? "" : missile.getInfo().name,
+                        "requestedX", x, "requestedY", y, "requestedZ", z,
+                        "nativeX", candidate.getX() + 0.5D,
+                        "nativeY", candidate.getY(),
+                        "nativeZ", candidate.getZ() + 0.5D,
+                        "reason", "MCHELI_NATIVE_GUIDANCE_REQUIRES_SOLID_TARGET");
+                return new CoordinatePoint(candidate.getX() + 0.5D,
+                        candidate.getY(), candidate.getZ() + 0.5D);
+            }
+        }
+        return new CoordinatePoint(x, y, z);
     }
 
     private static CoordinatePoint nativeTarget(MCH_EntityBaseBullet missile) {
