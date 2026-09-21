@@ -1001,13 +1001,15 @@ public final class MissionLifecycle {
         UavVehicleProfile profile = profile(aircraft);
         if (!profile.isReusable()) {
             // FPV helicopters need a small, bounded standoff height before
-            // their terminal dive.  Sending the raw target Y to native
-            // WingMan makes a ground target look like an unlimited descent/
-            // climb correction for helicopter flight models.
-            if (aircraft instanceof MCH_EntityHeli) {
-                return Math.max(targetY + 8.0D, profile.getMinimumExecutionAltitude());
+            // their terminal dive. Sending the raw target Y to native WingMan
+            // makes a ground target look like an unlimited descent/climb
+            // correction for helicopter flight models.
+            if (aircraft instanceof MCH_EntityHeli || profile.isHelicopterProfile()) {
+                double minimum = profile.getMinimumExecutionAltitude() > 0D
+                        ? profile.getMinimumExecutionAltitude() : 4D;
+                double standoff = Math.max(8D, minimum);
+                return Math.max(targetY + standoff, minimum);
             }
-
             return targetY;
         }
         return Math.max(profile.getMinimumExecutionAltitude(),

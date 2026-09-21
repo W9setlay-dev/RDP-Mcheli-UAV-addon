@@ -80,6 +80,12 @@ public final class UavVehicleProfile {
         return executionProfile == UavExecutionProfile.REUSABLE_UAV
                 || executionProfile == UavExecutionProfile.LONG_RANGE_REUSABLE_UAV;
     }
+    public boolean isHelicopterProfile() {
+        return executionProfile == UavExecutionProfile.HELICOPTER_ONE_WAY_FPV;
+    }
+    public boolean requiresHelicopterApproachStandoff() {
+        return isHelicopterProfile();
+    }
     public boolean supportsLongRangeLock() {
         return executionProfile == UavExecutionProfile.LONG_RANGE_REUSABLE_UAV;
     }

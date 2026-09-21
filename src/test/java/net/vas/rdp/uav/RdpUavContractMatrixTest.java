@@ -171,7 +171,24 @@ public class RdpUavContractMatrixTest {
         UavVehicleProfile profile = UavVehicleProfiles.forAircraft("fpv-drone");
         assertEquals(UavExecutionProfile.HELICOPTER_ONE_WAY_FPV, profile.getExecutionProfile());
         assertEquals("SELF_DESTRUCT", profile.getTerminalPayloadBehavior());
+        assertTrue(profile.isHelicopterProfile());
+        assertTrue(profile.requiresHelicopterApproachStandoff());
         assertTrue(profile.getAttackEnvelope() > 0D);
+    }
+
+    @Test
+    public void targetPolicyBuilderSupportsComposedRulesWithoutBreakingTheLegacyGate() {
+        net.vas.rdp.uav.target.TargetPolicy.Decision rejected =
+                net.vas.rdp.uav.target.TargetPolicy.builder()
+                        .include("minecraft:zombie", "scp:thedeer")
+                        .exclude("players")
+                        .withMinimumConfidence(0D)
+                        .evaluate(null, null, null);
+        assertFalse(rejected.isAccepted());
+        assertEquals("NO_ENTITY", rejected.getReason());
+        assertNotNull(net.vas.rdp.uav.target.TargetPolicy.builder()
+                .include("minecraft:zombie")
+                .exclude("players"));
     }
 
     @Test

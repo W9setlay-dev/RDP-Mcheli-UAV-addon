@@ -13,6 +13,7 @@ import com.norwood.mcheli.weapon.MCH_WeaponParam;
 import net.vas.rdp.uav.RdpUavDebug;
 import net.vas.rdp.uav.energy.UavEnergyHandler;
 import net.vas.rdp.uav.profile.UavExecutionProfile;
+import net.vas.rdp.uav.profile.UavVehicleProfile;
 import net.vas.rdp.uav.profile.UavVehicleProfiles;
 
 import java.util.ArrayList;
@@ -36,6 +37,23 @@ public final class WingManFlightAdapter {
     public boolean dispatch(MCH_EntityAircraft aircraft, double x, double y, double z,
                             double orbitRadius, int orbitTicks) {
         return dispatch(aircraft, x, y, z, orbitRadius, orbitTicks, false, null);
+    }
+
+    private static boolean usesHelicopterFlightModel(MCH_EntityAircraft aircraft) {
+        if (aircraft == null || aircraft.getAcInfo() == null) return aircraft instanceof MCH_EntityHeli;
+        UavVehicleProfile profile = UavVehicleProfiles.forAircraft(aircraft.getAcInfo().name);
+        return aircraft instanceof MCH_EntityHeli || profile.isHelicopterProfile();
+    }
+
+    private static double normalizeHelicopterTargetY(MCH_EntityAircraft aircraft, double targetY) {
+        if (!usesHelicopterFlightModel(aircraft)) return targetY;
+        UavVehicleProfile profile = aircraft == null || aircraft.getAcInfo() == null
+                ? new UavVehicleProfile(UavExecutionProfile.HELICOPTER_ONE_WAY_FPV, 8D, 4D, 32D, 6D, false, "SELF_DESTRUCT")
+                : UavVehicleProfiles.forAircraft(aircraft.getAcInfo().name);
+        double minimum = profile.getMinimumExecutionAltitude() > 0D
+                ? profile.getMinimumExecutionAltitude() : 4D;
+        double standoff = Math.max(8D, minimum);
+        return Math.max(targetY + standoff, minimum);
     }
 
     public boolean dispatch(MCH_EntityAircraft aircraft, double x, double y, double z,
@@ -72,8 +90,9 @@ public final class WingManFlightAdapter {
             RdpUavDebug.debug("WingMan", "removed stale entry before dispatch aircraft={}", aircraftId);
         }
 
+        double safeY = normalizeHelicopterTargetY(aircraft, y);
         List<MissionNode> nodes = new ArrayList<>();
-        nodes.add(MissionNode.flyTo(x, y, z));
+        nodes.add(MissionNode.flyTo(x, safeY, z));
         // Attack routes must reach the target immediately.  A long loiter
         // before the attack node made one-way aircraft appear to orbit
         // forever while the mission controller waited for completion.
@@ -85,7 +104,7 @@ public final class WingManFlightAdapter {
                 attack ? WingmanEntry.ATK_AUTO : WingmanEntry.ATK_NONE);
         entry.currentAutoTarget = targetId;
         entry.autoTargetX = x;
-        entry.autoTargetY = y;
+        entry.autoTargetY = safeY;
         entry.autoTargetZ = z;
         entry.mission = nodes;
         entry.missionIndex = 0;
@@ -113,9 +132,10 @@ public final class WingManFlightAdapter {
                 || entry.autoState == AutonomousState.LANDING
                 || entry.autoState == AutonomousState.PARKED) return false;
 
+        double safeY = normalizeHelicopterTargetY(aircraft, y);
         List<MissionNode> route = new ArrayList<>();
         if (!orbit) {
-            route.add(MissionNode.flyTo(x, y, z));
+            route.add(MissionNode.flyTo(x, safeY, z));
             route.add(MissionNode.loiter(40));
         } else {
             double radius = Math.max(4.0D, orbitRadius);
@@ -124,7 +144,7 @@ public final class WingManFlightAdapter {
                 double waypointAngle = angle + (Math.PI * 2.0D * i / 4.0D);
                 route.add(MissionNode.flyTo(
                         x + Math.cos(waypointAngle) * radius,
-                        y,
+                        safeY,
                         z + Math.sin(waypointAngle) * radius));
                 route.add(MissionNode.loiter(30));
             }
@@ -134,7 +154,7 @@ public final class WingManFlightAdapter {
         entry.missionNodeTimer = 0;
         entry.currentAutoTarget = targetId;
         entry.autoTargetX = x;
-        entry.autoTargetY = y;
+        entry.autoTargetY = safeY;
         entry.autoTargetZ = z;
         entry.autoState = AutonomousState.ENROUTE;
         return true;
@@ -179,8 +199,9 @@ public final class WingManFlightAdapter {
             y = entry.autoTargetY + dy * scale;
             z = entry.autoTargetZ + dz * scale;
         }
+        double safeY = normalizeHelicopterTargetY(aircraft, y);
         entry.currentAutoTarget = targetId;
-        entry.autoTargetX = x; entry.autoTargetY = y; entry.autoTargetZ = z;
+        entry.autoTargetX = x; entry.autoTargetY = safeY; entry.autoTargetZ = z;
         return true;
     }
 
@@ -196,9 +217,10 @@ public final class WingManFlightAdapter {
         if (entry == null || entry.mission == null) return false;
         entry.attackMode = WingmanEntry.ATK_AUTO;
         selectAttackWeapon(aircraft, weaponPriority);
+        double safeY = normalizeHelicopterTargetY(aircraft, y);
         entry.currentAutoTarget = targetId;
         entry.autoTargetX = x;
-        entry.autoTargetY = y;
+        entry.autoTargetY = safeY;
         entry.autoTargetZ = z;
         appendAttackNode(entry, attackRadius);
         return true;
