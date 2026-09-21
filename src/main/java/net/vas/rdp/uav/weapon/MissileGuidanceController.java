@@ -5,6 +5,7 @@ import com.norwood.mcheli.weapon.MCH_EntityBaseBullet;
 import com.norwood.mcheli.weapon.MCH_EntityTvMissile;
 import net.minecraft.entity.Entity;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.world.World;
 
 import java.util.HashMap;
@@ -275,6 +276,7 @@ public final class MissileGuidanceController {
         x = corrected.x;
         y = corrected.y;
         z = corrected.z;
+        logNativeGuidanceObservation(world, missile, objective, x, y, z);
         if (aim.avoiding) {
             boolean firstAvoidance =
                     projectile.getState() != ProjectileGuidanceState.AVOIDANCE_ACTIVE;
@@ -612,6 +614,51 @@ public final class MissileGuidanceController {
                 "targetX", x,
                 "targetY", y,
                 "targetZ", z);
+    }
+
+    private static void logNativeGuidanceObservation(World world,
+                                                     MCH_EntityBaseBullet missile,
+                                                     GuidedStrikeObjective objective,
+                                                     double targetX, double targetY,
+                                                     double targetZ) {
+        long now = world.getTotalWorldTime();
+        Long previous = LAST_COORDINATE_LOG.get(missile.getUniqueID());
+        if (previous != null && now - previous < AVOIDANCE_PLAN_TICKS) return;
+
+        BlockPos targetBlock = new BlockPos(targetX, targetY, targetZ);
+        boolean targetLoaded = world.isBlockLoaded(targetBlock);
+        String targetMaterial = targetLoaded
+                ? world.getBlockState(targetBlock).getMaterial().toString() : "UNLOADED";
+        String infoName = missile.getInfo() == null ? "" : missile.getInfo().name;
+        String infoType = missile.getInfo() == null ? "" : missile.getInfo().type;
+        RdpUavDebug.event("Guidance", "native_guidance_observation",
+                "projectile", missile.getUniqueID(),
+                "projectileClass", missile.getClass().getName(),
+                "aircraft", shooterId(missile),
+                "objective", objective.getObjectiveId(),
+                "objectiveType", objective.getType(),
+                "weaponDefinition", infoName,
+                "weaponType", infoType,
+                "chunkLoadingEnabled", missile.isChunkLoadingEnabled(),
+                "dimension", world.provider.getDimension(),
+                "projectileX", missile.posX,
+                "projectileY", missile.posY,
+                "projectileZ", missile.posZ,
+                "projectileChunk", (MathHelper.floor(missile.posX) >> 4) + ","
+                        + (MathHelper.floor(missile.posZ) >> 4),
+                "motionX", missile.motionX,
+                "motionY", missile.motionY,
+                "motionZ", missile.motionZ,
+                "targetX", targetX,
+                "targetY", targetY,
+                "targetZ", targetZ,
+                "targetBlock", targetBlock,
+                "targetChunk", (targetBlock.getX() >> 4) + "," + (targetBlock.getZ() >> 4),
+                "targetLoaded", targetLoaded,
+                "targetMaterial", targetMaterial,
+                "targetBlocksMovement",
+                targetLoaded && world.getBlockState(targetBlock).getMaterial().blocksMovement(),
+                "guidanceBranch", behaviorFor(missile));
     }
 
     private static final class CorridorCheck {
