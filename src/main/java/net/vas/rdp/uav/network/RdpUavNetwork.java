@@ -105,6 +105,7 @@ public final class RdpUavNetwork {
         CHANNEL.sendToServer(new FireSelfDestruct());
     }
 
+    @SuppressWarnings("unused")
     public static void createMission(String target, boolean attack) {
         createMission(target, attack, 2);
     }
@@ -161,6 +162,7 @@ public final class RdpUavNetwork {
         }
     }
 
+    @SuppressWarnings("unused")
     public static void createSquareStrike(String parameters) {
         CHANNEL.sendToServer(new SquareStrike(parameters, ""));
     }
@@ -181,6 +183,7 @@ public final class RdpUavNetwork {
     }
 
     /** Requests a camera-independent lock using the selected/filter fallback. */
+    @SuppressWarnings("unused")
     public static void lockAiTarget() {
         CHANNEL.sendToServer(new AiTargetLock(null, false));
     }
@@ -199,6 +202,7 @@ public final class RdpUavNetwork {
         CHANNEL.sendToServer(new ContactSelection(next, false));
     }
 
+    @SuppressWarnings("unused")
     public static void clearContactSelection() {
         CHANNEL.sendToServer(new ContactSelection(false, true));
     }
@@ -1739,7 +1743,6 @@ public final class RdpUavNetwork {
                                 "UAV target lock rejected: target filter excludes this contact."));
                         return;
                     }
-                    assert profile != null;
                     if (target.getDistance(aircraft) > profile.getLockRange()) {
                         player.sendMessage(new net.minecraft.util.text.TextComponentString(
                                 "UAV target lock rejected: target is outside lock range."));

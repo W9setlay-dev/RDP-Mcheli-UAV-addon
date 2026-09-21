@@ -71,6 +71,7 @@ public class GuidedWeaponTest {
     }
 
     @Test
+    @SuppressWarnings("ConstantConditions")
     public void mcHeliChunkStreamingIsAuthoritativeAndSeparateFromObjectiveSupport() {
         assertFalse(GuidedChunkCapability.allowUnloadedTarget(false, false));
         assertTrue(GuidedChunkCapability.allowUnloadedTarget(false, true));

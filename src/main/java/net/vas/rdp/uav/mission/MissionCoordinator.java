@@ -136,6 +136,7 @@ public final class MissionCoordinator {
         return targetId != null && aircraftByTarget.containsKey(targetId);
     }
 
+    @SuppressWarnings("unused")
     public synchronized Set<UUID> targetsFor(UUID aircraftId) {
         if (aircraftId == null) return Collections.emptySet();
         Set<UUID> targets = targetsByAircraft.get(aircraftId);
@@ -154,6 +155,7 @@ public final class MissionCoordinator {
         return aircraftId == null ? null : coverageByAircraft.get(aircraftId);
     }
 
+    @SuppressWarnings("unused")
     public synchronized String targetCoverage(UUID targetId) {
         return targetId == null ? null : coverageByTarget.get(targetId);
     }

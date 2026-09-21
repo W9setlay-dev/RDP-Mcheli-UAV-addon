@@ -62,13 +62,18 @@ public final class MissionDefinition {
         if (value != null && !selectedUavs.contains(value)) selectedUavs.add(value);
         return this;
     }
+    @SuppressWarnings("unused")
     public MissionDefinition clearSelectedUavs() { selectedUavs.clear(); return this; }
+    @SuppressWarnings("unused")
     public MissionDefinition setTargetPolicy(TargetPolicy.Snapshot value) {
         if (value == null) throw new IllegalArgumentException("Target policy is required");
         targetPolicy = value; return this;
     }
+    @SuppressWarnings("unused")
     public MissionDefinition setSearchMode(String value) { searchMode = normalizeMode(value); return this; }
+    @SuppressWarnings("unused")
     public MissionDefinition setTrackingMode(String value) { trackingMode = normalizeMode(value); return this; }
+    @SuppressWarnings("unused")
     public MissionDefinition setGuidanceMode(String value) { guidanceMode = normalizeMode(value); return this; }
     public MissionDefinition setExecutionMode(String value) { executionMode = normalizeMode(value); return this; }
     public MissionDefinition setRecoveryMode(String value) { recoveryMode = normalizeMode(value); return this; }

@@ -58,6 +58,7 @@ public final class WingManFlightAdapter {
         return Math.max(targetY + standoff, minimum);
     }
 
+    @SuppressWarnings("unused")
     public boolean dispatch(MCH_EntityAircraft aircraft, double x, double y, double z,
                             double orbitRadius, int orbitTicks, boolean attack, UUID targetId) {
         if (supportsAutonomousRoute(aircraft)) {
@@ -235,6 +236,7 @@ public final class WingManFlightAdapter {
      * Holds an FPV vehicle at its current position while preserving the
      * authoritative target identity for reacquisition.
      */
+    @SuppressWarnings("unused")
     public boolean enterFpvHover(MCH_EntityAircraft aircraft) {
         if (!isFpv(aircraft)) return false;
         WingmanEntry entry = WingmanRegistry.get(aircraft.getUniqueID());
@@ -357,6 +359,7 @@ public final class WingManFlightAdapter {
         }
     }
 
+    @SuppressWarnings("unused")
     public boolean armSquareStrike(MCH_EntityAircraft aircraft, SquareStrikePlan plan,
                                    UUID targetId) {
         if (plan == null || supportsAutonomousRoute(aircraft)) return false;
@@ -369,6 +372,7 @@ public final class WingManFlightAdapter {
         return true;
     }
 
+    @SuppressWarnings("unused")
     public boolean armKamikaze(MCH_EntityAircraft aircraft, double x, double y, double z,
                                double attackRadius, UUID targetId) {
         if (supportsKamikaze(aircraft)) return true;
@@ -626,10 +630,12 @@ public final class WingManFlightAdapter {
         state.beginTerminalApproach();
     }
 
+    @SuppressWarnings("unused")
     public FlightCommand fpvFlightCommand(MCH_EntityAircraft aircraft) {
         return aircraft == null ? null : fpvCommands.get(aircraft.getUniqueID());
     }
 
+    @SuppressWarnings("unused")
     public boolean isDispatched(MCH_EntityAircraft aircraft) {
         return aircraft != null && WingmanRegistry.get(aircraft.getUniqueID()) != null;
     }
@@ -638,6 +644,7 @@ public final class WingManFlightAdapter {
         return aircraft == null ? null : WingmanRegistry.get(aircraft.getUniqueID());
     }
 
+    @SuppressWarnings("unused")
     public FlightState readState(MCH_EntityAircraft aircraft) {
         return FlightState.capture(aircraft, getEntry(aircraft));
     }
@@ -707,6 +714,7 @@ public final class WingManFlightAdapter {
         return aircraft == null ? null : aircraft.getUniqueID();
     }
 
+    @SuppressWarnings("unused")
     public void savePlan(String name, List<MissionNode> nodes) {
         if (name == null || name.trim().isEmpty() || nodes == null || nodes.isEmpty()) {
             throw new IllegalArgumentException("WingMan plan name and nodes are required");

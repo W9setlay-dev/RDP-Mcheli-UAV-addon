@@ -98,6 +98,7 @@ public final class UavVehicleProfile {
     public double getMinimumExecutionAltitude() { return minimumExecutionAltitude; }
     public double getMaximumExecutionAltitude() { return maximumExecutionAltitude; }
     public double getAltitudeTolerance() { return altitudeTolerance; }
+    @SuppressWarnings("unused")
     public boolean isHoldingEnabled() { return holdingEnabled; }
     public String getTerminalPayloadBehavior() { return terminalPayloadBehavior; }
     public double getDetectionRange() { return detectionRange; }
@@ -105,6 +106,7 @@ public final class UavVehicleProfile {
     public double getMissionExecutionRange() { return missionExecutionRange; }
     public String getAttackWeaponPriority() { return attackWeaponPriority; }
     /** Zero means use the native WingMan/default speed for this airframe. */
+    @SuppressWarnings("unused")
     public double getOneWaySpeed() { return oneWaySpeed; }
     public double getAttackEnvelope() { return attackEnvelope; }
 }

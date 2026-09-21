@@ -865,6 +865,7 @@ public final class MissionLifecycle {
         return contactTracker.get(targetId);
     }
 
+    @SuppressWarnings("unused")
     public ContactSnapshot operatorContact(MCH_EntityAircraft aircraft) {
         return aircraft == null ? null : contactTracker.get(operatorContacts.get(aircraft.getUniqueID()));
     }

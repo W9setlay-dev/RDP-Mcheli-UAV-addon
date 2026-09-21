@@ -49,14 +49,17 @@ public final class RdpUavClientKeys {
         if (binding == null || binding.getKeyCode() == Keyboard.KEY_NONE) return "Unbound";
         return Keyboard.getKeyName(binding.getKeyCode());
     }
+    @SuppressWarnings("unused")
     public static String missionControlKey() { return label(OPEN_MISSION_CONTROL); }
     public static String pointKey() { return label(POINT_TASK); }
     public static String reconKey() { return label(RECON_TASK); }
     public static String attackKey() { return label(AUTO_ATTACK_TASK); }
+    @SuppressWarnings("unused")
     public static String refreshKey() { return label(REFRESH_MISSIONS); }
     public static String authorizeKey() { return label(AUTHORIZE_SELECTED); }
     public static String abortKey() { return label(ABORT_SELECTED); }
     public static String kamikazeKey() { return label(KAMIKAZE_SELECTED); }
+    @SuppressWarnings("unused")
     public static String selfDestructKey() { return label(FIRE_SELF_DESTRUCT); }
     public static String entityLockKey() { return label(AI_TARGET_LOCK); }
     public static String areaLockKey() { return label(SIGHT_STABILIZATION); }

@@ -100,6 +100,7 @@ public final class GuidedWeaponAdapter {
                 capability.supportsUnloadedTargetExecution(),
                 "mcheliCanLoadChunk", mcheliCanLoadChunk,
                 "allowUnloadedTarget", allowUnloadedTarget,
+                "noOrbit", capability.getTerminalProfile().isNoOrbit(),
                 "supportsObjective", capability.supports(objective.getType()));
         if (!GuidedNativeContract.supportsAiGuidance(capability.getBehavior())) {
             RdpUavDebug.debug("Guidance", "aircraft={} weapon={} behavior={} decision=AI_UNSUPPORTED",
