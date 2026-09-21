@@ -37,7 +37,9 @@ public enum SquareStrikeState {
             case ASSIGNED: return next == LAUNCHING;
             case LAUNCHING: return next == TRANSIT;
             case TRANSIT: return next == AREA_ENTRY;
-            case AREA_ENTRY: return next == SEARCHING;
+            case AREA_ENTRY:
+            case RESUME_SEARCH:
+                return next == SEARCHING;
             case SEARCHING: return next == TARGET_DETECTED || next == MISSION_COMPLETE;
             case TARGET_DETECTED: return next == TARGET_VALIDATING;
             case TARGET_VALIDATING: return next == TARGET_SELECTED
@@ -49,7 +51,6 @@ public enum SquareStrikeState {
             case ENGAGEMENT_ACTIVE: return next == POST_ENGAGEMENT_ASSESSMENT;
             case POST_ENGAGEMENT_ASSESSMENT: return next == RESUME_SEARCH
                     || next == MISSION_COMPLETE;
-            case RESUME_SEARCH: return next == SEARCHING;
             case MISSION_COMPLETE: return next == RTB;
             case RTB: return next == LANDING;
             case LANDING: return next == COMPLETED;

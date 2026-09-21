@@ -66,7 +66,7 @@ public final class CoreMissionTest {
         TargetAcquisition<String> acquisition = new TargetAcquisition<>();
         String selected = acquisition.acquire(
                 TargetSpec.automatic("srparasites", TargetPriority.NORMAL),
-                java.util.Arrays.<TargetSelector.Candidate<String>>asList(
+                java.util.Arrays.asList(
                         candidate("srparasites:rupter", 4, TargetPriority.NORMAL, "near"),
                         candidate("srparasites:beckon", 25, TargetPriority.CRITICAL, "critical")));
         check("critical".equals(selected), "automatic selection respects priority");

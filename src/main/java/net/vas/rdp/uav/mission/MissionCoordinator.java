@@ -117,10 +117,10 @@ public final class MissionCoordinator {
                 targetsByAircraft.remove(aircraftId);
             }
         }
-        if (targetsByAircraft.get(aircraftId) == null && rolesByAircraft.containsKey(aircraftId)) {
+        if (targetsByAircraft.get(aircraftId) == null) {
             rolesByAircraft.remove(aircraftId);
         }
-        if (targetsByAircraft.get(aircraftId) == null && coverageByAircraft.containsKey(aircraftId)) {
+        if (targetsByAircraft.get(aircraftId) == null) {
             coverageByAircraft.remove(aircraftId);
         }
         return true;

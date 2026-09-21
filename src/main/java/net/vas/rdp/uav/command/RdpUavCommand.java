@@ -495,6 +495,7 @@ public final class RdpUavCommand extends CommandBase {
                     Math.min(64.0D, Math.max(16.0D, size / 4.0D)),
                     player.world.getTotalWorldTime());
             mission.setDimension(player.dimension);
+            mission.setSquareArea(size, size);
             RDPUavMod.missions().create(player.world, mission);
             RDPMissionWorldData.get(player.world).markDirty();
             player.sendMessage(new TextComponentString("Square strike mission created: "

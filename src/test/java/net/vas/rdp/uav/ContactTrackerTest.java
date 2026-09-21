@@ -33,4 +33,20 @@ public class ContactTrackerTest {
         assertEquals(ContactLifecycle.EXPIRED, Objects.requireNonNull(tracker.markLost(id, 4)).getLifecycle());
         assertTrue(tracker.selectable().isEmpty());
     }
+
+    @Test
+    public void preservesAuthoritativeContactBounds() {
+        ContactTracker tracker = new ContactTracker();
+        UUID id = UUID.randomUUID();
+        ContactSnapshot snapshot = tracker.observe(0, id, "minecraft:zombie",
+                10, 20, 30, 9, 19, 29, 11, 22, 31,
+                50, 1, ContactLifecycle.SELECTABLE);
+
+        assertEquals(9D, snapshot.getMinX(), 0D);
+        assertEquals(19D, snapshot.getMinY(), 0D);
+        assertEquals(29D, snapshot.getMinZ(), 0D);
+        assertEquals(11D, snapshot.getMaxX(), 0D);
+        assertEquals(22D, snapshot.getMaxY(), 0D);
+        assertEquals(31D, snapshot.getMaxZ(), 0D);
+    }
 }

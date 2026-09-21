@@ -100,6 +100,21 @@ public class RdpUavCoreTest {
     }
 
     @Test
+    public void squareStrikeAreaSurvivesPersistence() {
+        RDPMission mission = new RDPMission(UUID.randomUUID(), UUID.randomUUID(),
+                UUID.randomUUID(), "fpv", MissionType.SQUARE_STRIKE,
+                TargetSpec.point(10, 70, 20, TargetPriority.HIGH), true,
+                false, false, 256, 32, 1);
+        mission.setSquareArea(64, 48);
+
+        RDPMission restored = MissionNbtCodec.read(MissionNbtCodec.write(mission));
+
+        assertTrue(restored.hasSquareArea());
+        assertEquals(64.0D, restored.getSquareWidth(), 0.0D);
+        assertEquals(48.0D, restored.getSquareDepth(), 0.0D);
+    }
+
+    @Test
     public void targetSpecsNormalizeAndRejectInvalidInput() {
         assertEquals("mod:target", TargetSpec.manual(" MOD:Target ", TargetPriority.NORMAL).getRegistryId());
         assertEquals("mod", TargetSpec.automatic(" Mod ", TargetPriority.NORMAL).getNamespace());
@@ -110,6 +125,41 @@ public class RdpUavCoreTest {
         assertIllegalArgument(() -> TargetSpec.manual("target", TargetPriority.NORMAL));
         assertIllegalArgument(() -> TargetSpec.automatic("mod:bad", TargetPriority.NORMAL));
         assertIllegalArgument(() -> TargetSpec.point(Double.NaN, 80, 0, TargetPriority.NORMAL));
+    }
+
+    @Test
+    public void targetPolicyExposesMachineReadableDecisionCodes() {
+        net.vas.rdp.uav.target.TargetPolicy.Decision missing =
+                net.vas.rdp.uav.target.TargetPolicy.builder().evaluate(null, null, null);
+        assertFalse(missing.isAccepted());
+        assertEquals(net.vas.rdp.uav.target.TargetPolicy.ResultCode.NO_ENTITY, missing.getCode());
+
+        net.vas.rdp.uav.target.TargetPolicy.Decision included =
+                net.vas.rdp.uav.target.TargetPolicy.builder()
+                .include("hostile:target")
+                .evaluate(null, null, null);
+        assertEquals(net.vas.rdp.uav.target.TargetPolicy.ResultCode.NO_ENTITY, included.getCode());
+    }
+
+    @Test
+    public void targetPolicySnapshotNormalizesAndFreezesSupportedFields() {
+        net.vas.rdp.uav.target.TargetPolicy.Snapshot snapshot =
+                net.vas.rdp.uav.target.TargetPolicy.builder()
+                        .include(" Hostile:Target ", "hostile:target")
+                        .require("minecraft:zombie")
+                        .exclude("minecraft:creeper")
+                        .snapshot();
+
+        assertEquals(1, snapshot.getVersion());
+        assertEquals("ENTITY", snapshot.getDomain());
+        assertEquals(1, snapshot.getInclude().size());
+        assertEquals("hostile:target", snapshot.getInclude().get(0));
+        try {
+            snapshot.getInclude().add("minecraft:player");
+            fail("Policy snapshot must be immutable");
+        } catch (UnsupportedOperationException expected) {
+            // Expected.
+        }
     }
 
     @Test
@@ -154,6 +204,23 @@ public class RdpUavCoreTest {
         } catch (IllegalArgumentException expected) {
             // Expected validation boundary.
         }
+    }
+
+    @Test
+    public void targetLockPreservesOwnerMissionAssociationAndLegacyConstructor() {
+        UUID target = UUID.randomUUID();
+        UUID owner = UUID.randomUUID();
+        UUID mission = UUID.randomUUID();
+        TargetLock lock = new TargetLock(target, "mod:target", 0,
+                1, 2, 3, 10, owner, mission);
+
+        assertEquals(target, lock.getEntityId());
+        assertEquals(owner, lock.getLockOwnerId());
+        assertEquals(mission, lock.getMissionId());
+
+        TargetLock legacy = new TargetLock(target, "mod:target", 0, 1, 2, 3, 10);
+        assertNull(legacy.getLockOwnerId());
+        assertNull(legacy.getMissionId());
     }
 
     @Test

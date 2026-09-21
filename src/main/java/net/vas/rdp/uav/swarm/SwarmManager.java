@@ -14,6 +14,8 @@ import com.norwood.mcheli.aircraft.MCH_EntityAircraft;
 public final class SwarmManager {
     private final MissionManager missions;
     private final WingManFlightAdapter flight = new WingManFlightAdapter();
+    private final SwarmRecoveryManager recovery = new SwarmRecoveryManager();
+    private final SwarmReplanner replanner = new SwarmReplanner();
 
     public SwarmManager() { this(null); }
     public SwarmManager(MissionManager missions) { this.missions = missions; }
@@ -88,6 +90,50 @@ public final class SwarmManager {
         RDPUavSwarmWorldData.get(world).markDirty();
         return true;
     }
+
+    public boolean assignRole(World world, UUID owner, UUID swarmId, UUID aircraftId, SwarmRole role) {
+        SwarmRecord record = find(world, swarmId);
+        if (owns(record, owner) || role == null
+                || !record.getAssignmentManager().assign(record, aircraftId, role)) {
+            return false;
+        }
+        RDPUavSwarmWorldData.get(world).markDirty();
+        return true;
+    }
+
+    public boolean selectCommander(World world, UUID owner, UUID swarmId, UUID aircraftId) {
+        SwarmRecord record = find(world, swarmId);
+        if (owns(record, owner) || aircraftId == null) return false;
+        for (SwarmMember member : record.getMembers()) {
+            if (aircraftId.equals(member.getAircraftId()) && member.isAvailable()) {
+                record.setDesignatedLeader(aircraftId);
+                record.setCommanderId(aircraftId);
+                record.setLeadership(SwarmLeadership.DESIGNATED_LEADER);
+                RDPUavSwarmWorldData.get(world).markDirty();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public boolean lockSharedTarget(World world, UUID owner, UUID swarmId,
+                                    UUID targetId, long tick) {
+        SwarmRecord record = find(world, swarmId);
+        if (owns(record, owner) || targetId == null) return false;
+        record.getTargetRegistry().lock(targetId, tick);
+        record.setLockState(SwarmLockState.LOCKED);
+        RDPUavSwarmWorldData.get(world).markDirty();
+        return true;
+    }
+
+    public boolean clearSharedTarget(World world, UUID owner, UUID swarmId) {
+        SwarmRecord record = find(world, swarmId);
+        if (owns(record, owner)) return false;
+        record.getTargetRegistry().clear();
+        record.setLockState(SwarmLockState.CLEAR);
+        RDPUavSwarmWorldData.get(world).markDirty();
+        return true;
+    }
     public void reconcile(World world) {
         if (world == null) return;
         for (SwarmRecord swarm : RDPUavSwarmWorldData.get(world).getRepository().snapshot()) {
@@ -107,6 +153,7 @@ public final class SwarmManager {
                 }
                 if (!loaded && member.getState() != SwarmMemberState.DESTROYED) {
                     member.setState(SwarmMemberState.DISCONNECTED);
+                    replanner.reassignUnavailableTarget(swarm, member.getAircraftId());
                 }
             }
             if (swarm.referenceMember() == null && !swarm.getMembers().isEmpty()) {
@@ -114,6 +161,7 @@ public final class SwarmManager {
             } else if (swarm.getState() == SwarmState.DEGRADED) {
                 swarm.setState(SwarmState.PARTIAL);
             }
+            recovery.reconcile(swarm);
         }
         RDPUavSwarmWorldData.get(world).markDirty();
     }

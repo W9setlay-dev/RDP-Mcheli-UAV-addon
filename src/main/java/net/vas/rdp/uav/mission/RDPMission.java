@@ -3,6 +3,7 @@ package net.vas.rdp.uav.mission;
 import net.vas.rdp.uav.target.TargetPriority;
 import net.vas.rdp.uav.target.TargetSelectionMode;
 import net.vas.rdp.uav.target.TargetSpec;
+import net.vas.rdp.uav.target.TargetLock;
 
 import java.util.UUID;
 
@@ -21,6 +22,7 @@ public final class RDPMission {
     private final long createdTick;
     private MissionState state;
     private UUID targetId;
+    private TargetLock targetLock;
     private UUID lastTargetId;
     private String lastTargetReason;
     private long lastTargetTick = -1L;
@@ -35,6 +37,8 @@ public final class RDPMission {
     private String guidedWeapon;
     private int recoveryAttempts;
     private String recoveryReason;
+    private double squareWidth;
+    private double squareDepth;
     private static final int MAX_RECOVERY_ATTEMPTS = 5;
 
     public RDPMission(UUID missionId, UUID ownerId, UUID aircraftId, String aircraftType,
@@ -101,12 +105,15 @@ public final class RDPMission {
             throw new IllegalArgumentException("Target UUID is required");
         }
         this.targetId = targetId;
+        this.targetLock = new TargetLock(targetId, "rdpuav:unknown", dimension,
+                0.0D, 0.0D, 0.0D, tick, ownerId, missionId);
         this.lastTargetId = targetId;
         transitionTo(MissionState.TARGET_LOCKED, tick);
     }
 
     public void lockPoint(long tick) {
         targetId = null;
+        targetLock = null;
         transitionTo(MissionState.TARGET_LOCKED, tick);
     }
 
@@ -135,6 +142,10 @@ public final class RDPMission {
         if (state == MissionState.ATTACK_TARGET || state == MissionState.APPROACHING
                 || state == MissionState.KAMIKADZE_TARGET) {
             this.targetId = targetId;
+            if (targetLock == null || !targetLock.getEntityId().equals(targetId)) {
+                targetLock = new TargetLock(targetId, "rdpuav:unknown", dimension,
+                        0.0D, 0.0D, 0.0D, tick, ownerId, missionId);
+            }
             this.lastTargetId = targetId;
             this.lastTargetTick = tick;
             this.lastUpdateTick = tick;
@@ -180,6 +191,10 @@ public final class RDPMission {
             throw new IllegalArgumentException("Target UUID and tick are required");
         }
         this.targetId = targetId;
+        if (targetLock == null || !targetLock.getEntityId().equals(targetId)) {
+            targetLock = new TargetLock(targetId, "rdpuav:unknown", dimension,
+                    0.0D, 0.0D, 0.0D, tick, ownerId, missionId);
+        }
         this.lastTargetId = targetId;
         this.lastTargetTick = tick;
         this.lastUpdateTick = tick;
@@ -191,6 +206,7 @@ public final class RDPMission {
         }
         if (targetId != null) lastTargetId = targetId;
         targetId = null;
+        targetLock = null;
         lastTargetReason = reason;
         lastTargetTick = tick;
         lastUpdateTick = tick;
@@ -250,6 +266,19 @@ public final class RDPMission {
     }
 
     public void setDimension(int dimension) { this.dimension = dimension; }
+    public void setSquareArea(double width, double depth) {
+        if (missionType != MissionType.SQUARE_STRIKE || !Double.isFinite(width)
+                || !Double.isFinite(depth) || width <= 0.0D || depth <= 0.0D) {
+            throw new IllegalArgumentException("Invalid square-strike area");
+        }
+        squareWidth = width;
+        squareDepth = depth;
+    }
+    public boolean hasSquareArea() {
+        return missionType == MissionType.SQUARE_STRIKE && squareWidth > 0.0D && squareDepth > 0.0D;
+    }
+    public double getSquareWidth() { return squareWidth; }
+    public double getSquareDepth() { return squareDepth; }
     public void setQueued(boolean queued) { this.queued = queued; }
     public void setRecoveryPolicy(String recoveryPolicy) {
         if (recoveryPolicy == null || recoveryPolicy.trim().isEmpty()) {
@@ -307,6 +336,22 @@ public final class RDPMission {
     public long getLastUpdateTick() { return lastUpdateTick; }
     public MissionState getState() { return state; }
     public UUID getTargetId() { return targetId; }
+    public TargetLock getTargetLock() { return targetLock; }
+
+    public void updateTargetLock(String registryId, int targetDimension,
+                                 double x, double y, double z, long tick) {
+        if (targetLock == null || !targetLock.getEntityId().equals(targetId)) {
+            if (targetId == null) return;
+            targetLock = new TargetLock(targetId,
+                    registryId == null || registryId.trim().isEmpty()
+                            ? "rdpuav:unknown" : registryId,
+                    targetDimension, x, y, z, tick, ownerId, missionId);
+            return;
+        }
+        targetLock.updateIdentity(registryId == null || registryId.trim().isEmpty()
+                ? targetLock.getRegistryId() : registryId, targetDimension);
+        targetLock.update(x, y, z, tick);
+    }
     public UUID getLastTargetId() { return lastTargetId; }
     public String getLastTargetReason() { return lastTargetReason; }
     public long getLastTargetTick() { return lastTargetTick; }

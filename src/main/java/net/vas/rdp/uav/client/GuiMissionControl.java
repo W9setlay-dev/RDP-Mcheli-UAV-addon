@@ -14,9 +14,15 @@ import net.vas.rdp.uav.weapon.GuidedWeaponRegistry;
 import net.vas.rdp.uav.RdpUavDebug;
 import net.vas.rdp.uav.network.RdpUavNetwork;
 import net.vas.rdp.uav.target.TargetClassifier;
+import net.vas.rdp.uav.mission.MissionDefinition;
+import net.vas.rdp.uav.mission.MissionValidationResult;
+import net.vas.rdp.uav.mission.MissionType;
+import net.minecraft.nbt.NBTTagCompound;
+import net.vas.rdp.uav.mission.MissionDefinitionCodec;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 
 public final class GuiMissionControl extends GuiScreen {
@@ -42,11 +48,28 @@ public final class GuiMissionControl extends GuiScreen {
     private boolean swarmParticipation = true;
     private boolean swarmAllowDuplicates;
     private int targetPriority;
+    private List<TargetSuggestion> threatSuggestions = Collections.emptyList();
+    private MissionGuiTab activeTab = MissionGuiTab.OVERVIEW;
+    private int tabPage;
+    private final MissionDefinition definition = new MissionDefinition();
+    private NBTTagCompound savedDefinition;
 
     public GuiMissionControl() { active = this; }
 
     public static void receiveMissionData(String[] rows, String[] ids) {
         receiveMissionData(rows, ids, new String[0], new String[0]);
+    }
+
+    private static final class TargetSuggestion {
+        private final java.util.UUID entityId;
+        private final String registryId;
+        private final String label;
+
+        private TargetSuggestion(java.util.UUID entityId, String registryId, String label) {
+            this.entityId = entityId;
+            this.registryId = registryId;
+            this.label = label;
+        }
     }
 
     public static void receiveMissionData(String[] rows, String[] ids,
@@ -147,11 +170,27 @@ public final class GuiMissionControl extends GuiScreen {
         buttonList.clear();
         int left = width / 2 - 220;
         int right = width / 2 + 15;
+        int tabX = left + 24;
+        buttonList.add(new GuiButton(290, left, 2, 20, 18, "<"));
+        int firstTab = tabPage * 5;
+        for (int offset = 0; offset < 5 && firstTab + offset < MissionGuiTab.values().length; offset++) {
+            MissionGuiTab tab = MissionGuiTab.values()[firstTab + offset];
+            buttonList.add(new GuiButton(300 + tab.ordinal(), tabX, 2, 70, 18,
+                    (tab == activeTab ? "> " : "") + tab.name()));
+            tabX += 72;
+        }
+        buttonList.add(new GuiButton(291, tabX, 2, 20, 18, ">"));
         // Keep every action inside one of the two 205/220px content columns.
         buttonList.add(new GuiButton(0, left, height - 28, 62, 20, "Refresh"));
         buttonList.add(new GuiButton(1, left + 67, height - 28, 62, 20, help ? "Dashboard" : "Help"));
         buttonList.add(new GuiButton(2, right, height - 28, 62, 20, "Close"));
         buttonList.add(new GuiButton(16, right + 67, height - 28, 115, 20, "Return to base"));
+        if (activeTab == MissionGuiTab.VALIDATION) {
+            buttonList.add(new GuiButton(26, left, height - 54, 100, 20, "Validate"));
+            buttonList.add(new GuiButton(27, left + 105, height - 54, 100, 20, "Save"));
+            buttonList.add(new GuiButton(28, right, height - 54, 100, 20, "Load"));
+            buttonList.add(new GuiButton(29, right + 105, height - 54, 115, 20, "Launch mission"));
+        }
         if (uavMode) {
             buttonList.add(new GuiButton(3, left, height - 54, 100, 20,
                     "Authorize [" + RdpUavClientKeys.authorizeKey() + "]"));
@@ -201,6 +240,12 @@ public final class GuiMissionControl extends GuiScreen {
                     "Reassign to crosshair"));
         }
         buttonList.add(new GuiButton(12, right, 64, 220, 20, filterLabel()));
+        threatSuggestions = collectThreatSuggestions();
+        for (int i = 0; i < threatSuggestions.size() && i < 5; i++) {
+            TargetSuggestion suggestion = threatSuggestions.get(i);
+            buttonList.add(new GuiButton(200 + i, right, 158 + i * 12, 220, 11,
+                    suggestion.label));
+        }
         for (int i = 0, shown = 0; i < missionRows.length && shown < 11; i++) {
             if (matchesFilter(missionRows[i])) continue;
             buttonList.add(new GuiButton(100 + i, left, 108 + shown * 17, 205, 15,
@@ -263,8 +308,63 @@ public final class GuiMissionControl extends GuiScreen {
 
     private void requestData() { RdpUavNetwork.requestMissionData(); }
 
-    protected void actionPerformed(GuiButton button) throws IOException {
-        if (button.id == 0) requestData();
+    protected void actionPerformed(GuiButton button) {
+        if (button.id == 290) {
+            tabPage = Math.max(0, tabPage - 1);
+            rebuildButtons();
+        } else if (button.id == 291) {
+            tabPage = Math.min((MissionGuiTab.values().length - 1) / 5, tabPage + 1);
+            rebuildButtons();
+        } else if (button.id >= 300 && button.id < 300 + MissionGuiTab.values().length) {
+            activeTab = MissionGuiTab.values()[button.id - 300];
+            rebuildButtons();
+        } else if (button.id == 0) requestData();
+        else if (button.id == 26) {
+            definition.setTarget(targetField == null ? "" : targetField.getText());
+            MissionValidationResult validation = MissionValidationResult.validate(definition);
+            status = validation.isValid() ? "Mission definition is valid."
+                    : "Validation failed: " + validation.getErrors().get(0);
+            activeTab = MissionGuiTab.VALIDATION;
+            rebuildButtons();
+        } else if (button.id == 27) {
+            definition.setTarget(targetField == null ? "" : targetField.getText());
+            if (MissionValidationResult.validate(definition).isValid()) {
+                savedDefinition = MissionDefinitionCodec.write(definition);
+                status = "Configuration saved locally; launch remains server-authoritative.";
+            } else {
+                status = "Cannot save invalid mission definition.";
+            }
+            rebuildButtons();
+        } else if (button.id == 28) {
+            if (savedDefinition == null) {
+                status = "No saved mission definition is available.";
+            } else {
+                MissionDefinition loaded = MissionDefinitionCodec.read(savedDefinition);
+                definition.setTarget(loaded.getTarget())
+                        .setMissionType(loaded.getMissionType())
+                        .setPriority(loaded.getPriority())
+                        .setAttack(loaded.isAttack())
+                        .setSwarmEnabled(loaded.isSwarmEnabled())
+                        .setSwarmMaximumMembers(loaded.getSwarmMaximumMembers());
+                if (targetField != null) targetField.setText(loaded.getTarget());
+                status = "Saved mission definition loaded.";
+            }
+            rebuildButtons();
+        } else if (button.id == 29) {
+            definition.setTarget(targetField == null ? "" : targetField.getText())
+                    .setAttack(definition.getMissionType() == MissionType.STRIKE);
+            MissionValidationResult validation = MissionValidationResult.validate(definition);
+            if (!validation.isValid()) {
+                status = "Cannot launch: " + validation.getErrors().get(0);
+            } else {
+                if (RdpUavNetwork.launchMissionDefinition(definition)) {
+                    status = "Versioned mission definition submitted for server validation.";
+                } else {
+                    status = "Cannot launch: selected workflow requires an unsupported runtime path.";
+                }
+            }
+            rebuildButtons();
+        }
         else if (button.id == 1) { help = !help; rebuildButtons(); }
         else if (button.id == 2) mc.displayGuiScreen(null);
         else if (button.id == 3) confirmDangerAction("authorize", GuiMissionControl::authorizeSelected, "Authorizing the selected mission will arm server-side controls.");
@@ -312,6 +412,18 @@ public final class GuiMissionControl extends GuiScreen {
         else if (button.id == 12) {
             filterMode = (filterMode + 1) % 3;
             rebuildButtons();
+        } else if (button.id >= 200 && button.id < 205) {
+            int suggestionIndex = button.id - 200;
+            if (suggestionIndex < threatSuggestions.size()) {
+                TargetSuggestion suggestion = threatSuggestions.get(suggestionIndex);
+                String missionId = selectedMissionId();
+                if (missionId != null) {
+                    RdpUavNetwork.assignRegistryTarget(missionId, suggestion.registryId);
+                } else {
+                    RdpUavNetwork.lockAiTarget(suggestion.entityId);
+                }
+                status = "Target assignment requested for " + suggestion.label + ".";
+            }
         } else if (button.id >= 100) {
             selected = button.id - 100;
             rebuildButtons();
@@ -346,6 +458,16 @@ public final class GuiMissionControl extends GuiScreen {
             return;
         }
 
+        definition.setTarget(target).setAttack(attack)
+                .setMissionType(attack ? MissionType.STRIKE : MissionType.RECONNAISSANCE)
+                .setPriority(net.vas.rdp.uav.target.TargetPriority.values()[targetPriority]);
+        MissionValidationResult validation = MissionValidationResult.validate(definition);
+        if (!validation.isValid()) {
+            status = validation.getErrors().get(0);
+            activeTab = MissionGuiTab.VALIDATION;
+            rebuildButtons();
+            return;
+        }
         RdpUavNetwork.createMission(target, attack, targetPriority,
                 selectedGuidedWeaponName());
         status = attack ? "Autonomous attack submitted; WingMan arms after target lock."
@@ -405,6 +527,7 @@ public final class GuiMissionControl extends GuiScreen {
             status = "Square format: centerX centerY centerZ [size].";
             return;
         }
+        definition.setTarget(parameters).setAttack(true).setMissionType(MissionType.SQUARE_STRIKE);
         RdpUavNetwork.createSquareStrike(parameters, selectedGuidedWeaponName());
         status = "Autonomous square strike submitted to WingMan.";
     }
@@ -444,13 +567,25 @@ public final class GuiMissionControl extends GuiScreen {
         String title = uavMode && guidedMode ? "RDP UAV + GUIDED WEAPON CONTROL"
                 : uavMode ? "RDP UAV MISSION CONTROL"
                 : guidedMode ? "RDP GUIDED WEAPON CONTROL" : "RDP MISSION CONTROL";
-        drawCenteredString(fontRenderer, title, width / 2, 12, 0xFFFFFF);
+        drawCenteredString(fontRenderer, title + " / " + activeTab.name(), width / 2, 12, 0xFFFFFF);
         if (help) {
             drawHelp();
         } else {
             int left = width / 2 - 220;
             int right = width / 2 + 15;
-            drawString(fontRenderer, "ENTITY ID FILTER (namespace:path or mod=namespace)", left, 30, 0xB0D8FF);
+            drawString(fontRenderer, "SECTION: " + activeTab.name(), left, 30, 0xB0D8FF);
+            drawString(fontRenderer, "ENTITY ID FILTER (namespace:path or mod=namespace)", left, 42, 0xB0D8FF);
+            if (activeTab == MissionGuiTab.VALIDATION) {
+                MissionValidationResult validation = MissionValidationResult.validate(definition);
+                drawString(fontRenderer, validation.isValid() ? "VALID" : "INVALID",
+                        right, 30, validation.isValid() ? 0x88FFAA : 0xFF6666);
+                int y = 42;
+                for (String error : validation.getErrors()) {
+                    drawString(fontRenderer, error, right, y, 0xFF6666);
+                    y += 12;
+                }
+
+            }
             if (targetField != null) targetField.drawTextBox();
             drawString(fontRenderer, "MISSION FILTER", right, 30, 0xB0D8FF);
             if (filterField != null) filterField.drawTextBox();
@@ -498,23 +633,18 @@ public final class GuiMissionControl extends GuiScreen {
             drawString(fontRenderer, "Select a mission to inspect.", right, panelTop + 20, 0xAAAAAA);
         }
         drawThreatSuggestions(right, panelTop + 56);
-        drawTelemetry(right, panelTop + 130);
+        drawTelemetry(right, panelTop + 140);
     }
 
     private void drawThreatSuggestions(int x, int y) {
         drawString(fontRenderer, "THREAT SUGGESTIONS", x, y, 0xB0D8FF);
-        List<String> suggestions = collectThreatSuggestions();
-        if (suggestions.isEmpty()) {
+        if (threatSuggestions.isEmpty()) {
             drawString(fontRenderer, "No hostile targets in scan range.", x, y + 18, 0xAAAAAA);
-            return;
-        }
-        for (int i = 0; i < suggestions.size() && i < 5; i++) {
-            drawString(fontRenderer, suggestions.get(i), x, y + 18 + i * 12, 0xFFCC66);
         }
     }
 
-    private List<String> collectThreatSuggestions() {
-        List<String> result = new ArrayList<>();
+    private List<TargetSuggestion> collectThreatSuggestions() {
+        List<TargetSuggestion> result = new ArrayList<>();
         if (mc == null || mc.world == null || mc.player == null) return result;
         for (Entity entity : mc.world.loadedEntityList) {
             if (entity == null || entity.isDead || entity == mc.player) continue;
@@ -524,10 +654,12 @@ public final class GuiMissionControl extends GuiScreen {
             if ("UNKNOWN".equals(classification)) continue;
             double distance = entity.getDistanceSq(mc.player.posX, mc.player.posY, mc.player.posZ);
             if (distance > 250000.0D) continue;
-            result.add(String.format(java.util.Locale.ROOT, "%s  [%s]  %.1fm",
-                    id, classification, Math.sqrt(distance)));
+            result.add(new TargetSuggestion(entity.getUniqueID(),
+                    id.toString(),
+                    String.format(java.util.Locale.ROOT, "%s  [%s]  %.1fm",
+                            id, classification, Math.sqrt(distance))));
         }
-        Collections.sort(result);
+        result.sort(Comparator.comparing(left -> left.label));
         return result;
     }
 

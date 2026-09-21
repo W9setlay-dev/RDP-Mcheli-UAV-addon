@@ -15,6 +15,7 @@ public final class SwarmRecord {
     private SwarmLeadership leadership = SwarmLeadership.DYNAMIC_LEADER;
     private SwarmFormation formation = SwarmFormation.LINE;
     private UUID designatedLeader;
+    private UUID commanderId;
     private SwarmResult result = SwarmResult.AWAITING_OPERATOR;
     private SearchPattern searchPattern = SearchPattern.GRID;
     private SwarmMissionState missionState = SwarmMissionState.IDLE;
@@ -23,6 +24,9 @@ public final class SwarmRecord {
     private boolean missionParticipation = true;
     private int missionMaximumMembers = 8;
     private boolean allowDuplicateTargets;
+    private SwarmConfiguration configuration = SwarmConfiguration.defaults();
+    private final SwarmAssignmentManager assignmentManager = new SwarmAssignmentManager();
+    private final SwarmTargetRegistry targetRegistry = new SwarmTargetRegistry();
 
     public SwarmRecord(UUID swarmId, UUID ownerId, String name) {
         if (swarmId == null || ownerId == null || name == null || name.trim().isEmpty()) {
@@ -52,6 +56,7 @@ public final class SwarmRecord {
         }
 
         assignSlots();
+        if (aircraftId.equals(commanderId)) commanderId = null;
         if (members.isEmpty()) state = SwarmState.DISBANDED;
     }
 
@@ -107,6 +112,8 @@ public final class SwarmRecord {
     public void setSearchPattern(SearchPattern value) { if (value != null) searchPattern = value; }
     public UUID getDesignatedLeader() { return designatedLeader; }
     public void setDesignatedLeader(UUID value) { designatedLeader = value; }
+    public UUID getCommanderId() { return commanderId; }
+    public void setCommanderId(UUID value) { commanderId = value; }
     public SwarmMissionState getMissionState() { return missionState; }
     public void setMissionState(SwarmMissionState value) { if (value != null) missionState = value; }
     public SwarmLockState getLockState() { return lockState; }
@@ -121,19 +128,39 @@ public final class SwarmRecord {
     }
     public boolean isAllowDuplicateTargets() { return allowDuplicateTargets; }
     public void setAllowDuplicateTargets(boolean value) { allowDuplicateTargets = value; }
+    public SwarmConfiguration getConfiguration() { return configuration; }
+    public void setConfiguration(SwarmConfiguration value) {
+        if (value == null) throw new IllegalArgumentException("Swarm configuration is required");
+        configuration = value;
+        missionMaximumMembers = Math.min(missionMaximumMembers, value.getMaximumMembers());
+    }
+    public SwarmAssignmentManager getAssignmentManager() { return assignmentManager; }
+    public SwarmTargetRegistry getTargetRegistry() { return targetRegistry; }
 
     public UUID referenceMember() {
         if (members.isEmpty() || leadership == SwarmLeadership.NO_SINGLE_LEADER) return null;
         if (leadership == SwarmLeadership.DESIGNATED_LEADER && designatedLeader != null) {
             for (SwarmMember member : members) {
                 if (designatedLeader.equals(member.getAircraftId()) && member.isAvailable()) {
+                    commanderId = designatedLeader;
                     return designatedLeader;
                 }
             }
         }
-        for (SwarmMember member : members) {
-            if (member.isAvailable()) return member.getAircraftId();
+        if (commanderId != null) {
+            for (SwarmMember member : members) {
+                if (commanderId.equals(member.getAircraftId()) && member.isAvailable()) {
+                    return commanderId;
+                }
+            }
         }
+        for (SwarmMember member : members) {
+            if (member.isAvailable()) {
+                commanderId = member.getAircraftId();
+                return commanderId;
+            }
+        }
+        commanderId = null;
         return null;
     }
 }

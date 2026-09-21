@@ -61,7 +61,27 @@ public final class RDPUavSwarmWorldData extends WorldSavedData {
             if (value.hasKey("allowDuplicateTargets")) {
                 swarm.setAllowDuplicateTargets(value.getBoolean("allowDuplicateTargets"));
             }
+            if (value.hasKey("configurationMaximumMembers")) {
+                swarm.setConfiguration(SwarmConfiguration.builder()
+                        .maximumMembers(value.getInteger("configurationMaximumMembers"))
+                        .horizontalSpacing(value.getDouble("configurationHorizontalSpacing"))
+                        .verticalSpacing(value.getDouble("configurationVerticalSpacing"))
+                        .allowDuplicateTargets(value.getBoolean("configurationAllowDuplicates"))
+                        .allowCommanderFailover(value.getBoolean("configurationCommanderFailover"))
+                        .build());
+            }
+            if (value.hasKey("sharedTarget")) {
+                try {
+                    UUID target = UUID.fromString(value.getString("sharedTarget"));
+                    swarm.getTargetRegistry().lock(target, value.getLong("sharedTargetTick"));
+                    swarm.getTargetRegistry().markLost();
+                } catch (IllegalArgumentException ignored) { }
+            }
             if (value.hasKey("leader")) swarm.setDesignatedLeader(UUID.fromString(value.getString("leader")));
+            if (value.hasKey("commander")) {
+                try { swarm.setCommanderId(UUID.fromString(value.getString("commander"))); }
+                catch (IllegalArgumentException ignored) { }
+            }
             NBTTagList members = value.getTagList("members", 10);
             for (int j = 0; j < members.tagCount(); j++) {
                 NBTTagCompound member = members.getCompoundTagAt(j);
@@ -75,6 +95,12 @@ public final class RDPUavSwarmWorldData extends WorldSavedData {
                     catch (IllegalArgumentException ignored) { }
                 }
                 try { item.setState(SwarmMemberState.valueOf(member.getString("state"))); }
+                catch (IllegalArgumentException ignored) { }
+                try {
+                    SwarmRole role = SwarmRole.valueOf(member.getString("role"));
+                    item.setRole(role);
+                    swarm.getAssignmentManager().restore(swarm, item.getAircraftId(), role);
+                }
                 catch (IllegalArgumentException ignored) { }
                 swarm.add(item);
             }
@@ -100,28 +126,48 @@ public final class RDPUavSwarmWorldData extends WorldSavedData {
             value.setBoolean("missionParticipation", swarm.isMissionParticipation());
             value.setInteger("missionMaximumMembers", swarm.getMissionMaximumMembers());
             value.setBoolean("allowDuplicateTargets", swarm.isAllowDuplicateTargets());
+            SwarmConfiguration configuration = swarm.getConfiguration();
+            value.setInteger("configurationMaximumMembers", configuration.getMaximumMembers());
+            value.setDouble("configurationHorizontalSpacing", configuration.getHorizontalSpacing());
+            value.setDouble("configurationVerticalSpacing", configuration.getVerticalSpacing());
+            value.setBoolean("configurationAllowDuplicates", configuration.isAllowDuplicateTargets());
+            value.setBoolean("configurationCommanderFailover", configuration.isAllowCommanderFailover());
             if (swarm.getDesignatedLeader() != null) {
                 value.setString("leader", swarm.getDesignatedLeader().toString());
             }
-            NBTTagList members = new NBTTagList();
-            for (SwarmMember item : swarm.getMembers()) {
-                NBTTagCompound member = new NBTTagCompound();
-                member.setString("aircraft", item.getAircraftId().toString());
-                member.setString("profile", item.getProfile());
-                member.setBoolean("longRange", item.supportsLongRange());
-                member.setBoolean("payload", item.hasPayload());
-                member.setString("state", item.getState().name());
-                member.setBoolean("available", item.isAvailable());
-                member.setBoolean("operatorControlled", item.isOperatorControlled());
-                if (item.getAssignedTarget() != null) {
-                    member.setString("target", item.getAssignedTarget().toString());
-                }
-                members.appendTag(member);
+            if (swarm.getTargetRegistry().getTargetId() != null) {
+                value.setString("sharedTarget", swarm.getTargetRegistry().getTargetId().toString());
+                value.setLong("sharedTargetTick", swarm.getTargetRegistry().getLastSeenTick());
             }
+            if (swarm.getCommanderId() != null) {
+                value.setString("commander", swarm.getCommanderId().toString());
+            }
+            NBTTagList members = createMembers(swarm);
             value.setTag("members", members);
             swarms.appendTag(value);
         }
         tag.setTag("swarms", swarms);
         return tag;
+    }
+
+    @NotNull
+    private static NBTTagList createMembers(SwarmRecord swarm) {
+        NBTTagList members = new NBTTagList();
+        for (SwarmMember item : swarm.getMembers()) {
+            NBTTagCompound member = new NBTTagCompound();
+            member.setString("aircraft", item.getAircraftId().toString());
+            member.setString("profile", item.getProfile());
+            member.setBoolean("longRange", item.supportsLongRange());
+            member.setBoolean("payload", item.hasPayload());
+            member.setString("state", item.getState().name());
+            member.setBoolean("available", item.isAvailable());
+            member.setBoolean("operatorControlled", item.isOperatorControlled());
+            member.setString("role", item.getRole().name());
+            if (item.getAssignedTarget() != null) {
+                member.setString("target", item.getAssignedTarget().toString());
+            }
+            members.appendTag(member);
+        }
+        return members;
     }
 }

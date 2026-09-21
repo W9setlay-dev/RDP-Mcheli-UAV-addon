@@ -7,8 +7,8 @@ public final class AircraftRecord {
     private final UUID ownerId;
     private final int dimension;
     private final String type;
-    private boolean loaded;
-    private boolean operational;
+    private final boolean loaded;
+    private final boolean operational;
     private AircraftStatus status;
     private UUID missionId;
 

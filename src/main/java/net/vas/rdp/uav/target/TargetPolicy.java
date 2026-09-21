@@ -21,8 +21,51 @@ public final class TargetPolicy {
 
     private TargetPolicy() { }
 
+    public enum ResultCode {
+        ACCEPTED,
+        NO_ENTITY,
+        UNSAFE_CONTACT,
+        ALLY,
+        INCLUDE_MISMATCH,
+        REQUIRE_MISMATCH,
+        EXCLUDED,
+        NOT_HOSTILE,
+        LOW_CONFIDENCE
+    }
+
     public static Builder builder() {
         return new Builder();
+    }
+
+    public static final class Snapshot {
+        private final int version;
+        private final String domain;
+        private final List<String> include;
+        private final List<String> require;
+        private final List<String> exclude;
+        private final boolean rejectEmbedded;
+        private final boolean allowVehicleTargets;
+        private final double minimumConfidence;
+
+        private Snapshot(Builder builder) {
+            version = 1;
+            domain = "ENTITY";
+            include = Collections.unmodifiableList(new ArrayList<>(builder.include));
+            require = Collections.unmodifiableList(new ArrayList<>(builder.require));
+            exclude = Collections.unmodifiableList(new ArrayList<>(builder.exclude));
+            rejectEmbedded = builder.rejectEmbedded;
+            allowVehicleTargets = builder.allowVehicleTargets;
+            minimumConfidence = builder.minimumConfidence;
+        }
+
+        public int getVersion() { return version; }
+        public String getDomain() { return domain; }
+        public List<String> getInclude() { return include; }
+        public List<String> getRequire() { return require; }
+        public List<String> getExclude() { return exclude; }
+        public boolean isRejectEmbedded() { return rejectEmbedded; }
+        public boolean isAllowVehicleTargets() { return allowVehicleTargets; }
+        public double getMinimumConfidence() { return minimumConfidence; }
     }
 
     public static void load(File configDir) {
@@ -67,26 +110,17 @@ public final class TargetPolicy {
         private double minimumConfidence = 0D;
 
         public Builder include(String... values) {
-            if (values == null) return this;
-            for (String value : values) {
-                if (value != null && !value.trim().isEmpty()) include.add(value.trim());
-            }
+            addNormalized(include, values);
             return this;
         }
 
         public Builder require(String... values) {
-            if (values == null) return this;
-            for (String value : values) {
-                if (value != null && !value.trim().isEmpty()) require.add(value.trim());
-            }
+            addNormalized(require, values);
             return this;
         }
 
         public Builder exclude(String... values) {
-            if (values == null) return this;
-            for (String value : values) {
-                if (value != null && !value.trim().isEmpty()) exclude.add(value.trim());
-            }
+            addNormalized(exclude, values);
             return this;
         }
 
@@ -105,23 +139,46 @@ public final class TargetPolicy {
             return this;
         }
 
+        public Snapshot snapshot() {
+            return new Snapshot(this);
+        }
+
         public Decision evaluate(World world, Entity entity, EntityPlayer operator) {
-            if (entity == null) return Decision.reject("NO_ENTITY");
-            if (rejectEmbedded && isSafeContact(world, entity)) return Decision.reject("UNSAFE_CONTACT");
+            if (entity == null) return Decision.reject(ResultCode.NO_ENTITY, "NO_ENTITY");
+            if (rejectEmbedded && isSafeContact(world, entity)) {
+                return Decision.reject(ResultCode.UNSAFE_CONTACT, "UNSAFE_CONTACT");
+            }
             if (entity instanceof EntityPlayer && operator != null && operator.isOnSameTeam(entity)) {
-                return Decision.reject("ALLY");
+                return Decision.reject(ResultCode.ALLY, "ALLY");
             }
             String id = EntityList.getKey(entity) == null ? "" : Objects.requireNonNull(EntityList.getKey(entity)).toString();
-            if (!include.isEmpty() && !containsAny(id, include)) return Decision.reject("INCLUDE_MISMATCH");
-            if (!require.isEmpty() && !containsAny(id, require)) return Decision.reject("REQUIRE_MISMATCH");
-            if (!exclude.isEmpty() && containsAny(id, exclude)) return Decision.reject("EXCLUDED");
+            if (!include.isEmpty() && !containsAny(id, include)) {
+                return Decision.reject(ResultCode.INCLUDE_MISMATCH, "INCLUDE_MISMATCH");
+            }
+            if (!require.isEmpty() && !containsAny(id, require)) {
+                return Decision.reject(ResultCode.REQUIRE_MISMATCH, "REQUIRE_MISMATCH");
+            }
+            if (!exclude.isEmpty() && containsAny(id, exclude)) {
+                return Decision.reject(ResultCode.EXCLUDED, "EXCLUDED");
+            }
             boolean hostile = TargetClassifier.isHostileCandidate(id)
                     || (allowVehicleTargets && TargetClassifier.isHostileVehicle(id));
-            if (!hostile) return Decision.reject("NOT_HOSTILE");
+            if (!hostile) return Decision.reject(ResultCode.NOT_HOSTILE, "NOT_HOSTILE");
             if (minimumConfidence > 0D && TargetClassifier.threatScore(id) < minimumConfidence) {
-                return Decision.reject("LOW_CONFIDENCE");
+                return Decision.reject(ResultCode.LOW_CONFIDENCE, "LOW_CONFIDENCE");
             }
             return Decision.accept();
+        }
+
+        private static void addNormalized(List<String> destination, String[] values) {
+            if (values == null) return;
+            for (String value : values) {
+                if (value == null) continue;
+                String normalized = value.trim().toLowerCase(java.util.Locale.ROOT);
+                if (!normalized.isEmpty() && !destination.contains(normalized)) {
+                    destination.add(normalized);
+                }
+            }
         }
 
         private static boolean containsAny(String value, List<String> candidates) {
@@ -139,17 +196,38 @@ public final class TargetPolicy {
 
     public static final class Decision {
         private final boolean accepted;
+        private final ResultCode code;
         private final String reason;
 
-        private Decision(boolean accepted, String reason) {
+        private Decision(boolean accepted, ResultCode code, String reason) {
             this.accepted = accepted;
+            this.code = code == null ? (accepted ? ResultCode.ACCEPTED : ResultCode.NO_ENTITY) : code;
             this.reason = reason == null ? "" : reason;
         }
 
         public boolean isAccepted() { return accepted; }
+        public ResultCode getCode() { return code; }
         public String getReason() { return reason; }
 
-        public static Decision accept() { return new Decision(true, "OK"); }
-        public static Decision reject(String reason) { return new Decision(false, reason); }
+        public static Decision accept() {
+            return new Decision(true, ResultCode.ACCEPTED, "OK");
+        }
+
+        public static Decision reject(String reason) {
+            return new Decision(false, inferCode(reason), reason);
+        }
+
+        public static Decision reject(ResultCode code, String reason) {
+            return new Decision(false, code, reason);
+        }
+
+        private static ResultCode inferCode(String reason) {
+            if (reason == null) return ResultCode.NO_ENTITY;
+            try {
+                return ResultCode.valueOf(reason);
+            } catch (IllegalArgumentException ignored) {
+                return ResultCode.NO_ENTITY;
+            }
+        }
     }
 }

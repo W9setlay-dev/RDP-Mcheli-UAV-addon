@@ -22,15 +22,26 @@ public final class ContactTracker {
                                    ContactLifecycle requestedState) {
         if (world == null || entity == null || entity.isDead) return null;
         String registry = EntityList.getKey(entity) == null ? "" : Objects.requireNonNull(EntityList.getKey(entity)).toString();
+        net.minecraft.util.math.AxisAlignedBB bounds = entity.getEntityBoundingBox();
         return observe(world.provider.getDimension(), entity.getUniqueID(), registry,
-                entity.posX, entity.posY, entity.posZ, distance, tick, requestedState);
+                entity.posX, entity.posY, entity.posZ, bounds.minX, bounds.minY, bounds.minZ,
+                bounds.maxX, bounds.maxY, bounds.maxZ, distance, tick, requestedState);
     }
 
     public ContactSnapshot observe(int dimension, UUID id, String registry, double x, double y,
                                    double z, double distance, long tick, ContactLifecycle requestedState) {
+        return observe(dimension, id, registry, x, y, z, x, y, z, x, y, z,
+                distance, tick, requestedState);
+    }
+
+    public ContactSnapshot observe(int dimension, UUID id, String registry, double x, double y,
+                                   double z, double minX, double minY, double minZ,
+                                   double maxX, double maxY, double maxZ, double distance,
+                                   long tick, ContactLifecycle requestedState) {
         if (id == null || registry == null || registry.trim().isEmpty()
                 || Double.isNaN(x) || Double.isNaN(y) || Double.isNaN(z)
-                || Double.isInfinite(x) || Double.isInfinite(y) || Double.isInfinite(z)) {
+                || Double.isInfinite(x) || Double.isInfinite(y) || Double.isInfinite(z)
+                || !validBounds(minX, minY, minZ, maxX, maxY, maxZ)) {
             throw new IllegalArgumentException("Valid contact identity and position are required");
         }
         MutableContact contact = contacts.get(id);
@@ -46,6 +57,8 @@ public final class ContactTracker {
             contact.x = x; contact.y = y; contact.z = z;
             contact.confidence = Math.min(1.0D, contact.confidence + 0.05D);
         }
+        contact.minX = minX; contact.minY = minY; contact.minZ = minZ;
+        contact.maxX = maxX; contact.maxY = maxY; contact.maxZ = maxZ;
         contact.lastDetectionTick = tick; contact.lastUpdateTick = tick;
         contact.distance = distance; contact.visible = true;
         contact.lifecycle = requestedState == null ? ContactLifecycle.TRACKING : requestedState;
@@ -102,9 +115,17 @@ public final class ContactTracker {
 
     public void remove(UUID id) { if (id != null) contacts.remove(id); }
 
+    private static boolean validBounds(double minX, double minY, double minZ,
+                                       double maxX, double maxY, double maxZ) {
+        return Double.isFinite(minX) && Double.isFinite(minY) && Double.isFinite(minZ)
+                && Double.isFinite(maxX) && Double.isFinite(maxY) && Double.isFinite(maxZ)
+                && maxX >= minX && maxY >= minY && maxZ >= minZ;
+    }
+
     private static final class MutableContact {
         private final UUID id; private final String registry; private final int dimension;
         private double x, y, z, previousX, previousY, previousZ;
+        private double minX, minY, minZ, maxX, maxY, maxZ;
         private double velocityX, velocityY, velocityZ, distance, confidence = 1.0D;
         private long lastDetectionTick, lastUpdateTick;
         private ContactLifecycle lifecycle = ContactLifecycle.DETECTED;
@@ -112,11 +133,15 @@ public final class ContactTracker {
         private MutableContact(UUID id, String registry, int dimension, double x, double y, double z, long tick) {
             this.id = id; this.registry = registry; this.dimension = dimension;
             this.x = x; this.y = y; this.z = z; this.previousX = x; this.previousY = y; this.previousZ = z;
+            this.minX = x; this.minY = y; this.minZ = z;
+            this.maxX = x; this.maxY = y; this.maxZ = z;
             this.lastDetectionTick = tick; this.lastUpdateTick = tick;
         }
         private ContactSnapshot snapshot() {
-            return new ContactSnapshot(id, registry, dimension, x, y, z, previousX, previousY, previousZ,
-                    velocityX, velocityY, velocityZ, distance, confidence, 0.0D, 0.0D,
+            return new ContactSnapshot(id, registry, dimension, x, y, z,
+                    minX, minY, minZ, maxX, maxY, maxZ,
+                    previousX, previousY, previousZ, velocityX, velocityY, velocityZ,
+                    distance, confidence, 0.0D, 0.0D,
                     lastDetectionTick,
                     lastUpdateTick, lifecycle, visible);
         }

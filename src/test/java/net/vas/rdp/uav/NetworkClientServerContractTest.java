@@ -3,6 +3,7 @@ package net.vas.rdp.uav;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import net.vas.rdp.uav.client.GuiMissionControl;
+import net.vas.rdp.uav.mission.MissionDefinition;
 import net.vas.rdp.uav.network.RdpUavNetwork;
 import org.junit.Test;
 
@@ -13,6 +14,7 @@ import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 /**
@@ -40,6 +42,42 @@ public class NetworkClientServerContractTest {
                 new RdpUavNetwork.AuthorizeAttack());
         assertSameWirePayload(new RdpUavNetwork.KamikazeAttack("mission-42"),
                 new RdpUavNetwork.KamikazeAttack());
+    }
+
+    @Test
+    public void versionedMissionDefinitionLaunchPreservesConfiguration() {
+        MissionDefinition definition = new MissionDefinition()
+                .setTarget("minecraft:zombie")
+                .setAttack(true)
+                .setSwarmEnabled(true)
+                .setSwarmMaximumMembers(4);
+        RdpUavNetwork.CreateMission.LaunchMissionDefinition received = roundTrip(
+                new RdpUavNetwork.CreateMission.LaunchMissionDefinition(definition),
+                new RdpUavNetwork.CreateMission.LaunchMissionDefinition());
+        assertEquals("minecraft:zombie", getLaunchTarget(received));
+        assertTrue(getLaunchUnsupported(received));
+    }
+
+    private static String getLaunchTarget(RdpUavNetwork.CreateMission.LaunchMissionDefinition message) {
+        try {
+            java.lang.reflect.Field field = message.getClass().getDeclaredField("target");
+            field.setAccessible(true);
+            return (String) field.get(message);
+        } catch (ReflectiveOperationException failure) {
+            throw new AssertionError(failure);
+        }
+    }
+
+    private static boolean getLaunchUnsupported(
+            RdpUavNetwork.CreateMission.LaunchMissionDefinition message) {
+        try {
+            java.lang.reflect.Field field = message.getClass()
+                    .getDeclaredField("unsupportedConfiguration");
+            field.setAccessible(true);
+            return field.getBoolean(message);
+        } catch (ReflectiveOperationException failure) {
+            throw new AssertionError(failure);
+        }
     }
 
     @Test

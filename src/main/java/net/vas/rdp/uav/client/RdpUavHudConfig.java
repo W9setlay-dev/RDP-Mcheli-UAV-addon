@@ -42,7 +42,7 @@ public final class RdpUavHudConfig {
                     "How long a warning stays visible before it can refresh.");
             anomalyBiomeHints = config.getStringList("anomalyBiomeHints", "hud", anomalyBiomeHints,
                     "Biome or region names treated as distorted or special RDP terrain.");
-            scale = (float) config.getFloat("scale", "hud", 1.0F, 0.5F, 2.0F,
+            scale = config.getFloat("scale", "hud", 1.0F, 0.5F, 2.0F,
                     "HUD scale.");
             xOffset = config.getInt("xOffset", "hud", 12, -500, 500,
                     "Horizontal HUD offset from the left edge.");

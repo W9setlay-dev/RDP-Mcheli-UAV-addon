@@ -2,6 +2,7 @@ package net.vas.rdp.uav.target;
 
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityList;
+import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.world.World;
@@ -35,6 +36,15 @@ public final class TargetResolver {
 
     public List<EntityCandidate> find(World world, double x, double y, double z, double radius,
                                       TargetSpec specification) {
+        return find(world, x, y, z, radius, specification, null);
+    }
+
+    /**
+     * Resolves candidates through the existing discovery path. The optional
+     * operator is passed to the shared policy evaluator for hostile selection.
+     */
+    public List<EntityCandidate> find(World world, double x, double y, double z, double radius,
+                                      TargetSpec specification, EntityPlayer operator) {
         if (world == null || specification == null || radius <= 0) {
             throw new IllegalArgumentException("World, target specification, and radius are required");
         }
@@ -55,8 +65,9 @@ public final class TargetResolver {
             if (specification.getMode() == TargetSelectionMode.MANUAL) {
                 matches = id.equals(specification.getRegistryId());
             } else if (TargetClassifier.isHostileNamespace(specification.getNamespace())) {
-                matches = TargetClassifier.isHostileCandidate(id)
-                        || TargetClassifier.isHostileVehicle(id);
+                TargetPolicy.Decision decision = TargetPolicy.builder()
+                        .evaluate(world, entity, operator);
+                matches = decision.isAccepted();
             } else {
                 matches = id.startsWith(specification.getNamespace() + ":");
             }

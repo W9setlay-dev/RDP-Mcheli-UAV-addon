@@ -7,6 +7,7 @@ public final class ContactSnapshot {
     private final UUID entityId;
     private final String registryId;
     private final int dimension;
+    private final double minX, minY, minZ, maxX, maxY, maxZ;
     private final double x, y, z, previousX, previousY, previousZ;
     private final double velocityX, velocityY, velocityZ, distance, confidence, bearing, elevation;
     private final long lastDetectionTick, lastUpdateTick;
@@ -18,7 +19,21 @@ public final class ContactSnapshot {
                     double velocityY, double velocityZ, double distance, double confidence,
                     double bearing, double elevation, long lastDetectionTick, long lastUpdateTick, ContactLifecycle lifecycle,
                     boolean visible) {
+        this(entityId, registryId, dimension, x, y, z, x, y, z, x, y, z,
+                previousX, previousY, previousZ, velocityX, velocityY, velocityZ,
+                distance, confidence, bearing, elevation, lastDetectionTick,
+                lastUpdateTick, lifecycle, visible);
+    }
+
+    ContactSnapshot(UUID entityId, String registryId, int dimension, double x, double y, double z,
+                    double minX, double minY, double minZ, double maxX, double maxY, double maxZ,
+                    double previousX, double previousY, double previousZ, double velocityX,
+                    double velocityY, double velocityZ, double distance, double confidence,
+                    double bearing, double elevation, long lastDetectionTick, long lastUpdateTick,
+                    ContactLifecycle lifecycle, boolean visible) {
         this.entityId = entityId; this.registryId = registryId; this.dimension = dimension;
+        this.minX = minX; this.minY = minY; this.minZ = minZ;
+        this.maxX = maxX; this.maxY = maxY; this.maxZ = maxZ;
         this.x = x; this.y = y; this.z = z; this.previousX = previousX; this.previousY = previousY;
         this.previousZ = previousZ; this.velocityX = velocityX; this.velocityY = velocityY;
         this.velocityZ = velocityZ; this.distance = distance; this.confidence = confidence;
@@ -29,6 +44,12 @@ public final class ContactSnapshot {
     public UUID getEntityId() { return entityId; }
     public String getRegistryId() { return registryId; }
     public int getDimension() { return dimension; }
+    public double getMinX() { return minX; }
+    public double getMinY() { return minY; }
+    public double getMinZ() { return minZ; }
+    public double getMaxX() { return maxX; }
+    public double getMaxY() { return maxY; }
+    public double getMaxZ() { return maxZ; }
     public double getX() { return x; }
     public double getY() { return y; }
     public double getZ() { return z; }

@@ -70,13 +70,7 @@ public enum MissionState {
             case SCANNING: return next == DEEP_SCANNING || next == REPORTING;
             case DEEP_SCANNING: return next == REPORTING;
             case REPORTING: return next == HOLDING || next == RETURNING;
-            case DIRECT_LAUNCH_COMPLETE: return false;
             case HOLDING: return next == RETURNING || next == COMPLETE;
-            case WAITING_FOR_WORLD:
-            case WAITING_FOR_FUEL:
-            case EXECUTION_STALLED:
-            case RECOVERING:
-                return false;
             case REPLAN:
                 return next == SEARCHING || next == TARGET_LOCKED
                         || next == APPROACHING || next == ATTACK_TARGET;

@@ -3,7 +3,6 @@ package net.vas.rdp.uav.weapon;
 /** Bounded release policy; it never changes projectile or aircraft physics. */
 public final class GuidedTerminalProfile {
     private final double maximumAircraftSpeed;
-    private final boolean noOrbit;
     private final double minimumAltitude;
     private final double maximumAltitude;
     private final double maximumCoordinateCorrection;
@@ -32,7 +31,6 @@ public final class GuidedTerminalProfile {
             throw new IllegalArgumentException("Invalid coordinate correction policy");
         }
         this.maximumAircraftSpeed = maximumAircraftSpeed;
-        this.noOrbit = noOrbit;
         this.minimumAltitude = minimumAltitude;
         this.maximumAltitude = maximumAltitude;
         this.maximumCoordinateCorrection = maximumCoordinateCorrection;

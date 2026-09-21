@@ -6,9 +6,7 @@ import org.junit.Test;
 
 import java.util.UUID;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.*;
 
 public class MissionGuidanceFailureTest {
     @Test
@@ -89,7 +87,7 @@ public class MissionGuidanceFailureTest {
         replanning.fail("UNSUPPORTED_OBJECTIVE_COMBINATION", 3);
         assertEquals(MissionState.FAILED, replanning.getState());
         assertTrue(replanning.isTerminal());
-        assertFalse(replanning.getState() == MissionState.REPLAN);
+        assertNotSame(replanning.getState(), MissionState.REPLAN);
     }
 
     @Test

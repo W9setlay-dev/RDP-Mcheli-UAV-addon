@@ -12,6 +12,7 @@ public final class SwarmMember {
     private boolean available = true;
     private boolean operatorControlled;
     private UUID assignedTarget;
+    private SwarmRole role = SwarmRole.RESERVE;
 
     public SwarmMember(UUID aircraftId, String profile, boolean longRange, boolean payload) {
         if (aircraftId == null || profile == null || profile.trim().isEmpty()) {
@@ -40,4 +41,9 @@ public final class SwarmMember {
     public void setOperatorControlled(boolean value) { operatorControlled = value; }
     public UUID getAssignedTarget() { return assignedTarget; }
     public void setAssignedTarget(UUID target) { assignedTarget = target; }
+    public SwarmRole getRole() { return role; }
+    public void setRole(SwarmRole value) {
+        if (value == null) throw new IllegalArgumentException("Swarm role is required");
+        role = value;
+    }
 }

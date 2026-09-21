@@ -300,12 +300,17 @@ public final class MissionLifecycle {
                     mission.getTargetSpec().getY(), mission.getTargetSpec().getZ())
                     : reacquire(world, aircraft, mission, tick);
             if (mission.getTargetSelectionMode() != TargetSelectionMode.POINT && target == null) {
+                if (profile(aircraft).isHelicopterProfile()) {
+                    flight.enterFpvHover(aircraft);
+                }
                 flight.clearGuidance(aircraft);
                 if (mission.isAttack()) {
                     // Do not leave a stale native loiter route active while
                     // an entity lock is temporarily unavailable. REPLAN will
                     // rebuild the route when the same objective is available.
-                    flight.release(aircraft);
+                    if (!profile(aircraft).isHelicopterProfile()) {
+                        flight.release(aircraft);
+                    }
                 }
                 if (mission.isAttack() && mission.getMissionType() != MissionType.SQUARE_STRIKE
                         && (mission.getState() == MissionState.ATTACK_TARGET
@@ -730,8 +735,6 @@ public final class MissionLifecycle {
                 // The operator must explicitly request return-to-base.
                 mission.transitionTo(MissionState.HOLDING, tick);
                 return true;
-            case HOLDING:
-                return false;
             case RETURNING:
                 if (flight.isParked(aircraft)) {
                     mission.transitionTo(MissionState.LANDING, tick);
@@ -760,12 +763,10 @@ public final class MissionLifecycle {
             mission.transitionTo(MissionState.KAMIKADZE_TARGET, tick);
             return false;
         case TARGET_LOCKED:
-            mission.transitionTo(MissionState.KAMIKADZE_TARGET, tick);
+            case ATTACK_TARGET:
+                mission.transitionTo(MissionState.KAMIKADZE_TARGET, tick);
             return false;
-        case ATTACK_TARGET:
-            mission.transitionTo(MissionState.KAMIKADZE_TARGET, tick);
-            return false;
-        case KAMIKADZE_TARGET:
+            case KAMIKADZE_TARGET:
             return false;
         default:
             return true;
@@ -794,6 +795,7 @@ public final class MissionLifecycle {
                 <= vehicleProfile.getLockRange()) {
             contactTracker.observe(world, current, targetDistance(aircraft, Target.entity(current)),
                     tick, ContactLifecycle.TRACKING);
+            projectTargetLock(world, mission, current, tick);
             return Target.entity(current);
         }
         if (mission.getTargetId() != null) {
@@ -817,6 +819,7 @@ public final class MissionLifecycle {
             if (mission.getTargetSelectionMode() == TargetSelectionMode.MANUAL) return null;
             mission.reacquireTarget(reacquired.getUniqueID(), tick);
         }
+        projectTargetLock(world, mission, reacquired, tick);
         return Target.entity(reacquired);
     }
 
@@ -834,6 +837,7 @@ public final class MissionLifecycle {
                 profile(aircraft).getDetectionRange() * profile(aircraft).getDetectionRange())) {
             contactTracker.observe(world, current, aircraft.getDistance(current),
                     world.getTotalWorldTime(), ContactLifecycle.SELECTED);
+            projectTargetLock(world, mission, current, world.getTotalWorldTime());
             return Target.entity(current);
         }
         if (current != null) return null;
@@ -847,6 +851,14 @@ public final class MissionLifecycle {
                 Math.sqrt(candidates.get(0).getDistanceSquared()), world.getTotalWorldTime(),
                 ContactLifecycle.SELECTABLE);
         return Target.entity(selected);
+    }
+
+    private void projectTargetLock(World world, RDPMission mission, Entity target, long tick) {
+        if (world == null || mission == null || target == null || mission.getTargetId() == null
+                || !mission.getTargetId().equals(target.getUniqueID())) return;
+        net.minecraft.util.ResourceLocation key = EntityList.getKey(target);
+        mission.updateTargetLock(key == null ? "rdpuav:unknown" : key.toString(),
+                world.provider.getDimension(), target.posX, target.posY, target.posZ, tick);
     }
 
     public ContactSnapshot contact(UUID targetId) {
@@ -947,8 +959,13 @@ public final class MissionLifecycle {
                 || (tick - previous.tick >= 10L && flight.hasReachedRoutePoint(aircraft));
         if (!moved && !due) return;
         double guidanceY = terminalRouteAltitude(aircraft, target, mission);
-        if (flight.refreshObservationRoute(aircraft, target.x, guidanceY, target.z,
-                mission.getObservationDistance(), orbit, mission.getTargetId())) {
+        boolean refreshed = decision == MissionSafety.RouteDecision.OFFSET_ORBIT
+                || decision == MissionSafety.RouteDecision.SAFE_SIDE_APPROACH
+                ? flight.refreshBoundedDetour(aircraft, target.x, guidanceY, target.z,
+                mission.getObservationDistance(), mission.getTargetId())
+                : flight.refreshObservationRoute(aircraft, target.x, guidanceY, target.z,
+                mission.getObservationDistance(), orbit, mission.getTargetId());
+        if (refreshed) {
             routeRefreshes.put(aircraftId, new RouteRefresh(tick, target.x, guidanceY, target.z));
         }
     }
@@ -986,6 +1003,14 @@ public final class MissionLifecycle {
                                                RDPMission mission) {
         if (aircraft == null || target == null || mission == null) return false;
         if (profile(aircraft).isReusable()) return true;
+        if (mission.getMissionType() == MissionType.SQUARE_STRIKE && mission.hasSquareArea()) {
+            net.vas.rdp.uav.flight.SquareArea area =
+                    new net.vas.rdp.uav.flight.SquareArea(
+                            mission.getTargetSpec().getX(), mission.getTargetSpec().getZ(),
+                            mission.getSquareWidth(), mission.getSquareDepth());
+            return area.contains(aircraft.posX, aircraft.posZ)
+                    && Math.abs(aircraft.posY - target.y) <= 3.0D;
+        }
         double dx = aircraft.posX - target.x;
         double dz = aircraft.posZ - target.z;
         double horizontal = Math.sqrt(dx * dx + dz * dz);

@@ -18,9 +18,7 @@ import org.junit.Test;
 import java.util.EnumSet;
 import java.util.UUID;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.*;
 
 /**
  * Deterministic lifecycle contracts for a guided strike.
@@ -106,7 +104,7 @@ public class GuidedMissileMissionLifecycleTest {
         replanning.fail("UNSUPPORTED_OBJECTIVE_COMBINATION", 3);
         assertEquals(MissionState.FAILED, replanning.getState());
         assertEquals("UNSUPPORTED_OBJECTIVE_COMBINATION", replanning.getFailureReason());
-        assertFalse(replanning.getState() == MissionState.REPLAN);
+        assertNotSame(replanning.getState(), MissionState.REPLAN);
     }
 
     @Test

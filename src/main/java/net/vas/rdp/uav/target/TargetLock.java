@@ -11,12 +11,14 @@ public final class TargetLock {
     }
 
     private final UUID entityId;
-    private final String registryId;
-    private final int dimension;
+    private String registryId;
+    private int dimension;
+    private UUID lockOwnerId;
+    private UUID missionId;
     private double x;
     private double y;
     private double z;
-    private long acquiredTick;
+    private final long acquiredTick;
     private long lastSeenTick;
     private double velocityX;
     private double velocityY;
@@ -29,6 +31,7 @@ public final class TargetLock {
         if (entityId == null || registryId == null || registryId.trim().isEmpty()) {
             throw new IllegalArgumentException("Target identity is required");
         }
+
         this.entityId = entityId;
         this.registryId = registryId;
         this.dimension = dimension;
@@ -37,6 +40,13 @@ public final class TargetLock {
         this.z = z;
         this.acquiredTick = acquiredTick;
         this.lastSeenTick = acquiredTick;
+    }
+
+    public TargetLock(UUID entityId, String registryId, int dimension, double x, double y,
+                      double z, long acquiredTick, UUID lockOwnerId, UUID missionId) {
+        this(entityId, registryId, dimension, x, y, z, acquiredTick);
+        this.lockOwnerId = lockOwnerId;
+        this.missionId = missionId;
     }
 
     public void update(double x, double y, double z, long tick) {
@@ -62,6 +72,14 @@ public final class TargetLock {
         confidence = 0.0D;
     }
 
+    public void updateIdentity(String registryId, int dimension) {
+        if (registryId == null || registryId.trim().isEmpty()) {
+            throw new IllegalArgumentException("Target registry identity is required");
+        }
+        this.registryId = registryId;
+        this.dimension = dimension;
+    }
+
     public double predictX(long tick) { return x + velocityX * Math.max(0L, tick - lastSeenTick); }
     public double predictY(long tick) { return y + velocityY * Math.max(0L, tick - lastSeenTick); }
     public double predictZ(long tick) { return z + velocityZ * Math.max(0L, tick - lastSeenTick); }
@@ -78,4 +96,10 @@ public final class TargetLock {
     public double getVelocityZ() { return velocityZ; }
     public double getConfidence() { return confidence; }
     public Validation getValidation() { return validation; }
+    public UUID getLockOwnerId() { return lockOwnerId; }
+    public UUID getMissionId() { return missionId; }
+    public void associate(UUID lockOwnerId, UUID missionId) {
+        this.lockOwnerId = lockOwnerId;
+        this.missionId = missionId;
+    }
 }

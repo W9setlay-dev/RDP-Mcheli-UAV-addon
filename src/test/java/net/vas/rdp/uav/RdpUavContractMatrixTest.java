@@ -11,6 +11,10 @@ import net.vas.rdp.uav.mission.MissionType;
 import net.vas.rdp.uav.mission.MissionSafety;
 import net.vas.rdp.uav.mission.RDPMission;
 import net.vas.rdp.uav.flight.SquareStrikePlan;
+import net.vas.rdp.uav.flight.FpvFlightState;
+import net.vas.rdp.uav.flight.FpvFlightStateMachine;
+import net.vas.rdp.uav.flight.FlightCommand;
+import net.vas.rdp.uav.flight.FpvFlightMode;
 import net.vas.rdp.uav.scan.RDPScanReport;
 import net.vas.rdp.uav.scan.ReportNbtCodec;
 import net.vas.rdp.uav.target.TargetAcquisition;
@@ -36,6 +40,64 @@ import java.util.UUID;
 import static org.junit.Assert.*;
 
 public class RdpUavContractMatrixTest {
+    @Test
+    public void fpvHoverIsExplicitAndTerminalApproachCannotResumeMovement() {
+        FpvFlightStateMachine states = new FpvFlightStateMachine();
+        assertEquals(FpvFlightState.MOVING_TO_TARGET, states.getState());
+        states.hover();
+        assertEquals(FpvFlightState.HOVER, states.getState());
+        states.moveToTarget();
+        assertEquals(FpvFlightState.MOVING_TO_TARGET, states.getState());
+        states.beginTerminalApproach();
+        assertEquals(FpvFlightState.TERMINAL_APPROACH, states.getState());
+        try {
+            states.moveToTarget();
+            fail("Terminal approach must not resume target movement");
+        } catch (IllegalStateException expected) {
+            // Terminal state is intentionally monotonic.
+        }
+    }
+
+    @Test
+    public void flightCommandHasOneAuthoritativeModePerOutput() {
+        FlightCommand hover = FlightCommand.hover();
+        assertEquals(FpvFlightMode.HOVER, hover.getMode());
+        assertEquals(0.0D, hover.getForward(), 0.0D);
+        assertEquals(0.0D, hover.getLateral(), 0.0D);
+        assertEquals(0.0D, hover.getVertical(), 0.0D);
+        FlightCommand terminal = FlightCommand.terminalApproach(1.0D, -0.5D, 12.0D);
+        assertEquals(FpvFlightMode.TERMINAL_APPROACH, terminal.getMode());
+        assertEquals("ARMED", terminal.getTerminalState());
+    }
+
+    @Test
+    public void approachCommandsBoundVerticalAndForwardInputs() {
+        FlightCommand command = FlightCommand.approach(9.0D, -100.0D, 1.0D);
+
+        assertEquals(1.0D, command.getForward(), 0.0D);
+        assertEquals(-16.0D, command.getVertical(), 0.0D);
+        assertEquals(FpvFlightMode.AI_APPROACH, command.getMode());
+    }
+
+    @Test
+    public void hoverExitIsSeparateFromTheFirstPursuitWrite() {
+        FpvFlightStateMachine states = new FpvFlightStateMachine();
+        states.hover();
+        assertEquals(FpvFlightState.HOVER, states.getState());
+        states.moveToTarget();
+        assertEquals(FpvFlightState.MOVING_TO_TARGET, states.getState());
+    }
+
+    @Test
+    public void terminalApproachIsNotSelectedMerelyByAttackIntent() {
+        FpvFlightStateMachine states = new FpvFlightStateMachine();
+        assertEquals(FpvFlightState.MOVING_TO_TARGET, states.getState());
+        states.hover();
+        states.moveToTarget();
+        assertEquals(FpvFlightState.MOVING_TO_TARGET, states.getState());
+        states.beginTerminalApproach();
+        assertEquals(FpvFlightState.TERMINAL_APPROACH, states.getState());
+    }
     @Test
     public void everyMissionStateHasOnlyItsDeclaredSuccessors() {
         for (MissionState state : MissionState.values()) {

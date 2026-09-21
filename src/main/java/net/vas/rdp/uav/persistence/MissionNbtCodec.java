@@ -49,6 +49,8 @@ public final class MissionNbtCodec {
         tag.setString("guidedWeapon", mission.getGuidedWeapon() == null ? "" : mission.getGuidedWeapon());
         tag.setInteger("recoveryAttempts", mission.getRecoveryAttempts());
         tag.setString("recoveryReason", mission.getRecoveryReason() == null ? "" : mission.getRecoveryReason());
+        tag.setDouble("squareWidth", mission.getSquareWidth());
+        tag.setDouble("squareDepth", mission.getSquareDepth());
         return tag;
     }
 
@@ -78,6 +80,10 @@ public final class MissionNbtCodec {
                 tag.getLong("lastUpdateTick"), failure.isEmpty() ? null : failure,
                 report.isEmpty() ? null : report);
         mission.setDimension(tag.getInteger("dimension"));
+        if (tag.hasKey("squareWidth") && tag.hasKey("squareDepth")
+                && tag.getDouble("squareWidth") > 0.0D && tag.getDouble("squareDepth") > 0.0D) {
+            mission.setSquareArea(tag.getDouble("squareWidth"), tag.getDouble("squareDepth"));
+        }
         mission.setQueued(tag.hasKey("queued") && tag.getBoolean("queued"));
         if (tag.hasKey("recoveryPolicy")) mission.setRecoveryPolicy(tag.getString("recoveryPolicy"));
         mission.setDestructiveAuthorized(tag.getBoolean("destructiveAuthorized"));

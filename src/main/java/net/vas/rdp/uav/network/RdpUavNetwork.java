@@ -18,6 +18,8 @@ import net.vas.rdp.uav.flight.KamikazePilotOverride;
 import net.vas.rdp.uav.weapon.GuidedStrikeObjective;
 import net.vas.rdp.uav.weapon.GuidedWeaponAdapter;
 import net.vas.rdp.uav.weapon.GuidedWeaponDecision;
+import net.vas.rdp.uav.mission.MissionDefinition;
+import net.vas.rdp.uav.mission.MissionValidationResult;
 
 import java.util.Objects;
 
@@ -61,6 +63,10 @@ public final class RdpUavNetwork {
                 ClientSwarmTelemetryHandler.SwarmTargetUpdate.class, 17, Side.SERVER);
         CHANNEL.registerMessage(ServerAdoptProjectileHandler.class, AdoptProjectile.class, 18, Side.SERVER);
         CHANNEL.registerMessage(ServerReassignGuidedHandler.class, ReassignGuided.class, 19, Side.SERVER);
+        CHANNEL.registerMessage(AiTargetLock.ServerRegistryTargetAssignmentHandler.class,
+                AiTargetLock.RegistryTargetAssignment.class, 20, Side.SERVER);
+        CHANNEL.registerMessage(ServerMissionDefinitionHandler.class,
+                CreateMission.LaunchMissionDefinition.class, 21, Side.SERVER);
     }
 
     public static void openMissionControl(EntityPlayerMP player) {
@@ -118,6 +124,33 @@ public final class RdpUavNetwork {
         CHANNEL.sendToServer(new CreateMission("", false, true));
     }
 
+    public static boolean launchMissionDefinition(MissionDefinition definition) {
+        if (definition == null) return false;
+        MissionValidationResult validation = MissionValidationResult.validate(definition);
+        if (!validation.isValid()) return false;
+        if (definition.getMissionType() == net.vas.rdp.uav.mission.MissionType.SQUARE_STRIKE) {
+            if (definition.isSwarmEnabled() || !definition.getSelectedUavs().isEmpty()
+                    || !definition.isDefaultTargetPolicy()) return false;
+            createSquareStrike(definition.getTarget(), definition.getGuidedWeapon());
+            return true;
+        }
+        if (isLaunchSupported(definition)) return false;
+        CHANNEL.sendToServer(new CreateMission.LaunchMissionDefinition(definition));
+        return true;
+    }
+
+    private static boolean isLaunchSupported(MissionDefinition definition) {
+        return definition.getMissionType() == net.vas.rdp.uav.mission.MissionType.SQUARE_STRIKE
+                || definition.isSwarmEnabled()
+                || !definition.getSelectedUavs().isEmpty()
+                || !definition.isDefaultTargetPolicy()
+                || !"DEFAULT".equals(definition.getSearchMode())
+                || !"CONTINUOUS".equals(definition.getTrackingMode())
+                || !"AI_APPROACH".equals(definition.getGuidanceMode())
+                || !"MISSION_DEFINED".equals(definition.getExecutionMode())
+                || !"RETURN_TO_BASE".equals(definition.getRecoveryMode());
+    }
+
     public static void adoptLaunchedProjectile() {
         CHANNEL.sendToServer(new AdoptProjectile());
     }
@@ -138,6 +171,13 @@ public final class RdpUavNetwork {
 
     public static void lockAiTarget(java.util.UUID targetId) {
         if (targetId != null) CHANNEL.sendToServer(new AiTargetLock(targetId, false));
+    }
+
+    public static void assignRegistryTarget(String missionId, String registryId) {
+        if (missionId != null && registryId != null && !missionId.trim().isEmpty()
+                && !registryId.trim().isEmpty()) {
+            CHANNEL.sendToServer(new AiTargetLock.RegistryTargetAssignment(missionId, registryId));
+        }
     }
 
     /** Requests a camera-independent lock using the selected/filter fallback. */
@@ -203,24 +243,34 @@ public final class RdpUavNetwork {
 
     public static final class SwarmTelemetry implements IMessage {
         private String id = "", name = "", state = "", formation = "", leader = "";
-        private int members;
+        private String target = "", targetState = "";
+        private int members, availableMembers;
         public static SwarmTelemetry from(net.vas.rdp.uav.swarm.SwarmRecord swarm) {
             SwarmTelemetry value = new SwarmTelemetry();
             value.id = swarm.getSwarmId().toString(); value.name = swarm.getName();
             value.state = swarm.getState().name(); value.formation = swarm.getFormation().name();
             value.leader = String.valueOf(swarm.referenceMember()); value.members = swarm.getMembers().size();
+            net.vas.rdp.uav.swarm.SwarmStatus status =
+                    net.vas.rdp.uav.swarm.SwarmStatus.from(swarm);
+            value.availableMembers = status.getAvailableMembers();
+            value.target = String.valueOf(status.getTargetId());
+            value.targetState = status.getTargetState().name();
             return value;
         }
 
         public void fromBytes(ByteBuf buffer) {
             id = readString(buffer); name = readString(buffer); state = readString(buffer);
-            formation = readString(buffer); leader = readString(buffer); members = buffer.readUnsignedByte();
+            formation = readString(buffer); leader = readString(buffer);
+            target = readString(buffer); targetState = readString(buffer);
+            members = buffer.readUnsignedByte(); availableMembers = buffer.readUnsignedByte();
         }
 
         public void toBytes(ByteBuf buffer) {
             writeString(buffer, id); writeString(buffer, name); writeString(buffer, state);
             writeString(buffer, formation); writeString(buffer, leader);
+            writeString(buffer, target); writeString(buffer, targetState);
             buffer.writeByte(Math.min(255, Math.max(0, members)));
+            buffer.writeByte(Math.min(255, Math.max(0, availableMembers)));
         }
     }
 
@@ -470,6 +520,7 @@ public final class RdpUavNetwork {
         public CreateMission(String target, boolean attack, boolean point) {
             this(target, attack, point, 2);
         }
+
         public CreateMission(String target, boolean attack, boolean point, int priority) {
             this(target, attack, point, priority, "");
         }
@@ -480,6 +531,55 @@ public final class RdpUavNetwork {
             this.point = point;
             this.priority = Math.max(0, Math.min(3, priority));
             this.weapon = weapon == null ? "" : weapon;
+        }
+
+        public static final class LaunchMissionDefinition implements IMessage {
+            private int version = 1;
+            private String type = "";
+            private String target = "";
+            private boolean attack;
+            private int priority = 1;
+            private String weapon = "";
+            private boolean swarmEnabled;
+            private int swarmMaximumMembers = 1;
+            private boolean unsupportedConfiguration;
+
+            public LaunchMissionDefinition() { }
+
+            public LaunchMissionDefinition(MissionDefinition definition) {
+                this.type = definition.getMissionType().name();
+                this.target = definition.getTarget();
+                this.attack = definition.isAttack();
+                this.priority = definition.getPriority().ordinal();
+                this.weapon = definition.getGuidedWeapon();
+                this.swarmEnabled = definition.isSwarmEnabled();
+                this.swarmMaximumMembers = definition.getSwarmMaximumMembers();
+                this.unsupportedConfiguration = isLaunchSupported(definition);
+            }
+
+            public void fromBytes(ByteBuf buffer) {
+                version = buffer.readUnsignedByte();
+                type = readString(buffer);
+                target = readString(buffer);
+                attack = buffer.readBoolean();
+                priority = buffer.readUnsignedByte();
+                weapon = readString(buffer);
+                swarmEnabled = buffer.readBoolean();
+                swarmMaximumMembers = buffer.readUnsignedByte();
+                unsupportedConfiguration = buffer.readBoolean();
+            }
+
+            public void toBytes(ByteBuf buffer) {
+                buffer.writeByte(version);
+                writeString(buffer, type);
+                writeString(buffer, target);
+                buffer.writeBoolean(attack);
+                buffer.writeByte(Math.max(0, Math.min(3, priority)));
+                writeString(buffer, weapon);
+                buffer.writeBoolean(swarmEnabled);
+                buffer.writeByte(Math.max(1, Math.min(64, swarmMaximumMembers)));
+                buffer.writeBoolean(unsupportedConfiguration);
+            }
         }
 
         public void fromBytes(ByteBuf buffer) {
@@ -549,6 +649,80 @@ public final class RdpUavNetwork {
         public AiTargetLock(java.util.UUID targetId, boolean clear) {
             this.targetId = targetId == null ? "" : targetId.toString();
             this.clear = clear;
+        }
+
+        public static final class RegistryTargetAssignment implements IMessage {
+            private String missionId = "";
+            private String registryId = "";
+
+            public RegistryTargetAssignment() { }
+
+            public RegistryTargetAssignment(String missionId, String registryId) {
+                this.missionId = missionId == null ? "" : missionId;
+                this.registryId = registryId == null ? "" : registryId;
+            }
+
+            public void fromBytes(ByteBuf buffer) {
+                missionId = readString(buffer);
+                registryId = readString(buffer);
+            }
+
+            public void toBytes(ByteBuf buffer) {
+                writeString(buffer, missionId);
+                writeString(buffer, registryId);
+            }
+        }
+
+        public static final class ServerRegistryTargetAssignmentHandler
+                implements IMessageHandler<RegistryTargetAssignment, IMessage> {
+            public IMessage onMessage(final RegistryTargetAssignment message, MessageContext context) {
+                final EntityPlayerMP player = context.getServerHandler().player;
+                Objects.requireNonNull(player.getServer()).addScheduledTask(() -> {
+                    MCH_EntityAircraft aircraft =
+                            net.vas.rdp.uav.mission.UavControlAccess.findControlledAircraft(player);
+                    if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, player)
+                            || RDPUavMod.missions().ensureAuthorized(aircraft, player)) {
+                        player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                "UAV registry target rejected: operator authorization is required."));
+                        return;
+                    }
+                    try {
+                        java.util.UUID missionId = java.util.UUID.fromString(message.missionId);
+                        net.vas.rdp.uav.mission.RDPMission mission =
+                                net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
+                                        .getRepository().find(missionId);
+                        if (mission == null || mission.isTerminal()
+                                || !player.getUniqueID().equals(mission.getOwnerId())
+                                || !aircraft.getUniqueID().equals(mission.getAircraftId())) {
+                            throw new IllegalArgumentException("Mission is not assignable");
+                        }
+                        net.minecraft.entity.Entity target =
+                                TARGET_RESOLVER.findLoadedByRegistryId(player.world, message.registryId);
+                        if (target == null || target == aircraft
+                                || !target.canBeCollidedWith()
+                                || !net.vas.rdp.uav.target.TargetPolicy.isSelectableContact(
+                                player.world, target, player)) {
+                            throw new IllegalArgumentException("Target is not selectable");
+                        }
+                        net.vas.rdp.uav.profile.UavVehicleProfile profile =
+                                aircraft.getAcInfo() == null ? null
+                                : net.vas.rdp.uav.profile.UavVehicleProfiles.forAircraft(
+                                aircraft.getAcInfo().name);
+                        if (profile == null || target.getDistance(aircraft) > profile.getLockRange()) {
+                            throw new IllegalArgumentException("Target is outside lock range");
+                        }
+                        mission.applyOperatorEntityLock(target.getUniqueID(),
+                                player.world.getTotalWorldTime());
+                        net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world).markDirty();
+                        player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                "UAV registry target assigned: " + message.registryId));
+                    } catch (IllegalArgumentException failure) {
+                        player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                "UAV registry target rejected: invalid mission or target."));
+                    }
+                });
+                return null;
+            }
         }
 
         public static final class AreaLock implements IMessage {
@@ -769,6 +943,8 @@ public final class RdpUavNetwork {
                 private double z;
                 private double distance;
                 private double velocityX, velocityY, velocityZ, confidence, bearing, elevation;
+                private double previousX, previousY, previousZ;
+                private long lastDetectionTick, lastUpdateTick;
                 private boolean visible;
                 private String lifecycle = "NONE";
                 private String markerState = "HIDDEN";
@@ -879,11 +1055,19 @@ public final class RdpUavNetwork {
                         telemetry.velocityX = contact.getVelocityX();
                         telemetry.velocityY = contact.getVelocityY();
                         telemetry.velocityZ = contact.getVelocityZ();
+                        telemetry.previousX = contact.getPreviousX();
+                        telemetry.previousY = contact.getPreviousY();
+                        telemetry.previousZ = contact.getPreviousZ();
+                        telemetry.lastDetectionTick = contact.getLastDetectionTick();
+                        telemetry.lastUpdateTick = contact.getLastUpdateTick();
                         telemetry.confidence = contact.getConfidence();
+                        telemetry.bearing = contact.getBearing();
+                        telemetry.elevation = contact.getElevation();
                         telemetry.visible = contact.isVisible();
                         telemetry.lifecycle = contact.getLifecycle().name();
                         telemetry.markerState = contact.getMarkerState();
-                        if (aircraftEntity != null) {
+                        if (aircraftEntity != null
+                                && telemetry.bearing == 0.0D && telemetry.elevation == 0.0D) {
                             double dx = tx - aircraftEntity.posX;
                             double dz = tz - aircraftEntity.posZ;
                             telemetry.bearing = Math.toDegrees(Math.atan2(dz, dx));
@@ -919,6 +1103,8 @@ public final class RdpUavNetwork {
                     distance = buffer.readDouble();
                     velocityX = buffer.readDouble(); velocityY = buffer.readDouble(); velocityZ = buffer.readDouble();
                     confidence = buffer.readDouble(); bearing = buffer.readDouble(); elevation = buffer.readDouble();
+                    previousX = buffer.readDouble(); previousY = buffer.readDouble(); previousZ = buffer.readDouble();
+                    lastDetectionTick = buffer.readLong(); lastUpdateTick = buffer.readLong();
                     visible = buffer.readBoolean(); lifecycle = readString(buffer); markerState = readString(buffer);
                 }
 
@@ -934,6 +1120,8 @@ public final class RdpUavNetwork {
                     buffer.writeDouble(x).writeDouble(y).writeDouble(z).writeDouble(distance);
                     buffer.writeDouble(velocityX).writeDouble(velocityY).writeDouble(velocityZ);
                     buffer.writeDouble(confidence).writeDouble(bearing).writeDouble(elevation);
+                    buffer.writeDouble(previousX).writeDouble(previousY).writeDouble(previousZ);
+                    buffer.writeLong(lastDetectionTick).writeLong(lastUpdateTick);
                     buffer.writeBoolean(visible); writeString(buffer, lifecycle); writeString(buffer, markerState);
                 }
             }
@@ -1256,6 +1444,90 @@ public final class RdpUavNetwork {
         }
     }
 
+    public static final class ServerMissionDefinitionHandler
+            implements IMessageHandler<CreateMission.LaunchMissionDefinition, IMessage> {
+        public IMessage onMessage(final CreateMission.LaunchMissionDefinition message, MessageContext context) {
+            final EntityPlayerMP player = context.getServerHandler().player;
+            Objects.requireNonNull(player.getServer()).addScheduledTask(() -> {
+                if (message.version != 1 || message.unsupportedConfiguration
+                        || message.target == null
+                        || !message.target.matches(
+                        "(?i)(mod=[A-Za-z0-9_.-]+|[A-Za-z0-9_.-]+:[A-Za-z0-9_./-]+)")) {
+                    reject(player, "Mission definition rejected: unsupported version or target.");
+                    return;
+                }
+                MCH_EntityAircraft aircraft =
+                        net.vas.rdp.uav.mission.UavControlAccess.findControlledAircraft(player);
+                if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, player)) {
+                    reject(player, "Mission definition rejected: operator authorization is required.");
+                    return;
+                }
+                if (message.swarmMaximumMembers < 1 || message.swarmMaximumMembers > 64) {
+                    reject(player, "Mission definition rejected: invalid swarm size.");
+                    return;
+                }
+                if (!message.type.equals("RECONNAISSANCE")
+                        && !message.type.equals("OBSERVATION")
+                        && !message.type.equals("STRIKE")
+                        && !message.type.equals("DESTROYING")) {
+                    reject(player, "Mission definition rejected: mission type is unsupported.");
+                    return;
+                }
+                if (message.attack && !message.weapon.trim().isEmpty()
+                        && !hasSupportedWeapon(aircraft, message.weapon)) {
+                    reject(player, "Mission definition rejected: selected weapon is unavailable.");
+                    return;
+                }
+                String command = "rdpuav mission create " + message.target
+                        + (message.attack ? " attack" : "") + " "
+                        + priorityName(message.priority);
+                Objects.requireNonNull(player.getServer()).getCommandManager()
+                        .executeCommand(player, command);
+                if (message.attack && !message.weapon.trim().isEmpty()) {
+                    java.util.List<net.vas.rdp.uav.mission.RDPMission> missions =
+                            net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
+                                    .getRepository().byOwner(player.getUniqueID());
+                    for (int i = missions.size() - 1; i >= 0; i--) {
+                        net.vas.rdp.uav.mission.RDPMission mission = missions.get(i);
+                        if (mission.getAircraftId().equals(aircraft.getUniqueID())
+                                && !mission.isTerminal()) {
+                            mission.setGuidedWeapon(message.weapon);
+                            net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
+                                    .markDirty();
+                            break;
+                        }
+                    }
+                }
+                sendMissionData(player);
+            });
+            return null;
+        }
+
+        private static void reject(EntityPlayerMP player, String message) {
+            player.sendMessage(new net.minecraft.util.text.TextComponentString(message));
+        }
+
+        private static String priorityName(int value) {
+            switch (Math.max(0, Math.min(3, value))) {
+                case 0: return "low";
+                case 2: return "high";
+                case 3: return "critical";
+                default: return "normal";
+            }
+        }
+
+        private static boolean hasSupportedWeapon(MCH_EntityAircraft aircraft, String requested) {
+            if (aircraft == null || aircraft.getWeapons() == null) return false;
+            for (MCH_WeaponSet weapon : aircraft.getWeapons()) {
+                if (weapon == null || weapon.getInfo() == null
+                        || !requested.equalsIgnoreCase(weapon.getName())) continue;
+                return net.vas.rdp.uav.weapon.GuidedWeaponRegistry.find(
+                        weapon.getName(), weapon.getInfo().type) != null;
+            }
+            return false;
+        }
+    }
+
     public static final class ServerAdoptProjectileHandler
             implements IMessageHandler<AdoptProjectile, IMessage> {
         public IMessage onMessage(final AdoptProjectile message, MessageContext context) {
@@ -1497,7 +1769,7 @@ public final class RdpUavNetwork {
                     KamikazePilotOverride.lock(aircraft.getUniqueID(), targetId);
                     player.sendMessage(new net.minecraft.util.text.TextComponentString(
                             "UAV target lock accepted: AI control override active for "
-                                    + key.toString()
+                                    + key
                                     + ". Press the target-lock key again to restore player control."));
                     RdpUavDebug.debug("Network", "AI target lock accepted player={} aircraft={} target={}",
                             player.getUniqueID(), aircraft.getUniqueID(), targetId);

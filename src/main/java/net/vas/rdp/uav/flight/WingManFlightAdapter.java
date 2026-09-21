@@ -31,6 +31,8 @@ import java.util.HashMap;
 public final class WingManFlightAdapter {
     private final Set<UUID> nativeAttackCompletions = new HashSet<>();
     private final Map<UUID, ContinuousTargetTracker> targetTrackers = new HashMap<>();
+    private final Map<UUID, FpvFlightStateMachine> fpvStates = new HashMap<>();
+    private final Map<UUID, FlightCommand> fpvCommands = new HashMap<>();
     private static final double KAMIKAZE_ATTACK_ANGLE_DEGREES = 35.0D;
     private static final double MIN_DIVE_RUN_METERS = 32.0D;
     private static final double MAX_DIVE_RUN_METERS = 160.0D;
@@ -47,7 +49,7 @@ public final class WingManFlightAdapter {
 
     private static double normalizeHelicopterTargetY(MCH_EntityAircraft aircraft, double targetY) {
         if (!usesHelicopterFlightModel(aircraft)) return targetY;
-        UavVehicleProfile profile = aircraft == null || aircraft.getAcInfo() == null
+        UavVehicleProfile profile = aircraft.getAcInfo() == null
                 ? new UavVehicleProfile(UavExecutionProfile.HELICOPTER_ONE_WAY_FPV, 8D, 4D, 32D, 6D, false, "SELF_DESTRUCT")
                 : UavVehicleProfiles.forAircraft(aircraft.getAcInfo().name);
         double minimum = profile.getMinimumExecutionAltitude() > 0D
@@ -71,6 +73,8 @@ public final class WingManFlightAdapter {
             return false;
         }
         UUID aircraftId = aircraft.getUniqueID();
+        fpvStates.remove(aircraftId);
+        fpvCommands.remove(aircraftId);
         WingmanEntry existing = WingmanRegistry.get(aircraftId);
         if (existing != null) {
             // A previous RDP mission can leave an inert PARKED/NONE entry
@@ -106,6 +110,13 @@ public final class WingManFlightAdapter {
         entry.autoTargetX = x;
         entry.autoTargetY = safeY;
         entry.autoTargetZ = z;
+        if (isFpv(aircraft)) {
+            fpvCommands.put(aircraftId,
+                    FlightCommand.approach(1.0D, safeY - aircraft.posY, 1.0D));
+            FpvFlightStateMachine state = new FpvFlightStateMachine();
+            state.moveToTarget();
+            fpvStates.put(aircraftId, state);
+        }
         entry.mission = nodes;
         entry.missionIndex = 0;
         entry.missionNodeTimer = 0;
@@ -131,6 +142,14 @@ public final class WingManFlightAdapter {
         if (entry == null || entry.mission == null || entry.autoState == AutonomousState.RTB
                 || entry.autoState == AutonomousState.LANDING
                 || entry.autoState == AutonomousState.PARKED) return false;
+        if (isFpv(aircraft)) {
+            FpvFlightState state = fpvFlightState(aircraft);
+            if (state == FpvFlightState.HOVER || state == FpvFlightState.TERMINAL_APPROACH) {
+                return false;
+            }
+            fpvCommands.put(aircraft.getUniqueID(),
+                    FlightCommand.approach(1.0D, y - aircraft.posY, 1.0D));
+        }
 
         double safeY = normalizeHelicopterTargetY(aircraft, y);
         List<MissionNode> route = new ArrayList<>();
@@ -160,6 +179,40 @@ public final class WingManFlightAdapter {
         return true;
     }
 
+    /**
+     * Installs one finite side detour and then the target point. This is a
+     * route decision, not a second navigation controller.
+     */
+    public boolean refreshBoundedDetour(MCH_EntityAircraft aircraft, double x, double y, double z,
+                                        double detourDistance, UUID targetId) {
+        if (supportsAutonomousRoute(aircraft)) return false;
+        WingmanEntry entry = WingmanRegistry.get(aircraft.getUniqueID());
+        if (entry == null || entry.mission == null
+                || entry.autoState == AutonomousState.RTB
+                || entry.autoState == AutonomousState.LANDING
+                || entry.autoState == AutonomousState.PARKED) return false;
+        double dx = x - aircraft.posX;
+        double dz = z - aircraft.posZ;
+        double length = Math.sqrt(dx * dx + dz * dz);
+        if (length < 1.0D) return false;
+        double offset = Math.max(4.0D, Math.min(32.0D, detourDistance));
+        double sideX = aircraft.posX - dz / length * offset;
+        double sideZ = aircraft.posZ + dx / length * offset;
+        double safeY = normalizeHelicopterTargetY(aircraft, y);
+        List<MissionNode> route = new ArrayList<>();
+        route.add(MissionNode.flyTo(sideX, safeY, sideZ));
+        route.add(MissionNode.flyTo(x, safeY, z));
+        entry.mission = route;
+        entry.missionIndex = 0;
+        entry.missionNodeTimer = 0;
+        entry.currentAutoTarget = targetId;
+        entry.autoTargetX = x;
+        entry.autoTargetY = safeY;
+        entry.autoTargetZ = z;
+        entry.autoState = AutonomousState.ENROUTE;
+        return true;
+    }
+
     public boolean hasReachedRoutePoint(MCH_EntityAircraft aircraft) {
         WingmanEntry entry = getEntry(aircraft);
         return entry != null && entry.mission != null && entry.missionIndex > 0
@@ -173,10 +226,48 @@ public final class WingManFlightAdapter {
         if (aircraft == null) return;
         WingmanEntry entry = WingmanRegistry.get(aircraft.getUniqueID());
         if (entry == null) return;
-        entry.currentAutoTarget = null;
         entry.autoTargetX = aircraft.posX;
         entry.autoTargetY = aircraft.posY;
         entry.autoTargetZ = aircraft.posZ;
+    }
+
+    /**
+     * Holds an FPV vehicle at its current position while preserving the
+     * authoritative target identity for reacquisition.
+     */
+    public boolean enterFpvHover(MCH_EntityAircraft aircraft) {
+        if (!isFpv(aircraft)) return false;
+        WingmanEntry entry = WingmanRegistry.get(aircraft.getUniqueID());
+        if (entry == null || entry.mission == null
+                || entry.autoState == AutonomousState.RTB
+                || entry.autoState == AutonomousState.LANDING
+                || entry.autoState == AutonomousState.PARKED) return false;
+        FpvFlightStateMachine state = fpvStates.get(aircraft.getUniqueID());
+        if (state == null) {
+            state = new FpvFlightStateMachine();
+            fpvStates.put(aircraft.getUniqueID(), state);
+        }
+        if (state.getState() == FpvFlightState.HOVER) return true;
+        if (state.getState() == FpvFlightState.TERMINAL_APPROACH) return false;
+        state.hover();
+        fpvCommands.put(aircraft.getUniqueID(),
+                FlightCommand.hover());
+        entry.mission = new ArrayList<>();
+        entry.mission.add(MissionNode.flyTo(aircraft.posX, aircraft.posY, aircraft.posZ));
+        entry.mission.add(MissionNode.loiter(40));
+        entry.missionIndex = 0;
+        entry.missionNodeTimer = 0;
+        entry.autoTargetX = aircraft.posX;
+        entry.autoTargetY = aircraft.posY;
+        entry.autoTargetZ = aircraft.posZ;
+        entry.autoState = AutonomousState.ENROUTE;
+        return true;
+    }
+
+    public FpvFlightState fpvFlightState(MCH_EntityAircraft aircraft) {
+        FpvFlightStateMachine state = aircraft == null ? null
+                : fpvStates.get(aircraft.getUniqueID());
+        return state == null ? null : state.getState();
     }
 
     /**
@@ -190,6 +281,12 @@ public final class WingManFlightAdapter {
         WingmanEntry entry = WingmanRegistry.get(aircraft.getUniqueID());
         if (entry == null || entry.autoState == AutonomousState.RTB
                 || entry.autoState == AutonomousState.LANDING || entry.autoState == AutonomousState.PARKED) return false;
+        if (isFpv(aircraft) && fpvFlightState(aircraft) == FpvFlightState.HOVER) {
+            // Reacquisition is the explicit exit request, but the hover route
+            // owns this update. Pursuit may write only on the next tick.
+            leaveFpvHover(aircraft);
+            return false;
+        }
         double dx = x - entry.autoTargetX, dy = y - entry.autoTargetY, dz = z - entry.autoTargetZ;
         double length = Math.sqrt(dx * dx + dy * dy + dz * dz);
         double maxStep = 128.0D;
@@ -200,6 +297,13 @@ public final class WingManFlightAdapter {
             z = entry.autoTargetZ + dz * scale;
         }
         double safeY = normalizeHelicopterTargetY(aircraft, y);
+        if (isFpv(aircraft)) {
+            FpvFlightState state = fpvFlightState(aircraft);
+            if (state != FpvFlightState.TERMINAL_APPROACH) {
+                fpvCommands.put(aircraft.getUniqueID(),
+                        FlightCommand.approach(1.0D, safeY - aircraft.posY, 1.0D));
+            }
+        }
         entry.currentAutoTarget = targetId;
         entry.autoTargetX = x; entry.autoTargetY = safeY; entry.autoTargetZ = z;
         return true;
@@ -269,6 +373,11 @@ public final class WingManFlightAdapter {
     public boolean armKamikaze(MCH_EntityAircraft aircraft, double x, double y, double z,
                                double attackRadius, UUID targetId) {
         if (supportsKamikaze(aircraft)) return true;
+        beginFpvTerminalApproach(aircraft);
+        if (isFpv(aircraft)) {
+            fpvCommands.put(aircraft.getUniqueID(),
+                    FlightCommand.terminalApproach(1.0D, y - aircraft.posY, 1.0D));
+        }
         int weaponId = selectSelfDestructWeapon(aircraft);
         if (weaponId < 0) return true;
         WingmanEntry entry = WingmanRegistry.get(aircraft.getUniqueID());
@@ -453,6 +562,8 @@ public final class WingManFlightAdapter {
             aircraft.getEntityData().removeTag(KamikazeConfig.MIN_SPEED_KEY);
             WingmanRegistry.remove(aircraft.getUniqueID());
             targetTrackers.remove(aircraft.getUniqueID());
+            fpvStates.remove(aircraft.getUniqueID());
+            fpvCommands.remove(aircraft.getUniqueID());
         }
     }
 
@@ -488,8 +599,36 @@ public final class WingManFlightAdapter {
             return new ContinuousTargetTracker.Parameters(8.0D, 0.18D,
                     0.12D, 1.5D, 96.0D, 4);
         }
+
         return new ContinuousTargetTracker.Parameters(3.0D, 0.45D,
                 0.35D, 0.75D, 48.0D, 2);
+    }
+
+    private boolean isFpv(MCH_EntityAircraft aircraft) {
+        return aircraft != null && aircraft.getAcInfo() != null
+                && UavVehicleProfiles.forAircraft(aircraft.getAcInfo().name).isHelicopterProfile();
+    }
+
+    private void leaveFpvHover(MCH_EntityAircraft aircraft) {
+        if (!isFpv(aircraft)) return;
+        FpvFlightStateMachine state = fpvStates.get(aircraft.getUniqueID());
+        if (state != null && state.getState() == FpvFlightState.HOVER) {
+            state.moveToTarget();
+        }
+    }
+
+    private void beginFpvTerminalApproach(MCH_EntityAircraft aircraft) {
+        if (!isFpv(aircraft)) return;
+        FpvFlightStateMachine state = fpvStates.get(aircraft.getUniqueID());
+        if (state == null) {
+            state = new FpvFlightStateMachine();
+            fpvStates.put(aircraft.getUniqueID(), state);
+        }
+        state.beginTerminalApproach();
+    }
+
+    public FlightCommand fpvFlightCommand(MCH_EntityAircraft aircraft) {
+        return aircraft == null ? null : fpvCommands.get(aircraft.getUniqueID());
     }
 
     public boolean isDispatched(MCH_EntityAircraft aircraft) {

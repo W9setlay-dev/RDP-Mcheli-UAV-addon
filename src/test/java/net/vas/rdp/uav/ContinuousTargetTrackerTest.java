@@ -3,8 +3,7 @@ package net.vas.rdp.uav;
 import net.vas.rdp.uav.flight.ContinuousTargetTracker;
 import org.junit.Test;
 
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.*;
 
 public class ContinuousTargetTrackerTest {
     @Test
@@ -18,8 +17,8 @@ public class ContinuousTargetTrackerTest {
                 tracker.update(11, 0, 10, 0, 40, 10, 20, 1, 0, 0);
         assertTrue(first.isUpdated());
         assertFalse(cached.isUpdated());
-        assertTrue(first.getX() == cached.getX());
-        assertTrue(first.getZ() == cached.getZ());
+        assertEquals(first.getX(), cached.getX(), 0.0);
+        assertEquals(first.getZ(), cached.getZ(), 0.0);
     }
 
     @Test
