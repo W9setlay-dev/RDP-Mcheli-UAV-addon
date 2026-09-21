@@ -4,6 +4,11 @@ This guide explains how the RDP UAV addon is organized, how its mission
 contracts work, how the operator GUI communicates with the server, and how to
 develop and validate changes safely.
 
+For the complete guided missile lifecycle, including client packet flow,
+native McHeli launch, projectile association, per-tick target handoff,
+diagnostics, and modification rules, see
+[`docs/missile-guidance-lifecycle.md`](docs/missile-guidance-lifecycle.md).
+
 The addon is a separate Forge project inside this modpack repository. It is
 not a replacement for McHeli CE, WingMan, or RDP Core. It provides mission
 domain logic and a controlled integration boundary around those mods.

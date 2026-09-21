@@ -38,9 +38,11 @@ public final class MissileGuidanceController {
             new HashMap<>();
     private static final Map<UUID, Long> LAST_CORRECTION_TICK =
             new HashMap<>();
+    private static final Map<UUID, Long> LAST_CORRIDOR_LOG =
+            new HashMap<>();
     private static final int MAX_ROUTE_SAMPLES = 12;
     private static final int MAX_AVOIDANCE_CANDIDATES = 8;
-    private static final double AVOIDANCE_OFFSET = 4.0D;
+    private static final double AVOIDANCE_OFFSET = 6.0D;
     private static final long AVOIDANCE_PLAN_TICKS = 10L;
 
     private MissileGuidanceController() { }
@@ -192,7 +194,9 @@ public final class MissileGuidanceController {
 
             if (!matches(assignment.weapon, missile)) continue;
 
-            ProjectileGuidanceMission projectile = projectileMission(missile, shooter, assignment);
+            ProjectileGuidanceMission projectile =
+                    projectileMission(missile, shooter, assignment);
+
             projectile.nativeGuidanceActive();
 
             if (assignment.filter != null && assignment.objective.getType() == GuidedObjectiveType.ENTITY) {
@@ -219,6 +223,7 @@ public final class MissileGuidanceController {
             LAST_APPLIED_NATIVE_TARGETS.keySet().retainAll(liveProjectiles);
             LAST_OVERRIDE_LOG.keySet().retainAll(liveProjectiles);
             LAST_CORRECTION_TICK.keySet().retainAll(liveProjectiles);
+            LAST_CORRIDOR_LOG.keySet().retainAll(liveProjectiles);
         }
     }
 
@@ -259,22 +264,6 @@ public final class MissileGuidanceController {
             }
         }
         AimPoint aim = chooseAimPoint(world, missile, x, y, z);
-        if (aim == null) {
-            boolean firstObstacleFailure =
-                    projectile.getState() != ProjectileGuidanceState.OBSTACLE_UNAVAILABLE;
-            projectile.obstacleUnavailable();
-            if (firstObstacleFailure) {
-                RdpUavDebug.event("Guidance", "obstacle_unavailable",
-                        "aircraft", shooterId(missile),
-                        "projectile", missile.getUniqueID(), "objective", objective.getObjectiveId(),
-                        "weapon", assignment.weapon);
-            }
-            RdpUavDebug.debug("Guidance",
-                    "aircraft={} projectile={} avoidance no safe candidate weapon={}",
-                    shooterId(missile),
-                    missile.getUniqueID(), assignment.weapon);
-            return;
-        }
         x = aim.x;
         y = aim.y;
         z = aim.z;
@@ -494,13 +483,17 @@ public final class MissileGuidanceController {
         AvoidancePlan existing = AVOIDANCE_PLANS.get(missile.getUniqueID());
         long now = world.getTotalWorldTime();
         if (existing != null && now <= existing.expiresAt
-                && corridorClear(world, missile, existing.x, existing.y, existing.z)) {
+                && corridorCheck(world, missile.posX, missile.posY, missile.posZ,
+                existing.x, existing.y, existing.z).clear) {
             return new AimPoint(existing.x, existing.y, existing.z, true);
         }
         AVOIDANCE_PLANS.remove(missile.getUniqueID());
-        if (corridorClear(world, missile, x, y, z)) {
+        CorridorCheck direct = corridorCheck(world, missile.posX, missile.posY,
+                missile.posZ, x, y, z);
+        if (direct.clear) {
             return new AimPoint(x, y, z, false);
         }
+        logCorridorFailure(world, missile, "DIRECT", x, y, z, direct);
         double[][] offsets = getOffsets(missile, x, z);
         AimPoint best = null;
         double bestScore = Double.MAX_VALUE;
@@ -508,8 +501,14 @@ public final class MissileGuidanceController {
             double candidateX = x + offsets[i][0] * AVOIDANCE_OFFSET;
             double candidateY = Math.max(1.0D, y + offsets[i][1] * AVOIDANCE_OFFSET);
             double candidateZ = z + offsets[i][2] * AVOIDANCE_OFFSET;
-            if (!corridorClear(world, missile, candidateX, candidateY, candidateZ)
-                    || !corridorClear(world, candidateX, candidateY, candidateZ, x, y, z)) {
+            CorridorCheck outbound = corridorCheck(world, missile.posX, missile.posY,
+                    missile.posZ, candidateX, candidateY, candidateZ);
+            CorridorCheck inbound = corridorCheck(world, candidateX, candidateY,
+                    candidateZ, x, y, z);
+            if (!outbound.clear || !inbound.clear) {
+                CorridorCheck failed = outbound.clear ? inbound : outbound;
+                logCorridorFailure(world, missile, "DETOUR_" + i,
+                        failed.x, failed.y, failed.z, failed);
                 continue;
             }
             double deviation = Math.abs(candidateX - x) + Math.abs(candidateY - y)
@@ -523,8 +522,22 @@ public final class MissileGuidanceController {
         if (best != null) {
             AVOIDANCE_PLANS.put(missile.getUniqueID(),
                     new AvoidancePlan(best.x, best.y, best.z, now + AVOIDANCE_PLAN_TICKS));
+            return best;
         }
-        return best;
+        /*
+         * Corridor analysis is an addon safety/avoidance aid, not a native
+         * guidance prerequisite. If every detour is blocked, still submit the
+         * requested point so McHeli can steer and resolve collision itself.
+         * Returning null here silently disabled TV/AS steering altogether.
+         */
+        RdpUavDebug.event("Guidance", "native_guidance_fallback",
+                "projectile", missile.getUniqueID(),
+                "weapon", missile.getInfo() == null ? "" : missile.getInfo().name,
+                "reason", "NO_SAFE_DETOUR",
+                "directFailure", direct.reason,
+                "directSample", direct.sample + "/" + MAX_ROUTE_SAMPLES,
+                "directBlock", direct.block);
+        return new AimPoint(x, y, z, false);
     }
 
     @NotNull
@@ -551,26 +564,75 @@ public final class MissileGuidanceController {
         };
     }
 
-    private static boolean corridorClear(World world, MCH_EntityBaseBullet missile,
-                                         double x, double y, double z) {
-        return corridorClear(world, missile.posX, missile.posY, missile.posZ, x, y, z);
-    }
-
-    private static boolean corridorClear(World world, double startX, double startY, double startZ,
-                                         double x, double y, double z) {
+    private static CorridorCheck corridorCheck(World world, double startX, double startY,
+                                               double startZ, double x, double y, double z) {
         double dx = x - startX;
         double dy = y - startY;
         double dz = z - startZ;
         for (int i = 1; i <= MAX_ROUTE_SAMPLES; i++) {
             double f = i / (double) MAX_ROUTE_SAMPLES;
-            net.minecraft.util.math.BlockPos sample = new net.minecraft.util.math.BlockPos(
+            BlockPos sample = new BlockPos(
                     startX + dx * f, startY + dy * f, startZ + dz * f);
-            if (!world.isBlockLoaded(sample)
-                    || world.getBlockState(sample).getMaterial().blocksMovement()) {
-                return false;
+            if (!world.isBlockLoaded(sample)) {
+                return new CorridorCheck(false, "UNLOADED", i, sample,
+                        startX + dx * f, startY + dy * f, startZ + dz * f);
+            }
+            /*
+             * A solid terminal block is the intended strike surface for a
+             * square objective. It is not an obstacle in the final sample;
+             * earlier solid samples remain blocking.
+             */
+            if (i < MAX_ROUTE_SAMPLES
+                    && world.getBlockState(sample).getMaterial().blocksMovement()) {
+                return new CorridorCheck(false, "SOLID_BLOCK", i, sample,
+                        startX + dx * f, startY + dy * f, startZ + dz * f);
             }
         }
-        return true;
+        return new CorridorCheck(true, "CLEAR", MAX_ROUTE_SAMPLES,
+                new BlockPos(x, y, z), x, y, z);
+    }
+
+    private static void logCorridorFailure(World world, MCH_EntityBaseBullet missile,
+                                           String leg, double x, double y, double z,
+                                           CorridorCheck check) {
+        long now = world.getTotalWorldTime();
+        Long previous = LAST_CORRIDOR_LOG.get(missile.getUniqueID());
+        if (previous != null && now - previous < AVOIDANCE_PLAN_TICKS) return;
+        LAST_CORRIDOR_LOG.put(missile.getUniqueID(), now);
+        RdpUavDebug.event("Guidance", "corridor_blocked",
+                "projectile", missile.getUniqueID(),
+                "weapon", missile.getInfo() == null ? "" : missile.getInfo().name,
+                "leg", leg,
+                "reason", check.reason,
+                "sample", check.sample + "/" + MAX_ROUTE_SAMPLES,
+                "sampleX", check.x,
+                "sampleY", check.y,
+                "sampleZ", check.z,
+                "block", check.block,
+                "targetX", x,
+                "targetY", y,
+                "targetZ", z);
+    }
+
+    private static final class CorridorCheck {
+        private final boolean clear;
+        private final String reason;
+        private final int sample;
+        private final double x;
+        private final double y;
+        private final double z;
+        private final String block;
+
+        private CorridorCheck(boolean clear, String reason, int sample, BlockPos position,
+                              double x, double y, double z) {
+            this.clear = clear;
+            this.reason = reason;
+            this.sample = sample;
+            this.x = x;
+            this.y = y;
+            this.z = z;
+            this.block = position == null ? "" : position.toString();
+        }
     }
 
     private static final class AimPoint {
@@ -642,26 +704,20 @@ public final class MissileGuidanceController {
     public static final class WeaponTelemetry {
             private final String weapon;
             private final String state;
-            private final UUID projectileId;
-            private final double x;
+        private final double x;
             private final double y;
             private final double z;
-            private final String objectiveId;
 
         private WeaponTelemetry(String weapon, String state, UUID projectileId,
                                 double x, double y, double z, String objectiveId) {
                 this.weapon = weapon == null ? "" : weapon;
                 this.state = state == null ? "UNKNOWN" : state;
-                this.projectileId = projectileId;
-                this.x = x; this.y = y; this.z = z;
-                this.objectiveId = objectiveId == null ? "" : objectiveId;
-            }
+            this.x = x; this.y = y; this.z = z;
+        }
         public String getWeapon() { return weapon; }
         public String getState() { return state; }
-        public UUID getProjectileId() { return projectileId; }
         public double getX() { return x; }
         public double getY() { return y; }
         public double getZ() { return z; }
-        public String getObjectiveId() { return objectiveId; }
     }
 }

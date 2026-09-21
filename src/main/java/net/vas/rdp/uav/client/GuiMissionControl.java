@@ -119,10 +119,6 @@ public final class GuiMissionControl extends GuiScreen {
         if (active != null) active.createEntityMission(true);
     }
 
-    public static void createSquareFromField() {
-        if (active != null) active.createSquareMission();
-    }
-
     public void initGui() {
         int left = width / 2 - 220;
         if (targetField == null) {
@@ -271,11 +267,11 @@ public final class GuiMissionControl extends GuiScreen {
         if (button.id == 0) requestData();
         else if (button.id == 1) { help = !help; rebuildButtons(); }
         else if (button.id == 2) mc.displayGuiScreen(null);
-        else if (button.id == 3) confirmDangerAction("authorize", () -> authorizeSelected(), "Authorizing the selected mission will arm server-side controls.");
-        else if (button.id == 4) confirmDangerAction("abort", () -> abortSelected(), "Aborting this mission will end the active task.");
-        else if (button.id == 14) confirmDangerAction("clear-selected", () -> clearSelected(), "Clear the selected mission record?");
-        else if (button.id == 15) confirmDangerAction("clear-all", () -> clearAll(), "Clear all of your mission records?");
-        else if (button.id == 16) confirmDangerAction("return-to-base", () -> returnSelected(), "Request native McHeli return and landing for the selected mission?");
+        else if (button.id == 3) confirmDangerAction("authorize", GuiMissionControl::authorizeSelected, "Authorizing the selected mission will arm server-side controls.");
+        else if (button.id == 4) confirmDangerAction("abort", GuiMissionControl::abortSelected, "Aborting this mission will end the active task.");
+        else if (button.id == 14) confirmDangerAction("clear-selected", GuiMissionControl::clearSelected, "Clear the selected mission record?");
+        else if (button.id == 15) confirmDangerAction("clear-all", GuiMissionControl::clearAll, "Clear all of your mission records?");
+        else if (button.id == 16) confirmDangerAction("return-to-base", GuiMissionControl::returnSelected, "Request native McHeli return and landing for the selected mission?");
         else if (button.id == 5) createEntityMission(false);
         else if (button.id == 6) confirmDangerAction("attack", () -> createEntityMission(true), "Launch an autonomous hostile-target attack?");
         else if (button.id == 7) {
