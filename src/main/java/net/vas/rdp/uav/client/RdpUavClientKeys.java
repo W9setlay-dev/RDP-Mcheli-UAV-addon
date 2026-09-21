@@ -116,7 +116,8 @@ public final class RdpUavClientKeys {
 
     private void lockAiTarget(Minecraft minecraft) {
         if (minecraft.objectMouseOver == null || minecraft.objectMouseOver.entityHit == null) {
-            RdpUavNetwork.lockAiTarget();
+            // An empty lock request must never make the server choose an arbitrary
+            // nearby entity. The clear-lock key is the explicit unlock operation.
             return;
         }
         net.minecraft.entity.Entity target = minecraft.objectMouseOver.entityHit;

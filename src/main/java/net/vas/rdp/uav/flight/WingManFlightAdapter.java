@@ -330,8 +330,8 @@ public final class WingManFlightAdapter {
         return true;
     }
 
-    private int selectAttackWeapon(MCH_EntityAircraft aircraft, String priority) {
-        if (aircraft == null || aircraft.getWeapons() == null) return -1;
+    private void selectAttackWeapon(MCH_EntityAircraft aircraft, String priority) {
+        if (aircraft == null || aircraft.getWeapons() == null) return;
         MCH_WeaponSet[] weapons = aircraft.getWeapons();
         if (priority != null && !priority.trim().isEmpty()) {
             String[] names = priority.split(",");
@@ -343,7 +343,7 @@ public final class WingManFlightAdapter {
                             && weapon.getName().toLowerCase(Locale.ROOT).equals(wanted)
                             && (weapon.getAmmo() > 0 || weapon.getAmmoReserve() > 0)) {
                         aircraft.updateWeaponID(0, i);
-                        return i;
+                        return;
                     }
                 }
             }
@@ -352,10 +352,9 @@ public final class WingManFlightAdapter {
             MCH_WeaponSet weapon = weapons[i];
             if (weapon != null && (weapon.getAmmo() > 0 || weapon.getAmmoReserve() > 0)) {
                 aircraft.updateWeaponID(0, i);
-                return i;
+                return;
             }
         }
-        return -1;
     }
 
     public boolean armSquareStrike(MCH_EntityAircraft aircraft, SquareStrikePlan plan,

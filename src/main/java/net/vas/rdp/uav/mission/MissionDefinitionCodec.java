@@ -38,6 +38,9 @@ public final class MissionDefinitionCodec {
         writeList(tag, "policyInclude", definition.getTargetPolicy().getInclude());
         writeList(tag, "policyRequire", definition.getTargetPolicy().getRequire());
         writeList(tag, "policyExclude", definition.getTargetPolicy().getExclude());
+        tag.setBoolean("policyRejectEmbedded", definition.getTargetPolicy().isRejectEmbedded());
+        tag.setBoolean("policyAllowVehicles", definition.getTargetPolicy().isAllowVehicleTargets());
+        tag.setDouble("policyMinimumConfidence", definition.getTargetPolicy().getMinimumConfidence());
         return tag;
     }
 
@@ -74,6 +77,15 @@ public final class MissionDefinitionCodec {
             addList(policy, tag, "policyInclude", 0);
             addList(policy, tag, "policyRequire", 1);
             addList(policy, tag, "policyExclude", 2);
+            if (tag.hasKey("policyRejectEmbedded")) {
+                policy.rejectDeeplyEmbedded(tag.getBoolean("policyRejectEmbedded"));
+            }
+            if (tag.hasKey("policyAllowVehicles")) {
+                policy.allowHostileVehicles(tag.getBoolean("policyAllowVehicles"));
+            }
+            if (tag.hasKey("policyMinimumConfidence")) {
+                policy.withMinimumConfidence(tag.getDouble("policyMinimumConfidence"));
+            }
             definition.setTargetPolicy(policy.snapshot());
         } catch (IllegalArgumentException invalid) {
             throw new IllegalArgumentException("Invalid mission definition", invalid);

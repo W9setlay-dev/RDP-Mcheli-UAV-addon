@@ -85,8 +85,8 @@ public final class GuidedWeaponRegistry {
             catch (IllegalArgumentException ignored) { }
         }
         register(new GuidedWeaponCapability(definition, type, behavior, objectives,
-                new GuidedTerminalProfile(maxSpeed, noOrbit, minAltitude, maxAltitude,
-                        maxCorrection, correctionInterval), unloadedTargetExecution));
+                new GuidedTerminalProfile(maxSpeed, minAltitude, maxAltitude,
+                        maxCorrection, correctionInterval, noOrbit), unloadedTargetExecution));
     }
 
     private static void register(Configuration c, String key, String definition,
@@ -125,8 +125,8 @@ public final class GuidedWeaponRegistry {
             catch (IllegalArgumentException ignored) { }
         }
         GuidedWeaponCapability capability = new GuidedWeaponCapability(definition, type, behavior,
-                objectives, new GuidedTerminalProfile(maxSpeed, noOrbit, minAltitude, maxAltitude,
-                        maxCorrection, correctionInterval), unloadedTargetExecution);
+                objectives, new GuidedTerminalProfile(maxSpeed, minAltitude, maxAltitude,
+                        maxCorrection, correctionInterval, noOrbit), unloadedTargetExecution);
         CAPABILITIES.put(key(definition, type), capability);
     }
 

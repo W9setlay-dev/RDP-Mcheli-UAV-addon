@@ -199,7 +199,7 @@ public final class MissionLifecycle {
                 RDPMissionWorldData.get(world).markDirty();
                 return;
             }
-            double guidanceY = terminalRouteAltitude(aircraft, target, mission);
+            double guidanceY = terminalRouteAltitude(aircraft, target);
             if (target.entity != null && mission.getTargetId() == null) {
                 mission.reacquireTarget(target.entity.getUniqueID(), tick);
             }
@@ -455,7 +455,7 @@ public final class MissionLifecycle {
         }
         if (mission.getState() == MissionState.REPLAN && target != null) {
             flight.release(aircraft);
-            double routeY = terminalRouteAltitude(aircraft, target, mission);
+            double routeY = terminalRouteAltitude(aircraft, target);
             if (!flight.dispatch(aircraft, target.x, routeY, target.z,
                     mission.getObservationDistance(), 200, mission.isAttack(),
                     target.entity == null ? null : target.entity.getUniqueID())) {
@@ -479,7 +479,7 @@ public final class MissionLifecycle {
             return true;
         }
         if (target != null) {
-            double targetGuidanceY = terminalRouteAltitude(aircraft, target, mission);
+            double targetGuidanceY = terminalRouteAltitude(aircraft, target);
             if (target.entity != null) {
                 flight.updateMovingEntityGuidance(aircraft, target.entity,
                         targetGuidanceY, tick);
@@ -513,7 +513,7 @@ public final class MissionLifecycle {
                     return true;
                 }
                 flight.release(aircraft);
-                double routeY = terminalRouteAltitude(aircraft, target, mission);
+                double routeY = terminalRouteAltitude(aircraft, target);
                 if (flight.dispatch(aircraft, target.x, routeY, target.z,
                         mission.getObservationDistance(), 0, true,
                         target.entity == null ? null : target.entity.getUniqueID())) {
@@ -958,7 +958,7 @@ public final class MissionLifecycle {
         boolean due = previous == null
                 || (tick - previous.tick >= 10L && flight.hasReachedRoutePoint(aircraft));
         if (!moved && !due) return;
-        double guidanceY = terminalRouteAltitude(aircraft, target, mission);
+        double guidanceY = terminalRouteAltitude(aircraft, target);
         boolean refreshed = decision == MissionSafety.RouteDecision.OFFSET_ORBIT
                 || decision == MissionSafety.RouteDecision.SAFE_SIDE_APPROACH
                 ? flight.refreshBoundedDetour(aircraft, target.x, guidanceY, target.z,
@@ -1041,8 +1041,7 @@ public final class MissionLifecycle {
                 Math.min(profile.getMaximumExecutionAltitude(), profile.getExecutionAltitude()));
     }
 
-    private double terminalRouteAltitude(MCH_EntityAircraft aircraft, Target target,
-                                         RDPMission mission) {
+    private double terminalRouteAltitude(MCH_EntityAircraft aircraft, Target target) {
         return guidanceAltitude(aircraft, target.y);
     }
 

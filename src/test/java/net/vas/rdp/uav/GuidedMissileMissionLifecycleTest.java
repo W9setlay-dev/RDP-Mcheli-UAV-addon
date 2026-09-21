@@ -104,7 +104,7 @@ public class GuidedMissileMissionLifecycleTest {
         replanning.fail("UNSUPPORTED_OBJECTIVE_COMBINATION", 3);
         assertEquals(MissionState.FAILED, replanning.getState());
         assertEquals("UNSUPPORTED_OBJECTIVE_COMBINATION", replanning.getFailureReason());
-        assertNotSame(replanning.getState(), MissionState.REPLAN);
+        assertNotSame(MissionState.REPLAN, replanning.getState());
     }
 
     @Test

@@ -89,6 +89,10 @@ public final class UavVehicleProfile {
     public boolean supportsLongRangeLock() {
         return executionProfile == UavExecutionProfile.LONG_RANGE_REUSABLE_UAV;
     }
+    /** Only configured or explicitly recognized airframes may acquire entity locks. */
+    public boolean supportsTargetLock() {
+        return executionProfile != UavExecutionProfile.UNKNOWN;
+    }
     public UavExecutionProfile getExecutionProfile() { return executionProfile; }
     public double getExecutionAltitude() { return executionAltitude; }
     public double getMinimumExecutionAltitude() { return minimumExecutionAltitude; }

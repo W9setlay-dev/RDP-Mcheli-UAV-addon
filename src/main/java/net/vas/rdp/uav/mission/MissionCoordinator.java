@@ -139,7 +139,7 @@ public final class MissionCoordinator {
     public synchronized Set<UUID> targetsFor(UUID aircraftId) {
         if (aircraftId == null) return Collections.emptySet();
         Set<UUID> targets = targetsByAircraft.get(aircraftId);
-        return targets == null ? Collections.emptySet() : new HashSet<UUID>(targets);
+        return targets == null ? Collections.emptySet() : new HashSet<>(targets);
     }
 
     public synchronized int activeMissionCount() {

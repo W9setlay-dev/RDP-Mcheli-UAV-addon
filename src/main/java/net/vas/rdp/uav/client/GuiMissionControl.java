@@ -447,8 +447,7 @@ public final class GuiMissionControl extends GuiScreen {
             status = "Target lock requested for " + hit.entityHit.getName() + ".";
             return;
         }
-        RdpUavNetwork.lockAiTarget();
-        status = "No crosshair contact; highest-priority valid contact fallback requested.";
+        status = "No crosshair contact; aim directly at a valid target.";
     }
 
     private void createEntityMission(boolean attack) {

@@ -87,7 +87,7 @@ public class MissionGuidanceFailureTest {
         replanning.fail("UNSUPPORTED_OBJECTIVE_COMBINATION", 3);
         assertEquals(MissionState.FAILED, replanning.getState());
         assertTrue(replanning.isTerminal());
-        assertNotSame(replanning.getState(), MissionState.REPLAN);
+        assertNotSame(MissionState.REPLAN, replanning.getState());
     }
 
     @Test

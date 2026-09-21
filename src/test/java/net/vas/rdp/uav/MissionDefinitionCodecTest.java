@@ -19,7 +19,12 @@ public class MissionDefinitionCodecTest {
                 .setSwarmMaximumMembers(3)
                 .setSearchMode("sector")
                 .selectUav(UUID.randomUUID())
-                .setTargetPolicy(TargetPolicy.builder().include("minecraft:zombie").snapshot());
+                .setTargetPolicy(TargetPolicy.builder()
+                        .include("minecraft:zombie")
+                        .rejectDeeplyEmbedded(false)
+                        .allowHostileVehicles(false)
+                        .withMinimumConfidence(0.75D)
+                        .snapshot());
         NBTTagCompound encoded = MissionDefinitionCodec.write(source);
         MissionDefinition decoded = MissionDefinitionCodec.read(encoded);
         assertEquals(source.getTarget(), decoded.getTarget());
@@ -28,6 +33,12 @@ public class MissionDefinitionCodecTest {
         assertEquals(source.getSearchMode(), decoded.getSearchMode());
         assertEquals(source.getSelectedUavs(), decoded.getSelectedUavs());
         assertEquals(source.getTargetPolicy().getInclude(), decoded.getTargetPolicy().getInclude());
+        assertEquals(source.getTargetPolicy().isRejectEmbedded(),
+                decoded.getTargetPolicy().isRejectEmbedded());
+        assertEquals(source.getTargetPolicy().isAllowVehicleTargets(),
+                decoded.getTargetPolicy().isAllowVehicleTargets());
+        assertEquals(source.getTargetPolicy().getMinimumConfidence(),
+                decoded.getTargetPolicy().getMinimumConfidence(), 0.0D);
     }
 
     @Test

@@ -91,7 +91,8 @@ public final class ContactTracker {
                 result.add(contact.snapshot());
             }
         }
-        result.sort((left, right) -> left.getEntityId().toString().compareTo(right.getEntityId().toString()));
+        result.sort(java.util.Comparator.comparing(
+                snapshot -> snapshot.getEntityId().toString()));
         return Collections.unmodifiableList(result);
     }
 

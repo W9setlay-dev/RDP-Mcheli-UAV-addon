@@ -187,18 +187,18 @@ public class GuidedWeaponTest {
 
     @Test
     public void terminalProfileExposesBoundedCloseAndHighAltitudeEnvelope() {
-        GuidedTerminalProfile profile = new GuidedTerminalProfile(220, true, 2, 2048);
+        GuidedTerminalProfile profile = new GuidedTerminalProfile(220, 2, 2048);
         assertEquals(2.0D, profile.getMinimumAltitude(), 0.0D);
         assertEquals(2048.0D, profile.getMaximumAltitude(), 0.0D);
     }
 
     @Test
     public void terminalProfileExposesBoundedCoordinateCorrectionPolicy() {
-        GuidedTerminalProfile profile = new GuidedTerminalProfile(0, true, 0, 4096, 6, 2);
+        GuidedTerminalProfile profile = new GuidedTerminalProfile(0, 0, 4096, 6, 2);
         assertEquals(6.0D, profile.getMaximumCoordinateCorrection(), 0.0D);
         assertEquals(2L, profile.getCoordinateCorrectionInterval());
         try {
-            new GuidedTerminalProfile(0, true, 0, 4096, -1, 2);
+            new GuidedTerminalProfile(0, 0, 4096, -1, 2);
             Assert.fail("Negative coordinate correction must be rejected");
         } catch (IllegalArgumentException expected) {
             // Contract verified.
@@ -296,7 +296,7 @@ public class GuidedWeaponTest {
             // Contract verified.
         }
         try {
-            new GuidedTerminalProfile(0, true, 100, 99);
+            new GuidedTerminalProfile(0, 100, 99);
             Assert.fail("Inverted altitude envelope must be rejected");
         } catch (IllegalArgumentException expected) {
             // Contract verified.

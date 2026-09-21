@@ -77,6 +77,8 @@ public final class MissionDefinition {
         return targetPolicy.getInclude().isEmpty()
                 && targetPolicy.getRequire().isEmpty()
                 && targetPolicy.getExclude().isEmpty()
+                && targetPolicy.isRejectEmbedded() == TargetPolicy.rejectDeeplyEmbedded
+                && targetPolicy.isAllowVehicleTargets() == TargetPolicy.allowHostileVehicles
                 && targetPolicy.getMinimumConfidence() <= 0D;
     }
 

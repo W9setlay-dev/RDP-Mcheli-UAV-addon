@@ -226,6 +226,9 @@ public class RdpUavContractMatrixTest {
         assertEquals("SELF_DESTRUCT", oneWay.getTerminalPayloadBehavior());
         assertEquals(UavExecutionProfile.UNKNOWN,
                 UavVehicleProfiles.forAircraft("unconfigured-definition").getExecutionProfile());
+        assertTrue(reusable.supportsTargetLock());
+        assertTrue(oneWay.supportsTargetLock());
+        assertFalse(UavVehicleProfiles.forAircraft("unconfigured-definition").supportsTargetLock());
     }
 
     @Test
@@ -236,6 +239,7 @@ public class RdpUavContractMatrixTest {
         assertTrue(profile.isHelicopterProfile());
         assertTrue(profile.requiresHelicopterApproachStandoff());
         assertTrue(profile.getAttackEnvelope() > 0D);
+        assertTrue(profile.supportsTargetLock());
     }
 
     @Test

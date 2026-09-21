@@ -698,7 +698,7 @@ public final class RdpUavNetwork {
                         }
                         net.minecraft.entity.Entity target =
                                 TARGET_RESOLVER.findLoadedByRegistryId(player.world, message.registryId);
-                        if (target == null || target == aircraft
+                        if (target == null || target == aircraft || target == player
                                 || !target.canBeCollidedWith()
                                 || !net.vas.rdp.uav.target.TargetPolicy.isSelectableContact(
                                 player.world, target, player)) {
@@ -708,8 +708,15 @@ public final class RdpUavNetwork {
                                 aircraft.getAcInfo() == null ? null
                                 : net.vas.rdp.uav.profile.UavVehicleProfiles.forAircraft(
                                 aircraft.getAcInfo().name);
-                        if (profile == null || target.getDistance(aircraft) > profile.getLockRange()) {
+                        if (profile == null || !profile.supportsTargetLock()
+                                || target.getDistance(aircraft) > profile.getLockRange()) {
                             throw new IllegalArgumentException("Target is outside lock range");
+                        }
+                        if (mission.getState()
+                                == net.vas.rdp.uav.mission.MissionState.KAMIKADZE_TARGET
+                                && !target.getUniqueID().equals(mission.getTargetId())) {
+                            throw new IllegalArgumentException(
+                                    "Terminal target cannot be replaced");
                         }
                         mission.applyOperatorEntityLock(target.getUniqueID(),
                                 player.world.getTotalWorldTime());
@@ -1322,8 +1329,14 @@ public final class RdpUavNetwork {
                             net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
                                     .getRepository().find(id);
                     if (mission == null || !mission.isAttack()
-                            || !player.getUniqueID().equals(mission.getOwnerId())
-                            || mission.getState() != net.vas.rdp.uav.mission.MissionState.TARGET_LOCKED) return;
+                            || !player.getUniqueID().equals(mission.getOwnerId())) {
+                        rejectKamikaze(player, "Nose-dive rejected: mission ownership or attack authorization is invalid.");
+                        return;
+                    }
+                    if (mission.getState() != net.vas.rdp.uav.mission.MissionState.TARGET_LOCKED) {
+                        rejectKamikaze(player, "Nose-dive rejected: mission must have an authoritative target lock.");
+                        return;
+                    }
                     MCH_EntityAircraft aircraft = null;
                     for (net.minecraft.entity.Entity entity : player.world.loadedEntityList) {
                         if (entity instanceof MCH_EntityAircraft
@@ -1332,17 +1345,27 @@ public final class RdpUavNetwork {
                             break;
                         }
                     }
-                    if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, player)) return;
+                    if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, player)) {
+                        rejectKamikaze(player, "Nose-dive rejected: controlled-aircraft authorization is required.");
+                        return;
+                    }
                     double x = mission.getTargetSpec().getX();
                     double y = mission.getTargetSpec().getY();
                     double z = mission.getTargetSpec().getZ();
                     if (mission.getTargetId() != null) {
                         net.minecraft.entity.Entity target = TARGET_RESOLVER.findLoaded(player.world, mission.getTargetId());
-                        if (target == null) return;
+                        if (target == null) {
+                            rejectKamikaze(player, "Nose-dive rejected: locked target is no longer loaded.");
+                            return;
+                        }
                         x = target.posX; y = target.posY; z = target.posZ;
                     }
                     if (FLIGHT_ADAPTER.armKamikaze(aircraft, x, y, z,
-                            mission.getObservationDistance(), mission.getTargetId())) return;
+                            mission.getObservationDistance(), mission.getTargetId())) {
+                        rejectKamikaze(player,
+                                "Nose-dive rejected: this UAV profile has no supported destructive terminal path.");
+                        return;
+                    }
                     // Reusable and long-range airframes may only enter a
                     // destructive route through this operator-authenticated request.
                     mission.authorizeDestructiveAction();
@@ -1351,9 +1374,14 @@ public final class RdpUavNetwork {
                     net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world).markDirty();
                     sendMissionData(player);
                 } catch (IllegalArgumentException ignored) {
+                    rejectKamikaze(player, "Nose-dive rejected: mission identifier is invalid.");
                 }
             });
             return null;
+        }
+
+        private static void rejectKamikaze(EntityPlayerMP player, String reason) {
+            player.sendMessage(new net.minecraft.util.text.TextComponentString(reason));
         }
     }
 
@@ -1688,39 +1716,21 @@ public final class RdpUavNetwork {
                             aircraft.getAcInfo() == null ? null
                             : net.vas.rdp.uav.profile.UavVehicleProfiles.forAircraft(
                             aircraft.getAcInfo().name);
+                    if (profile == null || !profile.supportsTargetLock()) {
+                        player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                "UAV target lock rejected: aircraft profile does not support target locking."));
+                        return;
+                    }
                     java.util.UUID targetId = message.targetId == null
                             || message.targetId.trim().isEmpty() ? null
                             : java.util.UUID.fromString(message.targetId);
                     net.minecraft.entity.Entity target = targetId == null ? null
                             : TARGET_RESOLVER.findLoaded(player.world, targetId);
-                    if (target == null && targetId == null && profile != null) {
-                        double bestDistance = Double.MAX_VALUE;
-                        for (net.minecraft.entity.Entity candidate
-                                : player.world.loadedEntityList) {
-                            if (candidate == null || candidate == aircraft
-                                    || candidate.isDead || !candidate.canBeCollidedWith()
-                                    || candidate.getDistance(aircraft) > profile.getLockRange()
-                                    || !net.vas.rdp.uav.target.TargetPolicy.isSelectableContact(
-                                    player.world, candidate, player)) {
-                                continue;
-                            }
-                            double distance = candidate.getDistanceSq(aircraft);
-                            if (distance < bestDistance) {
-                                bestDistance = distance;
-                                target = candidate;
-                            }
-                        }
-                        if (target != null) {
-                            targetId = target.getUniqueID();
-                            RdpUavDebug.debug("Network",
-                                    "AI target lock source=FILTER_FALLBACK aircraft={} target={}",
-                                    aircraft.getUniqueID(), targetId);
-                        }
-                    }
-                    if (target == null || target == aircraft || !target.canBeCollidedWith()
+                    if (target == null || target == aircraft || target == player
+                            || !target.canBeCollidedWith()
                             || aircraft.getAcInfo() == null) {
                         player.sendMessage(new net.minecraft.util.text.TextComponentString(
-                                "UAV target lock rejected: target is unavailable."));
+                                "UAV target lock rejected: aim directly at a valid target."));
                         return;
                     }
                     if (!net.vas.rdp.uav.target.TargetPolicy.isSelectableContact(
@@ -1747,6 +1757,13 @@ public final class RdpUavNetwork {
                     net.vas.rdp.uav.mission.RDPMission mission = assigned == null ? null
                             : net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
                             .getRepository().find(assigned);
+                    if (mission != null
+                            && mission.getState() == net.vas.rdp.uav.mission.MissionState.KAMIKADZE_TARGET
+                            && !targetId.equals(mission.getTargetId())) {
+                        player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                "UAV target lock rejected: terminal target cannot be replaced."));
+                        return;
+                    }
                     if (mission == null) {
                         mission = new net.vas.rdp.uav.mission.RDPMission(
                                 java.util.UUID.randomUUID(), player.getUniqueID(),
