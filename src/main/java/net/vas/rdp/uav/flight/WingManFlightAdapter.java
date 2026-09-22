@@ -10,6 +10,7 @@ import com.norwood.mcheli.wingman.wingman.WingmanEntry;
 import com.norwood.mcheli.wingman.wingman.WingmanRegistry;
 import com.norwood.mcheli.weapon.MCH_WeaponSet;
 import com.norwood.mcheli.weapon.MCH_WeaponParam;
+import net.minecraft.entity.Entity;
 import net.vas.rdp.uav.RdpUavDebug;
 import net.vas.rdp.uav.energy.UavEnergyHandler;
 import net.vas.rdp.uav.profile.UavExecutionProfile;
@@ -237,20 +238,20 @@ public final class WingManFlightAdapter {
      * authoritative target identity for reacquisition.
      */
     @SuppressWarnings("unused")
-    public boolean enterFpvHover(MCH_EntityAircraft aircraft) {
-        if (!isFpv(aircraft)) return false;
+    public void enterFpvHover(MCH_EntityAircraft aircraft) {
+        if (!isFpv(aircraft)) return;
         WingmanEntry entry = WingmanRegistry.get(aircraft.getUniqueID());
         if (entry == null || entry.mission == null
                 || entry.autoState == AutonomousState.RTB
                 || entry.autoState == AutonomousState.LANDING
-                || entry.autoState == AutonomousState.PARKED) return false;
+                || entry.autoState == AutonomousState.PARKED) return;
         FpvFlightStateMachine state = fpvStates.get(aircraft.getUniqueID());
         if (state == null) {
             state = new FpvFlightStateMachine();
             fpvStates.put(aircraft.getUniqueID(), state);
         }
-        if (state.getState() == FpvFlightState.HOVER) return true;
-        if (state.getState() == FpvFlightState.TERMINAL_APPROACH) return false;
+        if (state.getState() == FpvFlightState.HOVER) return;
+        if (state.getState() == FpvFlightState.TERMINAL_APPROACH) return;
         state.hover();
         fpvCommands.put(aircraft.getUniqueID(),
                 FlightCommand.hover());
@@ -263,7 +264,6 @@ public final class WingManFlightAdapter {
         entry.autoTargetY = aircraft.posY;
         entry.autoTargetZ = aircraft.posZ;
         entry.autoState = AutonomousState.ENROUTE;
-        return true;
     }
 
     public FpvFlightState fpvFlightState(MCH_EntityAircraft aircraft) {
@@ -277,17 +277,17 @@ public final class WingManFlightAdapter {
      * teleported contact cannot inject an unbounded waypoint into the native
      * controller; the update is capped to one bounded step.
      */
-    public boolean updateTargetGuidance(MCH_EntityAircraft aircraft, double x, double y, double z,
-                                        UUID targetId) {
-        if (aircraft == null || !Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)) return false;
+    public void updateTargetGuidance(MCH_EntityAircraft aircraft, double x, double y, double z,
+                                     UUID targetId) {
+        if (aircraft == null || !Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)) return;
         WingmanEntry entry = WingmanRegistry.get(aircraft.getUniqueID());
         if (entry == null || entry.autoState == AutonomousState.RTB
-                || entry.autoState == AutonomousState.LANDING || entry.autoState == AutonomousState.PARKED) return false;
+                || entry.autoState == AutonomousState.LANDING || entry.autoState == AutonomousState.PARKED) return;
         if (isFpv(aircraft) && fpvFlightState(aircraft) == FpvFlightState.HOVER) {
             // Reacquisition is the explicit exit request, but the hover route
             // owns this update. Pursuit may write only on the next tick.
             leaveFpvHover(aircraft);
-            return false;
+            return;
         }
         double dx = x - entry.autoTargetX, dy = y - entry.autoTargetY, dz = z - entry.autoTargetZ;
         double length = Math.sqrt(dx * dx + dy * dy + dz * dz);
@@ -308,7 +308,6 @@ public final class WingManFlightAdapter {
         }
         entry.currentAutoTarget = targetId;
         entry.autoTargetX = x; entry.autoTargetY = safeY; entry.autoTargetZ = z;
-        return true;
     }
 
     public boolean armAttack(MCH_EntityAircraft aircraft, double x, double y, double z,
@@ -575,10 +574,10 @@ public final class WingManFlightAdapter {
      * Target reads are O(1); no entity search, chunk load, or terrain scan is
      * performed here.
      */
-    public boolean updateMovingEntityGuidance(MCH_EntityAircraft aircraft,
-                                              net.minecraft.entity.Entity target,
-                                              double guidanceY, long tick) {
-        if (aircraft == null || target == null) return false;
+    public void updateMovingEntityGuidance(MCH_EntityAircraft aircraft,
+                                           Entity target,
+                                           double guidanceY, long tick) {
+        if (aircraft == null || target == null) return;
         UUID aircraftId = aircraft.getUniqueID();
         ContinuousTargetTracker tracker = targetTrackers.get(aircraftId);
         if (tracker == null) {
@@ -589,8 +588,56 @@ public final class WingManFlightAdapter {
                 aircraft.posX, aircraft.posY, aircraft.posZ,
                 target.posX, guidanceY, target.posZ,
                 target.motionX, target.motionY, target.motionZ);
-        return updateTargetGuidance(aircraft, solution.getX(), solution.getY(),
+        updateTargetGuidance(aircraft, solution.getX(), solution.getY(),
                 solution.getZ(), target.getUniqueID());
+    }
+
+    /**
+     * Replaces the active terminal waypoint with one bounded, moving-target
+     * correction. The native WingMan route remains the movement authority;
+     * terminal guidance never appends an orbit or loiter node.
+     */
+    public void updateTerminalGuidance(MCH_EntityAircraft aircraft,
+                                       Entity target,
+                                       double guidanceY, long tick) {
+        if (aircraft == null || target == null || supportsAutonomousRoute(aircraft)) return;
+        UUID aircraftId = aircraft.getUniqueID();
+        ContinuousTargetTracker tracker = targetTrackers.get(aircraftId);
+        if (tracker == null) {
+            tracker = new ContinuousTargetTracker(terminalTrackingParameters(aircraft));
+            targetTrackers.put(aircraftId, tracker);
+        }
+        ContinuousTargetTracker.Solution solution = tracker.update(tick,
+                aircraft.posX, aircraft.posY, aircraft.posZ,
+                target.posX, guidanceY, target.posZ,
+                target.motionX, target.motionY, target.motionZ);
+        if (!solution.isUpdated()) return;
+
+        WingmanEntry entry = WingmanRegistry.get(aircraftId);
+        if (entry == null || entry.autoState == AutonomousState.RTB
+                || entry.autoState == AutonomousState.LANDING
+                || entry.autoState == AutonomousState.PARKED) return;
+        double safeY = normalizeHelicopterTargetY(aircraft, solution.getY());
+        entry.mission = new ArrayList<>();
+        entry.mission.add(MissionNode.flyTo(solution.getX(), safeY, solution.getZ()));
+        entry.missionIndex = 0;
+        entry.missionNodeTimer = 0;
+        entry.currentAutoTarget = target.getUniqueID();
+        entry.autoTargetX = solution.getX();
+        entry.autoTargetY = safeY;
+        entry.autoTargetZ = solution.getZ();
+        entry.autoState = AutonomousState.ENROUTE;
+        if (isFpv(aircraft)) {
+            beginFpvTerminalApproach(aircraft);
+            fpvCommands.put(aircraftId,
+                    FlightCommand.terminalApproach(1.0D, safeY - aircraft.posY, 1.0D));
+        }
+    }
+
+    private ContinuousTargetTracker.Parameters terminalTrackingParameters(
+            MCH_EntityAircraft aircraft) {
+        return new ContinuousTargetTracker.Parameters(0.0D, 0.65D,
+                isFpv(aircraft) ? 0.22D : 0.30D, 0.5D, 24.0D, 2);
     }
 
     private ContinuousTargetTracker.Parameters trackingParameters(MCH_EntityAircraft aircraft) {

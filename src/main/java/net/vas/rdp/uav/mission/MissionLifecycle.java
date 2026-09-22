@@ -380,6 +380,10 @@ public final class MissionLifecycle {
                 continue;
             }
             if (mission.getState() == MissionState.KAMIKADZE_TARGET) {
+                if (target != null && target.entity != null) {
+                    flight.updateTerminalGuidance(aircraft, target.entity,
+                            terminalRouteAltitude(aircraft, target), tick);
+                }
                 boolean noseImpact = KamikazeImpactDetector.hasNoseImpact(aircraft);
                 boolean speedReached = flight.isKamikazeSpeedReached(aircraft);
                 boolean targetInRadius = target != null

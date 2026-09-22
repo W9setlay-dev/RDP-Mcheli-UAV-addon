@@ -45,6 +45,11 @@ McHeliCE / WingMan / Minecraft world
 - `ContactSnapshot` exposes the center of the tracked hitbox as the world-space
   aim point. Terminal geometry uses this point when a live tracked contact is
   available, rather than an arbitrary camera-relative or stale marker position.
+- Terminal guidance is closed-loop at the WingMan boundary: while
+  `ControlOwner.TERMINAL_GUIDANCE` is active, the adapter periodically replaces
+  the current native `flyTo` waypoint with a bounded, smoothed correction from
+  the aircraft and locked entity motion. Terminal corrections contain no
+  loiter/orbit node; payload execution remains owned by the mission lifecycle.
 - `TargetResolver` searches the live world for entities near a location.
 - `TargetClassifier` decides whether an entity registry ID is actually hostile or modded hostile.
 - `ContactSnapshot` is the authoritative tracked-contact projection: it carries

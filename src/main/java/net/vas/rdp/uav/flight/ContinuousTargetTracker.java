@@ -87,6 +87,13 @@ public final class ContinuousTargetTracker {
         double dy = predictedY - aircraftY;
         double dz = predictedZ - aircraftZ;
         double distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (distance <= 0.001D) {
+            lastUpdate = tick;
+            lastX = targetX;
+            lastY = targetY;
+            lastZ = targetZ;
+            return new Solution(lastX, lastY, lastZ, false);
+        }
         if (initialized && distance <= parameters.getDeadband()) {
             lastUpdate = tick;
             return new Solution(lastX, lastY, lastZ, false);
