@@ -1,3 +1,6 @@
+import groovy.json.JsonSlurper
+import java.security.MessageDigest
+
 buildscript {
     repositories {
         mavenCentral()
@@ -28,7 +31,61 @@ minecraft {
     mappings = 'stable_39'
 }
 
+// ForgeGradle 2.3 hard-codes the legacy HTTP asset endpoint. Prefetch the
+// objects over HTTPS so its getAssets task can complete without using HTTP.
+task prefetchAssetsHttps {
+    dependsOn getAssetIndex
+
+    doLast {
+        def sha1 = { File file ->
+            MessageDigest digest = MessageDigest.getInstance('SHA-1')
+            digest.digest(file.bytes).encodeHex().toString()
+        }
+        def assetsRoot = new File(gradle.gradleUserHomeDir, 'caches/minecraft/assets')
+        def indexFile = new File(assetsRoot, 'indexes/1.12.json')
+        if (!indexFile.isFile()) {
+            throw new GradleException("Minecraft asset index was not generated: ${indexFile}")
+        }
+
+        def assets = new JsonSlurper().parse(indexFile)
+        assets.objects.each { assetName, asset ->
+            def hash = asset.hash
+            def objectFile = new File(assetsRoot, "objects/${hash[0..1]}/${hash}")
+            def valid = objectFile.isFile() &&
+                    objectFile.length() == asset.size &&
+                    sha1(objectFile) == hash
+            if (!valid) {
+                objectFile.parentFile.mkdirs()
+                def temporaryFile = new File(objectFile.parentFile, "${hash}.part")
+                def assetUrl = new URL("https://resources.download.minecraft.net/${hash[0..1]}/${hash}")
+                assetUrl.withInputStream { input ->
+                    temporaryFile.withOutputStream { output ->
+                        output << input
+                    }
+                }
+                if (temporaryFile.length() != asset.size || sha1(temporaryFile) != hash) {
+                    temporaryFile.delete()
+                    throw new GradleException("Downloaded Minecraft asset failed verification: ${assetName}")
+                }
+                if (objectFile.exists()) {
+                    objectFile.delete()
+                }
+                if (!temporaryFile.renameTo(objectFile)) {
+                    temporaryFile.delete()
+                    throw new GradleException("Could not install Minecraft asset: ${objectFile}")
+                }
+            }
+        }
+    }
+}
+
+getAssets.dependsOn prefetchAssetsHttps
+
 repositories {
+    maven {
+        name = 'cleanroom'
+        url = 'https://maven.cleanroommc.com'
+    }
 }
 
 def mcheliJar = file(System.getenv('RDP_MCHELI_JAR') ?: 'libs/mcheli-ce-1.5.1.jar')
@@ -37,6 +94,9 @@ def rdpCoreJar = file(System.getenv('RDP_CORE_JAR') ?: 'libs/rdpcore-1.0.0.jar')
 dependencies {
     // Use explicit runtime paths in CI/local instance builds; fall back to libs for distribution.
     compile files(mcheliJar, rdpCoreJar)
+    compile('zone.rong:mixinbooter:11.17') {
+        transitive = false
+    }
     testCompile 'junit:junit:4.13.2'
 }
 
