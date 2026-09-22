@@ -13,6 +13,7 @@ public final class KamikazeConfig {
     public static double closeFireDistance = 1.0D;
     public static double detonationRadius = 1.0D;
     public static long terminalTimeoutTicks = 600L;
+    public static long terminalDiagnosticsIntervalTicks = 10L;
     public static long doubleTapWindowMillis = 350L;
 
     private KamikazeConfig() { }
@@ -44,6 +45,10 @@ public final class KamikazeConfig {
                 terminalTimeoutTicks,
                 "Maximum ticks a committed kamikaze mission may remain in terminal guidance.",
                 20.0D, 7200.0D).getInt();
+        terminalDiagnosticsIntervalTicks = config.get("kamikaze",
+                "terminalDiagnosticsIntervalTicks", terminalDiagnosticsIntervalTicks,
+                "Ticks between terminal guidance telemetry events when debug logging is enabled.",
+                1.0D, 200.0D).getInt();
         // Older Forge config writers can serialize this integer as "350.0".
         // Read it as a double so an existing config cannot crash preInit.
         doubleTapWindowMillis = Math.round(config.get("kamikaze", "doubleTapWindowMillis",

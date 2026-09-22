@@ -382,7 +382,9 @@ public final class MissionLifecycle {
             if (mission.getState() == MissionState.KAMIKADZE_TARGET) {
                 if (target != null && target.entity != null) {
                     flight.updateTerminalGuidance(aircraft, target.entity,
-                            terminalRouteAltitude(aircraft, target), tick);
+                            terminalRouteAltitude(aircraft, target), tick,
+                            mission.getMissionId(), mission.getPhase().name(),
+                            mission.getControlOwner().name());
                 }
                 boolean noseImpact = KamikazeImpactDetector.hasNoseImpact(aircraft);
                 boolean speedReached = flight.isKamikazeSpeedReached(aircraft);

@@ -50,6 +50,11 @@ McHeliCE / WingMan / Minecraft world
   the current native `flyTo` waypoint with a bounded, smoothed correction from
   the aircraft and locked entity motion. Terminal corrections contain no
   loiter/orbit node; payload execution remains owned by the mission lifecycle.
+- When debug logging is enabled, terminal updates emit bounded telemetry at
+  `terminalDiagnosticsIntervalTicks`, including physical aircraft motion,
+  target hitbox-center aim point, distance trend, bearing, active waypoint,
+  route size/node type, and replacement count. This telemetry is evidence for
+  live McHeli validation; it is not a simulation of convergence.
 - `TargetResolver` searches the live world for entities near a location.
 - `TargetClassifier` decides whether an entity registry ID is actually hostile or modded hostile.
 - `ContactSnapshot` is the authoritative tracked-contact projection: it carries

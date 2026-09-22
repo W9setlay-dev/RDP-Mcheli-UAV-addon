@@ -34,6 +34,9 @@ public final class WingManFlightAdapter {
     private final Map<UUID, ContinuousTargetTracker> targetTrackers = new HashMap<>();
     private final Map<UUID, FpvFlightStateMachine> fpvStates = new HashMap<>();
     private final Map<UUID, FlightCommand> fpvCommands = new HashMap<>();
+    private final Map<UUID, Integer> terminalWaypointReplacements = new HashMap<>();
+    private final Map<UUID, Double> terminalPreviousDistance = new HashMap<>();
+    private final Map<UUID, Long> terminalLastDiagnosticTick = new HashMap<>();
     private static final double KAMIKAZE_ATTACK_ANGLE_DEGREES = 35.0D;
     private static final double MIN_DIVE_RUN_METERS = 32.0D;
     private static final double MAX_DIVE_RUN_METERS = 160.0D;
@@ -566,6 +569,9 @@ public final class WingManFlightAdapter {
             targetTrackers.remove(aircraft.getUniqueID());
             fpvStates.remove(aircraft.getUniqueID());
             fpvCommands.remove(aircraft.getUniqueID());
+            terminalWaypointReplacements.remove(aircraft.getUniqueID());
+            terminalPreviousDistance.remove(aircraft.getUniqueID());
+            terminalLastDiagnosticTick.remove(aircraft.getUniqueID());
         }
     }
 
@@ -599,7 +605,8 @@ public final class WingManFlightAdapter {
      */
     public void updateTerminalGuidance(MCH_EntityAircraft aircraft,
                                        Entity target,
-                                       double guidanceY, long tick) {
+                                       double guidanceY, long tick,
+                                       UUID missionId, String phase, String controlOwner) {
         if (aircraft == null || target == null || supportsAutonomousRoute(aircraft)) return;
         UUID aircraftId = aircraft.getUniqueID();
         ContinuousTargetTracker tracker = targetTrackers.get(aircraftId);
@@ -627,11 +634,60 @@ public final class WingManFlightAdapter {
         entry.autoTargetY = safeY;
         entry.autoTargetZ = solution.getZ();
         entry.autoState = AutonomousState.ENROUTE;
+        int replacements = terminalWaypointReplacements.containsKey(aircraftId)
+                ? terminalWaypointReplacements.get(aircraftId) + 1 : 1;
+        terminalWaypointReplacements.put(aircraftId, replacements);
+        emitTerminalDiagnostics(aircraft, target, entry, tick, missionId, phase,
+                controlOwner, replacements, solution);
         if (isFpv(aircraft)) {
             beginFpvTerminalApproach(aircraft);
             fpvCommands.put(aircraftId,
                     FlightCommand.terminalApproach(1.0D, safeY - aircraft.posY, 1.0D));
         }
+    }
+
+    private void emitTerminalDiagnostics(MCH_EntityAircraft aircraft, Entity target,
+                                         WingmanEntry entry, long tick, UUID missionId,
+                                         String phase, String controlOwner,
+                                         int replacements,
+                                         ContinuousTargetTracker.Solution solution) {
+        if (!RdpUavDebug.isEnabled()
+                || tick - (terminalLastDiagnosticTick.containsKey(aircraft.getUniqueID())
+                ? terminalLastDiagnosticTick.get(aircraft.getUniqueID()) : Long.MIN_VALUE)
+                < KamikazeConfig.terminalDiagnosticsIntervalTicks) return;
+        terminalLastDiagnosticTick.put(aircraft.getUniqueID(), tick);
+        double dx = target.posX - aircraft.posX;
+        double dy = target.posY - aircraft.posY;
+        double dz = target.posZ - aircraft.posZ;
+        double horizontal = Math.sqrt(dx * dx + dz * dz);
+        double distance = Math.sqrt(horizontal * horizontal + dy * dy);
+        Double previous = terminalPreviousDistance.put(aircraft.getUniqueID(), distance);
+        String trend = previous == null ? "INITIAL"
+                : distance < previous - 0.05D ? "CONVERGING"
+                : distance > previous + 0.05D ? "DIVERGING" : "STABLE";
+        net.minecraft.util.math.AxisAlignedBB bounds = target.getEntityBoundingBox();
+        double aimX = (bounds.minX + bounds.maxX) * 0.5D;
+        double aimY = (bounds.minY + bounds.maxY) * 0.5D;
+        double aimZ = (bounds.minZ + bounds.maxZ) * 0.5D;
+        RdpUavDebug.event("TerminalGuidance", "UPDATE",
+                "mission", missionId, "aircraft", aircraft.getUniqueID(),
+                "target", target.getUniqueID(), "phase", phase,
+                "controlOwner", controlOwner, "x", aircraft.posX,
+                "y", aircraft.posY, "z", aircraft.posZ,
+                "targetX", target.posX, "targetY", target.posY, "targetZ", target.posZ,
+                "aimX", aimX, "aimY", aimY, "aimZ", aimZ,
+                "motionX", aircraft.motionX, "motionY", aircraft.motionY,
+                "motionZ", aircraft.motionZ, "targetMotionX", target.motionX,
+                "targetMotionY", target.motionY, "targetMotionZ", target.motionZ,
+                "horizontalDistance", horizontal, "distance", distance,
+                "verticalError", aimY - aircraft.posY,
+                "heading", aircraft.getYaw(),
+                "bearing", Math.toDegrees(Math.atan2(dz, dx)),
+                "waypointX", solution.getX(), "waypointY", solution.getY(),
+                "waypointZ", solution.getZ(), "replacements", replacements,
+                "node", entry.currentNode() == null ? null : entry.currentNode().type,
+                "routeSize", entry.mission == null ? 0 : entry.mission.size(),
+                "trend", trend);
     }
 
     private ContinuousTargetTracker.Parameters terminalTrackingParameters(
