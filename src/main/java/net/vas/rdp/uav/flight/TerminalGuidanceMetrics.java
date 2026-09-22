@@ -25,9 +25,11 @@ public final class TerminalGuidanceMetrics {
     private final UUID targetId;
     private final long entryTick;
     private final Deque<Sample> samples = new ArrayDeque<>();
+    private double distanceAtEntry = Double.NaN;
     private double minimumDistance = Double.POSITIVE_INFINITY;
     private long closestApproachTick = Long.MIN_VALUE;
     private Classification classification = Classification.INSUFFICIENT_DATA;
+    private boolean timedOut;
 
     public TerminalGuidanceMetrics(UUID targetId, long entryTick) {
         if (targetId == null) throw new IllegalArgumentException("Target ID is required");
@@ -39,8 +41,12 @@ public final class TerminalGuidanceMetrics {
         if (!Double.isFinite(distance) || distance < 0.0D) {
             throw new IllegalArgumentException("Distance must be finite and non-negative");
         }
+        if (timedOut) return;
         if (samples.size() == HISTORY_LIMIT) samples.removeFirst();
         samples.addLast(new Sample(tick, distance));
+        if (Double.isNaN(distanceAtEntry)) {
+            distanceAtEntry = distance;
+        }
         if (distance < minimumDistance) {
             minimumDistance = distance;
             closestApproachTick = tick;
@@ -48,14 +54,17 @@ public final class TerminalGuidanceMetrics {
         classification = classify();
     }
 
-    public void timeout() { classification = Classification.TIMEOUT; }
+    public void timeout() {
+        timedOut = true;
+        classification = Classification.TIMEOUT;
+    }
     public UUID getTargetId() { return targetId; }
     public long getEntryTick() { return entryTick; }
     public int getSampleCount() { return samples.size(); }
     public long getClosestApproachTick() { return closestApproachTick; }
     public double getMinimumDistance() { return minimumDistance; }
     public double getDistanceAtEntry() {
-        return samples.isEmpty() ? Double.NaN : samples.getFirst().distance;
+        return distanceAtEntry;
     }
     public double getLatestDistance() {
         return samples.isEmpty() ? Double.NaN : samples.getLast().distance;
@@ -63,11 +72,17 @@ public final class TerminalGuidanceMetrics {
     public Classification getClassification() { return classification; }
     public double getClosingRate() {
         if (samples.size() < 2) return 0.0D;
+        Sample current = samples.getLast();
         Sample previous = previous();
-        return previous.distance - samples.getLast().distance;
+        long tickDelta = current.tick - previous.tick;
+        if (tickDelta <= 0L) return 0.0D;
+        return (previous.distance - current.distance) / tickDelta;
     }
 
+
     private Classification classify() {
+        // Precedence is intentional: overshoot, orbit, sustained divergence,
+        // stall, convergence, then slow convergence.
         if (samples.size() < MINIMUM_SAMPLES) return Classification.INSUFFICIENT_DATA;
         if (hasOvershot()) return Classification.OVERSHOT;
         if (hasOrbit()) return Classification.ORBITING;

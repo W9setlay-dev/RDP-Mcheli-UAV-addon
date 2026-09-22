@@ -675,14 +675,18 @@ public final class WingManFlightAdapter {
         }
     }
 
+    public void markTerminalTimeout(UUID aircraftId) {
+        TerminalGuidanceMetrics metrics = terminalMetrics.get(aircraftId);
+        if (metrics != null) metrics.timeout();
+    }
+
     private void emitTerminalDiagnostics(MCH_EntityAircraft aircraft, Entity target,
                                          WingmanEntry entry, long tick, UUID missionId,
                                          String phase, String controlOwner,
                                          int replacements,
                                          ContinuousTargetTracker.Solution solution) {
         if (!RdpUavDebug.isEnabled()
-                || tick - (terminalLastDiagnosticTick.containsKey(aircraft.getUniqueID())
-                ? terminalLastDiagnosticTick.get(aircraft.getUniqueID()) : Long.MIN_VALUE)
+                || tick - (terminalLastDiagnosticTick.getOrDefault(aircraft.getUniqueID(), Long.MIN_VALUE))
                 < KamikazeConfig.terminalDiagnosticsIntervalTicks) return;
         terminalLastDiagnosticTick.put(aircraft.getUniqueID(), tick);
         double dx = target.posX - aircraft.posX;

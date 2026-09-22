@@ -56,9 +56,45 @@ public class TerminalGuidanceMetricsTest {
         TerminalGuidanceMetrics metrics = new TerminalGuidanceMetrics(TARGET, 42);
         metrics.record(42, 20);
         metrics.timeout();
+        metrics.record(43, 1);
         assertEquals(TARGET, metrics.getTargetId());
         assertEquals(TerminalGuidanceMetrics.Classification.TIMEOUT,
                 metrics.getClassification());
+    }
+
+    @Test
+    public void preservesEntryDistanceAfterHistoryEviction() {
+        TerminalGuidanceMetrics metrics = new TerminalGuidanceMetrics(TARGET, 100);
+        metrics.record(100, 250);
+        for (int i = 1; i <= TerminalGuidanceMetrics.HISTORY_LIMIT + 3; i++) {
+            metrics.record(100 + i, 250 - i);
+        }
+        assertEquals(250.0D, metrics.getDistanceAtEntry(), 0.0D);
+    }
+
+    @Test
+    public void closingRateUsesObservedTickSpacing() {
+        TerminalGuidanceMetrics metrics = new TerminalGuidanceMetrics(TARGET, 0);
+        metrics.record(10, 100);
+        metrics.record(12, 90);
+        assertEquals(5.0D, metrics.getClosingRate(), 0.0D);
+        metrics.record(12, 80);
+        assertEquals(0.0D, metrics.getClosingRate(), 0.0D);
+    }
+
+    @Test
+    public void metricSeriesRemainTargetIsolated() {
+        UUID otherTarget = UUID.randomUUID();
+        TerminalGuidanceMetrics first = new TerminalGuidanceMetrics(TARGET, 0);
+        TerminalGuidanceMetrics second = new TerminalGuidanceMetrics(otherTarget, 0);
+        first.record(0, 100);
+        second.record(0, 10);
+        second.record(2, 5);
+        assertEquals(TARGET, first.getTargetId());
+        assertEquals(100.0D, first.getDistanceAtEntry(), 0.0D);
+        assertEquals(otherTarget, second.getTargetId());
+        assertEquals(10.0D, second.getDistanceAtEntry(), 0.0D);
+        assertEquals(2.5D, second.getClosingRate(), 0.0D);
     }
 
     private TerminalGuidanceMetrics metrics(double... distances) {

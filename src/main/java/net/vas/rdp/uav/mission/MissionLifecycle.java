@@ -250,6 +250,7 @@ public final class MissionLifecycle {
             if (mission.getState() == MissionState.KAMIKADZE_TARGET
                     && tick - mission.getLastUpdateTick()
                     > net.vas.rdp.uav.flight.KamikazeConfig.terminalTimeoutTicks) {
+                flight.markTerminalTimeout(mission.getAircraftId());
                 mission.fail("TERMINAL_TIMEOUT", tick);
                 RdpUavDebug.event("TerminalGuidance", "TERMINAL_TIMEOUT",
                         "mission", mission.getMissionId(), "target", mission.getTargetId(),
