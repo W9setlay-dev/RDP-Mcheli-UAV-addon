@@ -293,6 +293,9 @@ Use the operator command while the server is running:
 /rdpuav debug off
 /rdpuav debug status
 /rdpuav debug reload
+/rdpuav debug mission on
+/rdpuav debug mission off
+/rdpuav debug mission status
 ```
 
 `on` and `off` persist immediately; `reload` rereads the configuration file.
@@ -301,7 +304,12 @@ Debug entries use the searchable format
 commands, and network telemetry include mission, aircraft, target, state, and
 dimension context where available. Debug logging is intentionally verbose, so
 leave it off during normal operation and attach the relevant `latest.log`
-after reproducing a failure.
+after reproducing a failure. Mission diagnostics extend this same logger with
+bounded `MissionRuntime` events: dispatch attempts and target lookup samples
+are throttled to every five world ticks, route acceptance/replacement events
+are recorded when they occur, and vehicle snapshots are emitted every five
+ticks while a mission is active. Enable them with `/rdpuav debug mission on`;
+this does not alter mission, targeting, guidance, or native flight behavior.
 
 ## Kamikaze impact detonation
 

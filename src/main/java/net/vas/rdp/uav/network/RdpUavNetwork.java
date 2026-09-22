@@ -8,6 +8,7 @@ import net.minecraftforge.fml.common.network.simpleimpl.IMessage;
 import net.minecraftforge.fml.common.network.simpleimpl.IMessageHandler;
 import net.minecraftforge.fml.common.network.simpleimpl.MessageContext;
 import net.minecraftforge.fml.common.network.simpleimpl.SimpleNetworkWrapper;
+import net.minecraftforge.fml.common.FMLCommonHandler;
 import net.minecraftforge.fml.relauncher.Side;
 import net.vas.rdp.uav.RDPUavMod;
 import com.norwood.mcheli.aircraft.MCH_EntityAircraft;
@@ -40,18 +41,13 @@ public final class RdpUavNetwork {
         if (initialized) return;
         initialized = true;
         CHANNEL.registerMessage(ServerMissionDataHandler.class, RequestMissionData.class, 0, Side.SERVER);
-        CHANNEL.registerMessage(ClientMissionControlHandler.class, OpenMissionControl.class, 1, Side.CLIENT);
-        CHANNEL.registerMessage(ClientMissionDataHandler.class, MissionData.class, 2, Side.CLIENT);
         CHANNEL.registerMessage(ServerAbortMissionHandler.class, AbortMission.class, 3, Side.SERVER);
         CHANNEL.registerMessage(ServerAuthorizeAttackHandler.class, AuthorizeAttack.class, 4, Side.SERVER);
         CHANNEL.registerMessage(ServerCreateMissionHandler.class, CreateMission.class, 5, Side.SERVER);
         CHANNEL.registerMessage(ServerKamikazeHandler.class, KamikazeAttack.class, 6, Side.SERVER);
         CHANNEL.registerMessage(ServerSelfDestructHandler.class, FireSelfDestruct.class, 10, Side.SERVER);
-        CHANNEL.registerMessage(ClientMissionDataHandler.ClientTargetTelemetryHandler.class,
-                TargetTelemetry.class, 7, Side.CLIENT);
         CHANNEL.registerMessage(ServerSquareStrikeHandler.class, SquareStrike.class, 8, Side.SERVER);
         CHANNEL.registerMessage(ServerAiTargetLockHandler.class, AiTargetLock.class, 9, Side.SERVER);
-        CHANNEL.registerMessage(ClientSwarmTelemetryHandler.class, SwarmTelemetry.class, 11, Side.CLIENT);
         CHANNEL.registerMessage(ServerContactSelectionHandler.class, ContactSelection.class, 12, Side.SERVER);
         CHANNEL.registerMessage(ServerClearMissionsHandler.class, ClearMissions.class, 13, Side.SERVER);
         CHANNEL.registerMessage(ServerReturnToBaseHandler.class, ReturnToBase.class, 14, Side.SERVER);
@@ -67,6 +63,16 @@ public final class RdpUavNetwork {
                 AiTargetLock.RegistryTargetAssignment.class, 20, Side.SERVER);
         CHANNEL.registerMessage(ServerMissionDefinitionHandler.class,
                 CreateMission.LaunchMissionDefinition.class, 21, Side.SERVER);
+        if (FMLCommonHandler.instance().getSide().isClient()) {
+            CHANNEL.registerMessage(ClientMissionControlHandler.class,
+                    OpenMissionControl.class, 1, Side.CLIENT);
+            CHANNEL.registerMessage(ClientMissionDataHandler.class,
+                    MissionData.class, 2, Side.CLIENT);
+            CHANNEL.registerMessage(ClientMissionDataHandler.ClientTargetTelemetryHandler.class,
+                    TargetTelemetry.class, 7, Side.CLIENT);
+            CHANNEL.registerMessage(ClientSwarmTelemetryHandler.class,
+                    SwarmTelemetry.class, 11, Side.CLIENT);
+        }
     }
 
     public static void openMissionControl(EntityPlayerMP player) {

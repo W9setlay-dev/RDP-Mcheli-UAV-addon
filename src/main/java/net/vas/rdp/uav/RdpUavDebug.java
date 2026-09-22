@@ -19,6 +19,7 @@ public final class RdpUavDebug {
     private static final Logger LOGGER = LogManager.getLogger("RDP-UAV/Debug");
     private static final Object LOCK = new Object();
     private static volatile boolean enabled;
+    private static volatile boolean missionDiagnostics;
     private static volatile File configFile;
 
     private RdpUavDebug() { }
@@ -29,6 +30,8 @@ public final class RdpUavDebug {
         config.load();
         enabled = config.getBoolean("enabled", "debug", false,
                 "Enable verbose RDP UAV diagnostics in latest.log.");
+        missionDiagnostics = config.getBoolean("missionDiagnostics", "debug", false,
+                "Enable bounded mission lifecycle, route, target, and vehicle telemetry.");
         if (config.hasChanged()) config.save();
         configFile = file;
         LOGGER.info("Debug logging initialized: enabled={} config={}", enabled, file.getPath());
@@ -36,6 +39,10 @@ public final class RdpUavDebug {
 
     public static boolean isEnabled() {
         return enabled;
+    }
+
+    public static boolean isMissionDiagnosticsEnabled() {
+        return missionDiagnostics;
     }
 
     public static void setEnabled(boolean value) {
@@ -50,6 +57,21 @@ public final class RdpUavDebug {
             }
         }
         LOGGER.info("Debug logging {}", value ? "enabled" : "disabled");
+    }
+
+    public static void setMissionDiagnostics(boolean value) {
+        synchronized (LOCK) {
+            missionDiagnostics = value;
+            if (configFile != null) {
+                Configuration config = new Configuration(configFile);
+                config.load();
+                config.get("debug", "missionDiagnostics", value,
+                        "Enable bounded mission lifecycle, route, target, and vehicle telemetry.")
+                        .set(value);
+                config.save();
+            }
+        }
+        LOGGER.info("Mission diagnostics {}", value ? "enabled" : "disabled");
     }
 
     public static void reload() {
@@ -74,7 +96,7 @@ public final class RdpUavDebug {
      * latest.log without requiring callers to hand-build format strings.
      */
     public static void event(String component, String event, Object... fields) {
-        if (!enabled) return;
+        if (!enabled && !missionDiagnostics) return;
         StringJoiner values = new StringJoiner(" ");
         if (fields != null) {
             for (int i = 0; i + 1 < fields.length; i += 2) {
@@ -89,7 +111,7 @@ public final class RdpUavDebug {
     }
 
     public static String status() {
-        return "debug=" + enabled + " config="
+        return "debug=" + enabled + " missionDiagnostics=" + missionDiagnostics + " config="
                 + (configFile == null ? "<not loaded>" : configFile.getPath());
     }
 

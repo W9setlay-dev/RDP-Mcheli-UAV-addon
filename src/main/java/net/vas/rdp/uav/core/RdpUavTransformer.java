@@ -9,10 +9,15 @@ import org.objectweb.asm.Label;
 
 public final class RdpUavTransformer implements net.minecraft.launchwrapper.IClassTransformer {
     private static final String TARGET = "com.norwood.mcheli.uav.MCH_EntityUavStation";
+    private static final String RDP_CORE_PREFIX = "net.vas.rdpcore.";
 
     @Override
     public byte[] transform(String name, String transformedName, byte[] basicClass) {
-        if (basicClass == null || !TARGET.equals(transformedName)) return basicClass;
+        byte[] compatibleClass = replaceJava11StringRepeat(name, transformedName, basicClass);
+        if (compatibleClass != basicClass || (!TARGET.equals(transformedName) && !TARGET.equals(name))) {
+            if (!TARGET.equals(transformedName) && !TARGET.equals(name)) return compatibleClass;
+            basicClass = compatibleClass;
+        }
         ClassReader reader = new ClassReader(basicClass);
         // The injected branch changes the control-flow graph; recompute all
         // stack map frames instead of retaining the frames from the source
@@ -48,4 +53,51 @@ public final class RdpUavTransformer implements net.minecraft.launchwrapper.ICla
         }, 0);
         return writer.toByteArray();
     }
+
+    public static String repeat(String value, int count) {
+        StringBuilder result = new StringBuilder(value.length() * count);
+        for (int i = 0; i < count; i++) result.append(value);
+        return result.toString();
+    }
+
+    private byte[] replaceJava11StringRepeat(String name, String transformedName, byte[] basicClass) {
+        if (basicClass == null
+                || (!isRdpCoreClass(name) && !isRdpCoreClass(transformedName))) {
+            return basicClass;
+        }
+        ClassReader reader = new ClassReader(basicClass);
+        ClassWriter writer = new ClassWriter(reader, 0);
+        reader.accept(new ClassVisitor(Opcodes.ASM5, writer) {
+            @Override
+            public MethodVisitor visitMethod(int access, String methodName, String descriptor,
+                                             String signature, String[] exceptions) {
+                MethodVisitor delegate = super.visitMethod(access, methodName, descriptor,
+                        signature, exceptions);
+                return new MethodVisitor(Opcodes.ASM5, delegate) {
+                    @Override
+                    public void visitMethodInsn(int opcode, String owner, String method,
+                                                String methodDescriptor, boolean isInterface) {
+                        if (opcode == Opcodes.INVOKEVIRTUAL
+                                && "java/lang/String".equals(owner)
+                                && "repeat".equals(method)
+                                && "(I)Ljava/lang/String;".equals(methodDescriptor)) {
+                            super.visitMethodInsn(Opcodes.INVOKESTATIC,
+                                    "net/vas/rdp/uav/core/RdpUavTransformer",
+                                    "repeat",
+                                    "(Ljava/lang/String;I)Ljava/lang/String;",
+                                    false);
+                        } else {
+                            super.visitMethodInsn(opcode, owner, method, methodDescriptor, isInterface);
+                        }
+                    }
+                };
+            }
+        }, 0);
+        return writer.toByteArray();
+    }
+
+    private boolean isRdpCoreClass(String className) {
+        return className != null && className.startsWith(RDP_CORE_PREFIX);
+    }
+
 }

@@ -116,6 +116,12 @@ public final class MissionLifecycle {
     private void dispatch(World world, RDPMission mission) {
         long tick = world.getTotalWorldTime();
         MCH_EntityAircraft aircraft = findAircraft(world, mission.getAircraftId());
+        if (tick % 5L == 0L) {
+            RdpUavDebug.event("MissionRuntime", "MISSION_DISPATCH_ATTEMPT",
+                    "mission", mission.getMissionId(), "aircraft", mission.getAircraftId(),
+                    "tick", tick, "state", mission.getState(),
+                    "aircraftPresent", aircraft != null);
+        }
         if (aircraft == null) {
             RdpUavDebug.debug("Lifecycle", "mission {} waiting for aircraft {}",
                     mission.getMissionId(), mission.getAircraftId());
@@ -141,6 +147,12 @@ public final class MissionLifecycle {
         }
 
         Target target = locateTarget(world, aircraft, mission);
+        if (tick % 5L == 0L) {
+            RdpUavDebug.event("MissionRuntime", "TARGET_LOOKUP",
+                    "mission", mission.getMissionId(), "aircraft", aircraft.getUniqueID(),
+                    "tick", tick, "found", target != null,
+                    "target", formatTarget(target));
+        }
         RdpUavDebug.debug("Lifecycle", "mission {} target lookup result={} state={}",
                 mission.getMissionId(), formatTarget(target), mission.getState());
         if (target == null) {
@@ -211,9 +223,23 @@ public final class MissionLifecycle {
             // before the mission reports acquisition or arms an attack.
             if (!flight.dispatch(aircraft, target.x, guidanceY, target.z,
                     mission.getObservationDistance(), 200, mission.isAttack(), mission.getTargetId())) {
+                RdpUavDebug.event("MissionRuntime", "ROUTE_DISPATCH",
+                        "mission", mission.getMissionId(), "aircraft", aircraft.getUniqueID(),
+                        "tick", tick, "accepted", false, "target", formatTarget(target));
                 defer(world, mission, "WINGMAN_DISPATCH_REJECTED",
                         MissionState.EXECUTION_STALLED, tick);
             } else {
+                WingmanEntry routeEntry = flight.getEntry(aircraft);
+                RdpUavDebug.event("MissionRuntime", "ROUTE_DISPATCH",
+                        "mission", mission.getMissionId(), "aircraft", aircraft.getUniqueID(),
+                        "tick", tick, "accepted", true,
+                        "routeSize", routeEntry == null || routeEntry.mission == null
+                                ? 0 : routeEntry.mission.size(),
+                        "missionIndex", routeEntry == null ? -1 : routeEntry.missionIndex,
+                        "nodeTimer", routeEntry == null ? -1 : routeEntry.missionNodeTimer,
+                        "node", routeEntry == null || routeEntry.currentNode() == null
+                                ? null : routeEntry.currentNode().type,
+                        "target", formatTarget(target));
                 mission.setQueued(false);
                 LOGGER.info("Mission {} dispatched aircraft {} type={} target={} at tick {}",
                         mission.getMissionId(), aircraft.getUniqueID(), mission.getAircraftType(),
@@ -435,6 +461,7 @@ public final class MissionLifecycle {
 
             MissionState before = mission.getState();
             if (updateMission(world, mission, aircraft, target, tick)) dirty = true;
+            emitMissionSnapshot(mission, aircraft, target, tick);
             if (before != mission.getState()) {
                 LOGGER.info("Mission {} state {} -> {} aircraft={} wingman={}",
                         mission.getMissionId(), before, mission.getState(),
@@ -990,6 +1017,40 @@ public final class MissionLifecycle {
         if (refreshed) {
             routeRefreshes.put(aircraftId, new RouteRefresh(tick, target.x, guidanceY, target.z));
         }
+        WingmanEntry entry = flight.getEntry(aircraft);
+        RdpUavDebug.event("MissionRuntime", "ROUTE_REFRESH",
+                "mission", mission.getMissionId(), "aircraft", aircraftId, "tick", tick,
+                "decision", decision, "accepted", refreshed,
+                "routeSize", entry == null || entry.mission == null ? 0 : entry.mission.size(),
+                "missionIndex", entry == null ? -1 : entry.missionIndex,
+                "nodeTimer", entry == null ? -1 : entry.missionNodeTimer,
+                "target", formatTarget(target));
+    }
+
+    private void emitMissionSnapshot(RDPMission mission, MCH_EntityAircraft aircraft,
+                                     Target target, long tick) {
+        if (!RdpUavDebug.isMissionDiagnosticsEnabled() || tick % 5L != 0L) return;
+        WingmanEntry entry = flight.getEntry(aircraft);
+        double distance = target == null ? Double.NaN : targetDistance(aircraft, target);
+        RdpUavDebug.event("MissionRuntime", "MISSION_SNAPSHOT",
+                "mission", mission.getMissionId(), "aircraft", aircraft.getUniqueID(),
+                "tick", tick, "state", mission.getState(), "phase", mission.getPhase(),
+                "controlOwner", mission.getControlOwner(),
+                "aircraftX", aircraft.posX, "aircraftY", aircraft.posY,
+                "aircraftZ", aircraft.posZ, "yaw", aircraft.rotationYaw,
+                "pitch", aircraft.rotationPitch, "motionX", aircraft.motionX,
+                "motionY", aircraft.motionY, "motionZ", aircraft.motionZ,
+                "target", formatTarget(target), "distance", distance,
+                "targetId", mission.getTargetId(),
+                "routeSize", entry == null || entry.mission == null ? 0 : entry.mission.size(),
+                "missionIndex", entry == null ? -1 : entry.missionIndex,
+                "nodeTimer", entry == null ? -1 : entry.missionNodeTimer,
+                "autoTargetX", entry == null ? null : entry.autoTargetX,
+                "autoTargetY", entry == null ? null : entry.autoTargetY,
+                "autoTargetZ", entry == null ? null : entry.autoTargetZ,
+                "node", entry == null || entry.currentNode() == null
+                        ? null : entry.currentNode().type,
+                "nativeState", entry == null ? null : entry.autoState);
     }
 
     private boolean atTarget(MCH_EntityAircraft aircraft, Target target, RDPMission mission) {

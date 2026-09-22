@@ -58,7 +58,7 @@ public final class RdpUavCommand extends CommandBase {
                     "pause", "resume", "reform", "disband", "status");
         }
         if (args.length == 2 && "debug".equalsIgnoreCase(args[0])) {
-            return getListOfStringsMatchingLastWord(args, "on", "off", "status", "reload");
+            return getListOfStringsMatchingLastWord(args, "on", "off", "status", "reload", "mission");
         }
         if (args.length == 2 && "mission".equalsIgnoreCase(args[0])) {
             return getListOfStringsMatchingLastWord(args, "create", "ai", "attack-point",
@@ -74,7 +74,7 @@ public final class RdpUavCommand extends CommandBase {
                 sender.sendMessage(new TextComponentString("Debug logging requires operator permission."));
                 return;
             }
-            handleDebug(sender, args[1]);
+            handleDebug(sender, args);
             return;
         }
         if (!(sender instanceof EntityPlayer)) {
@@ -263,7 +263,26 @@ public final class RdpUavCommand extends CommandBase {
         }
     }
 
-    private void handleDebug(ICommandSender sender, String action) {
+    private void handleDebug(ICommandSender sender, String[] args) {
+        String action = args[1];
+        if ("mission".equalsIgnoreCase(action)) {
+            if (args.length < 3) {
+                sender.sendMessage(new TextComponentString(
+                        "Usage: /rdpuav debug mission on|off|status"));
+                return;
+            }
+            if ("on".equalsIgnoreCase(args[2])) {
+                RdpUavDebug.setMissionDiagnostics(true);
+            } else if ("off".equalsIgnoreCase(args[2])) {
+                RdpUavDebug.setMissionDiagnostics(false);
+            } else if (!"status".equalsIgnoreCase(args[2])) {
+                sender.sendMessage(new TextComponentString(
+                        "Usage: /rdpuav debug mission on|off|status"));
+                return;
+            }
+            sender.sendMessage(new TextComponentString("RDP UAV " + RdpUavDebug.status()));
+            return;
+        }
         if ("on".equalsIgnoreCase(action)) {
             RdpUavDebug.setEnabled(true);
         } else if ("off".equalsIgnoreCase(action)) {

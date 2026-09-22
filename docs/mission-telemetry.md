@@ -1,7 +1,29 @@
 # Mission telemetry
 
-RDP-UAV diagnostics are server-side and disabled by default. Enable them with
-the existing `rdpuav-debug.cfg` setting or the `/rdpuav debug on` command.
+RDP-UAV diagnostics are server-side and disabled by default. Enable the
+general logger with the existing `rdpuav-debug.cfg` setting or the
+`/rdpuav debug on` command. Enable the bounded mission extension with
+`/rdpuav debug mission on`, or set `B:missionDiagnostics=true` in the same
+configuration file.
+
+## Mission runtime snapshots
+
+Mission diagnostics use the existing `RdpUavDebug` logger and add
+`MissionRuntime` events without changing mission behavior:
+
+- `MISSION_DISPATCH_ATTEMPT`: sampled dispatch availability and mission state.
+- `TARGET_LOOKUP`: sampled target presence and formatted target identity/position.
+- `ROUTE_DISPATCH`: native route command acceptance, route size, mission index,
+  node timer, and current node.
+- `ROUTE_REFRESH`: waypoint replacement acceptance and native route state.
+- `MISSION_SNAPSHOT`: every five world ticks while active, including mission
+  state/phase/owner, aircraft position/yaw/pitch/motion, target position and
+  distance, target UUID, route size, mission index/node timer, native target
+  coordinates, current node, and native state.
+
+These fields distinguish a command being issued or accepted from observed
+aircraft state. They do not imply that the native controller moved the vehicle
+or that a weapon affected the target.
 
 ## State transitions
 

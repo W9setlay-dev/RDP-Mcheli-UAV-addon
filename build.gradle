@@ -88,33 +88,14 @@ repositories {
     }
 }
 
-def modularUiJar = file('libs/modularui-3.1.6.jar')
-def modularUiDisabled = file('libs/modularui-3.1.6.jar.disabled')
-
-task restoreModularUiRuntime {
-    doLast {
-        if (modularUiDisabled.isFile() && !modularUiDisabled.renameTo(modularUiJar)) {
-            throw new GradleException("Could not restore ${modularUiJar}")
-        }
-    }
-}
-
-runServer {
-    doFirst {
-        if (modularUiJar.isFile() && !modularUiDisabled.exists()
-                && !modularUiJar.renameTo(modularUiDisabled)) {
-            throw new GradleException("Could not temporarily disable ${modularUiJar}")
-        }
-    }
-    finalizedBy restoreModularUiRuntime
-}
-
 def mcheliJar = file(System.getenv('RDP_MCHELI_JAR') ?: 'libs/mcheli-ce-1.5.1.jar')
 def rdpCoreJar = file(System.getenv('RDP_CORE_JAR') ?: 'libs/rdpcore-1.0.0.jar')
+def modularUiCompileJar = file('libs/modularui-3.0.2.jar')
 
 dependencies {
     // Use explicit runtime paths in CI/local instance builds; fall back to libs for distribution.
     compile files(mcheliJar, rdpCoreJar)
+    compileOnly files(modularUiCompileJar)
     compile('zone.rong:mixinbooter:11.17') {
         transitive = false
     }
