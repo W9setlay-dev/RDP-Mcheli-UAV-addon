@@ -55,6 +55,13 @@ McHeliCE / WingMan / Minecraft world
   target hitbox-center aim point, distance trend, bearing, active waypoint,
   route size/node type, and replacement count. This telemetry is evidence for
   live McHeli validation; it is not a simulation of convergence.
+- The deterministic terminal classifier uses a bounded 12-sample history:
+  fewer than three samples is `INSUFFICIENT_DATA`; sustained net decrease is
+  `CONVERGING` or `SLOW_CONVERGENCE`; noise-sized movement is `STALLED`;
+  three consecutive post-minimum increases beyond tolerance is `OVERSHOT`;
+  four sustained increases is `DIVERGING`; three or more bounded radial
+  reversals is `ORBITING`; timeout is an explicit `TIMEOUT` event. These
+  classifications are diagnostic only and never alter flight control.
 - `TargetResolver` searches the live world for entities near a location.
 - `TargetClassifier` decides whether an entity registry ID is actually hostile or modded hostile.
 - `ContactSnapshot` is the authoritative tracked-contact projection: it carries

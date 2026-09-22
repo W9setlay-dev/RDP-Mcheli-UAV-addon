@@ -37,6 +37,9 @@ public final class WingManFlightAdapter {
     private final Map<UUID, Integer> terminalWaypointReplacements = new HashMap<>();
     private final Map<UUID, Double> terminalPreviousDistance = new HashMap<>();
     private final Map<UUID, Long> terminalLastDiagnosticTick = new HashMap<>();
+    private final Map<UUID, TerminalGuidanceMetrics> terminalMetrics = new HashMap<>();
+    private final Map<UUID, TerminalGuidanceMetrics.Classification> terminalLastClassification
+            = new HashMap<>();
     private static final double KAMIKAZE_ATTACK_ANGLE_DEGREES = 35.0D;
     private static final double MIN_DIVE_RUN_METERS = 32.0D;
     private static final double MAX_DIVE_RUN_METERS = 160.0D;
@@ -572,6 +575,8 @@ public final class WingManFlightAdapter {
             terminalWaypointReplacements.remove(aircraft.getUniqueID());
             terminalPreviousDistance.remove(aircraft.getUniqueID());
             terminalLastDiagnosticTick.remove(aircraft.getUniqueID());
+            terminalMetrics.remove(aircraft.getUniqueID());
+            terminalLastClassification.remove(aircraft.getUniqueID());
         }
     }
 
@@ -625,6 +630,30 @@ public final class WingManFlightAdapter {
                 || entry.autoState == AutonomousState.LANDING
                 || entry.autoState == AutonomousState.PARKED) return;
         double safeY = normalizeHelicopterTargetY(aircraft, solution.getY());
+        TerminalGuidanceMetrics metrics = terminalMetrics.get(aircraftId);
+        if (metrics == null || !target.getUniqueID().equals(metrics.getTargetId())) {
+            metrics = new TerminalGuidanceMetrics(target.getUniqueID(), tick);
+            terminalMetrics.put(aircraftId, metrics);
+            RdpUavDebug.event("TerminalGuidance", "TERMINAL_METRIC_START",
+                    "mission", missionId, "target", target.getUniqueID(), "tick", tick,
+                    "phase", phase, "controlOwner", controlOwner);
+        }
+        double targetDx = target.posX - aircraft.posX;
+        double targetDy = target.posY - aircraft.posY;
+        double targetDz = target.posZ - aircraft.posZ;
+        metrics.record(tick, Math.sqrt(targetDx * targetDx + targetDy * targetDy
+                + targetDz * targetDz));
+        TerminalGuidanceMetrics.Classification classification = metrics.getClassification();
+        if (classification != terminalLastClassification.get(aircraftId)) {
+            terminalLastClassification.put(aircraftId, classification);
+            RdpUavDebug.event("TerminalGuidance", "TERMINAL_CONVERGENCE_STATE",
+                    "mission", missionId, "target", target.getUniqueID(),
+                    "tick", tick, "classification", classification,
+                    "distance", metrics.getLatestDistance(),
+                    "closingRate", metrics.getClosingRate(),
+                    "minimumDistance", metrics.getMinimumDistance(),
+                    "phase", phase, "controlOwner", controlOwner);
+        }
         entry.mission = new ArrayList<>();
         entry.mission.add(MissionNode.flyTo(solution.getX(), safeY, solution.getZ()));
         entry.missionIndex = 0;
@@ -687,7 +716,13 @@ public final class WingManFlightAdapter {
                 "waypointZ", solution.getZ(), "replacements", replacements,
                 "node", entry.currentNode() == null ? null : entry.currentNode().type,
                 "routeSize", entry.mission == null ? 0 : entry.mission.size(),
-                "trend", trend);
+                "trend", trend, "classification",
+                terminalMetrics.get(aircraft.getUniqueID()).getClassification(),
+                "closingRate", terminalMetrics.get(aircraft.getUniqueID()).getClosingRate(),
+                "minimumDistance", terminalMetrics.get(aircraft.getUniqueID()).getMinimumDistance(),
+                "entryDistance", terminalMetrics.get(aircraft.getUniqueID()).getDistanceAtEntry(),
+                "elapsedTerminalTicks", tick
+                        - terminalMetrics.get(aircraft.getUniqueID()).getEntryTick());
     }
 
     private ContinuousTargetTracker.Parameters terminalTrackingParameters(
