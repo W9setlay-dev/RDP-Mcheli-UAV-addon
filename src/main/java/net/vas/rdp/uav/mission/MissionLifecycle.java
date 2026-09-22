@@ -13,13 +13,13 @@ import net.vas.rdp.uav.flight.WingManFlightAdapter;
 import net.vas.rdp.uav.persistence.RDPMissionWorldData;
 import net.vas.rdp.uav.scan.RDPScanReport;
 import net.vas.rdp.uav.scan.RDPScanReportRepository;
-import net.vas.rdp.uav.target.TargetResolver;
 import net.vas.rdp.uav.profile.UavVehicleProfile;
 import net.vas.rdp.uav.profile.UavVehicleProfiles;
 import net.vas.rdp.uav.target.TargetSelectionMode;
 import net.vas.rdp.uav.target.ContactLifecycle;
 import net.vas.rdp.uav.target.ContactSnapshot;
-import net.vas.rdp.uav.target.ContactTracker;
+import net.vas.rdp.uav.target.TargetAuthority;
+import net.vas.rdp.uav.target.TargetResolver;
 import net.vas.rdp.uav.flight.KamikazeImpactDetector;
 import net.vas.rdp.uav.flight.KamikazePilotOverride;
 import net.vas.rdp.uav.weapon.GuidedStrikeObjective;
@@ -50,8 +50,7 @@ public final class MissionLifecycle {
     private final MissionManager manager;
     private final WingManFlightAdapter flight = new WingManFlightAdapter();
     private final GuidedWeaponAdapter guidedWeapons = new GuidedWeaponAdapter(flight);
-    private final TargetResolver targets = new TargetResolver();
-    private final ContactTracker contactTracker = new ContactTracker();
+    private final TargetAuthority targets = new TargetAuthority();
     /** Operator cursor is deliberately separate from RDPMission.targetId (the mission lock). */
     private final Map<UUID, UUID> operatorContacts = new HashMap<>();
     private final Map<World, Boolean> restoredWorlds = new WeakHashMap<>();
@@ -814,13 +813,13 @@ public final class MissionLifecycle {
         UavVehicleProfile vehicleProfile = profile(aircraft);
         if (current != null && targetDistance(aircraft, Target.entity(current))
                 <= vehicleProfile.getLockRange()) {
-            contactTracker.observe(world, current, targetDistance(aircraft, Target.entity(current)),
+            targets.observe(world, current, targetDistance(aircraft, Target.entity(current)),
                     tick, ContactLifecycle.TRACKING);
             projectTargetLock(world, mission, current, tick);
             return Target.entity(current);
         }
         if (mission.getTargetId() != null) {
-            contactTracker.markLost(mission.getTargetId(), tick);
+            targets.markLost(mission.getTargetId(), tick);
             // A tracked identity may be reacquired, but it must never be
             // replaced by an unrelated nearby entity after disappearing.
             return null;
@@ -831,7 +830,7 @@ public final class MissionLifecycle {
                 mission.getTargetSpec());
         if (candidates.isEmpty()) return null;
         Entity reacquired = candidates.get(0).getEntity();
-        contactTracker.observe(world, reacquired,
+        targets.observe(world, reacquired,
                 Math.sqrt(candidates.get(0).getDistanceSquared()), tick, ContactLifecycle.SELECTABLE);
         if (mission.getTargetId() == null) mission.reacquireTarget(reacquired.getUniqueID(), tick);
         else if (!mission.getTargetId().equals(reacquired.getUniqueID())) {
@@ -856,7 +855,7 @@ public final class MissionLifecycle {
         if (current != null && (mission.getTargetSelectionMode() == TargetSelectionMode.MANUAL
                 || aircraft.getDistanceSq(current) <=
                 profile(aircraft).getDetectionRange() * profile(aircraft).getDetectionRange())) {
-            contactTracker.observe(world, current, aircraft.getDistance(current),
+            targets.observe(world, current, aircraft.getDistance(current),
                     world.getTotalWorldTime(), ContactLifecycle.SELECTED);
             projectTargetLock(world, mission, current, world.getTotalWorldTime());
             return Target.entity(current);
@@ -868,7 +867,7 @@ public final class MissionLifecycle {
                 mission.getTargetSpec());
         if (candidates.isEmpty()) return null;
         Entity selected = candidates.get(0).getEntity();
-        contactTracker.observe(world, selected,
+        targets.observe(world, selected,
                 Math.sqrt(candidates.get(0).getDistanceSquared()), world.getTotalWorldTime(),
                 ContactLifecycle.SELECTABLE);
         return Target.entity(selected);
@@ -883,12 +882,12 @@ public final class MissionLifecycle {
     }
 
     public ContactSnapshot contact(UUID targetId) {
-        return contactTracker.get(targetId);
+        return targets.get(targetId);
     }
 
     @SuppressWarnings("unused")
     public ContactSnapshot operatorContact(MCH_EntityAircraft aircraft) {
-        return aircraft == null ? null : contactTracker.get(operatorContacts.get(aircraft.getUniqueID()));
+        return aircraft == null ? null : targets.get(operatorContacts.get(aircraft.getUniqueID()));
     }
 
     public boolean cycleContact(World world, MCH_EntityAircraft aircraft, boolean next) {
@@ -902,7 +901,7 @@ public final class MissionLifecycle {
             if (!mission.getAircraftId().equals(aircraft.getUniqueID()) || mission.isTerminal()) continue;
             UUID current = operatorContacts.get(aircraft.getUniqueID());
             List<ContactSnapshot> available = new java.util.ArrayList<>(
-                    contactTracker.selectable());
+                    targets.selectable());
             if (available.isEmpty()) return false;
             int start = -1;
             for (int i = 0; i < available.size(); i++) {
@@ -915,7 +914,7 @@ public final class MissionLifecycle {
                 Entity entity = targets.findLoaded(world, candidate.getEntityId());
                 if (entity != null && net.vas.rdp.uav.target.TargetPolicy
                         .isSelectableContact(world, entity, operator)) {
-                    contactTracker.select(candidate.getEntityId());
+                    targets.select(candidate.getEntityId());
                     operatorContacts.put(aircraft.getUniqueID(), candidate.getEntityId());
                     return true;
                 }
