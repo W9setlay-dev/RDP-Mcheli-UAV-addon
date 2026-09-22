@@ -1,5 +1,6 @@
 package net.vas.rdp.uav.mission;
 
+import net.vas.rdp.uav.RdpUavDebug;
 import net.vas.rdp.uav.target.TargetPriority;
 import net.vas.rdp.uav.target.TargetSelectionMode;
 import net.vas.rdp.uav.target.TargetSpec;
@@ -80,11 +81,21 @@ public final class RDPMission {
             throw new IllegalStateException("Invalid mission transition "
                     + state + " -> " + nextState + " for " + missionId);
         }
+        MissionState previousState = state;
         state = nextState;
         lastUpdateTick = tick;
         queued = false;
         phase = phaseFor(nextState);
         controlOwner = ownerFor(phase);
+        RdpUavDebug.event("MissionLifecycle", "MISSION_STATE_TRANSITION",
+                "mission", missionId,
+                "aircraft", aircraftId,
+                "from", previousState,
+                "to", nextState,
+                "phase", phase,
+                "controlOwner", controlOwner,
+                "tick", tick,
+                "target", targetId);
     }
 
     public boolean isTerminal() {
