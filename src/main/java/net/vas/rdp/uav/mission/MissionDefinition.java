@@ -74,17 +74,20 @@ public final class MissionDefinition {
     @SuppressWarnings("unused")
     public MissionDefinition setTrackingMode(String value) { trackingMode = normalizeMode(value); return this; }
     @SuppressWarnings("unused")
-    public MissionDefinition setGuidanceMode(String value) { guidanceMode = normalizeMode(value); return this; }
-    public MissionDefinition setExecutionMode(String value) { executionMode = normalizeMode(value); return this; }
-    public MissionDefinition setRecoveryMode(String value) { recoveryMode = normalizeMode(value); return this; }
+    public void setGuidanceMode(String value) { guidanceMode = normalizeMode(value);
+    }
+    public void setExecutionMode(String value) { executionMode = normalizeMode(value);
+    }
+    public void setRecoveryMode(String value) { recoveryMode = normalizeMode(value);
+    }
 
     public boolean isDefaultTargetPolicy() {
-        return targetPolicy.getInclude().isEmpty()
-                && targetPolicy.getRequire().isEmpty()
-                && targetPolicy.getExclude().isEmpty()
-                && targetPolicy.isRejectEmbedded() == TargetPolicy.rejectDeeplyEmbedded
-                && targetPolicy.isAllowVehicleTargets() == TargetPolicy.allowHostileVehicles
-                && targetPolicy.getMinimumConfidence() <= 0D;
+        return !targetPolicy.getInclude().isEmpty()
+                || !targetPolicy.getRequire().isEmpty()
+                || !targetPolicy.getExclude().isEmpty()
+                || targetPolicy.isRejectEmbedded() != TargetPolicy.rejectDeeplyEmbedded
+                || targetPolicy.isAllowVehicleTargets() != TargetPolicy.allowHostileVehicles
+                || !(targetPolicy.getMinimumConfidence() <= 0D);
     }
 
     private static String normalize(String value) {

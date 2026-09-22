@@ -131,7 +131,7 @@ public final class RdpUavNetwork {
         if (!validation.isValid()) return false;
         if (definition.getMissionType() == net.vas.rdp.uav.mission.MissionType.SQUARE_STRIKE) {
             if (definition.isSwarmEnabled() || !definition.getSelectedUavs().isEmpty()
-                    || !definition.isDefaultTargetPolicy()) return false;
+                    || definition.isDefaultTargetPolicy()) return false;
             createSquareStrike(definition.getTarget(), definition.getGuidedWeapon());
             return true;
         }
@@ -144,7 +144,7 @@ public final class RdpUavNetwork {
         return definition.getMissionType() == net.vas.rdp.uav.mission.MissionType.SQUARE_STRIKE
                 || definition.isSwarmEnabled()
                 || !definition.getSelectedUavs().isEmpty()
-                || !definition.isDefaultTargetPolicy()
+                || definition.isDefaultTargetPolicy()
                 || !"DEFAULT".equals(definition.getSearchMode())
                 || !"CONTINUOUS".equals(definition.getTrackingMode())
                 || !"AI_APPROACH".equals(definition.getGuidanceMode())
@@ -1373,6 +1373,7 @@ public final class RdpUavNetwork {
                     // Reusable and long-range airframes may only enter a
                     // destructive route through this operator-authenticated request.
                     mission.authorizeDestructiveAction();
+                    KamikazePilotOverride.lock(aircraft.getUniqueID(), mission.getTargetId());
                     mission.transitionTo(net.vas.rdp.uav.mission.MissionState.KAMIKADZE_TARGET,
                             player.world.getTotalWorldTime());
                     net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world).markDirty();
@@ -1786,9 +1787,8 @@ public final class RdpUavNetwork {
                                 player.world.getTotalWorldTime());
                     }
                     net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world).markDirty();
-                    KamikazePilotOverride.lock(aircraft.getUniqueID(), targetId);
                     player.sendMessage(new net.minecraft.util.text.TextComponentString(
-                            "UAV target lock accepted: AI control override active for "
+                            "UAV target lock accepted for "
                                     + key
                                     + ". Press the target-lock key again to restore player control."));
                     RdpUavDebug.debug("Network", "AI target lock accepted player={} aircraft={} target={}",

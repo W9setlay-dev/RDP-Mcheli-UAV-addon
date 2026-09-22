@@ -247,6 +247,16 @@ public final class MissionLifecycle {
                 dirty = true;
                 continue;
             }
+            if (mission.getState() == MissionState.KAMIKADZE_TARGET
+                    && tick - mission.getLastUpdateTick()
+                    > net.vas.rdp.uav.flight.KamikazeConfig.terminalTimeoutTicks) {
+                mission.fail("TERMINAL_TIMEOUT", tick);
+                RdpUavDebug.debug("Lifecycle",
+                        "mission {} terminal guidance timed out aircraft={} tick={}",
+                        mission.getMissionId(), mission.getAircraftId(), tick);
+                dirty = true;
+                continue;
+            }
 
             MCH_EntityAircraft aircraft = findAircraft(world, mission.getAircraftId());
             if (aircraft == null) {
@@ -949,6 +959,7 @@ public final class MissionLifecycle {
     private void refreshRoute(MCH_EntityAircraft aircraft, Target target, RDPMission mission,
                               MissionSafety.RouteDecision decision, long tick) {
         if (target == null || decision == MissionSafety.RouteDecision.HOLD_AND_REEVALUATE) return;
+        if (mission.getControlOwner() == ControlOwner.TERMINAL_GUIDANCE) return;
         UUID aircraftId = aircraft.getUniqueID();
         RouteRefresh previous = routeRefreshes.get(aircraftId);
         boolean orbit = !mission.isAttack()
@@ -1004,18 +1015,28 @@ public final class MissionLifecycle {
                                                RDPMission mission) {
         if (aircraft == null || target == null || mission == null) return false;
         if (profile(aircraft).isReusable()) return true;
+        double targetX = target.x;
+        double targetY = target.y;
+        double targetZ = target.z;
+        ContactSnapshot tracked = mission.getTargetId() == null ? null : contact(mission.getTargetId());
+        if (tracked != null && tracked.getLifecycle() != ContactLifecycle.EXPIRED
+                && tracked.getLifecycle() != ContactLifecycle.LOST) {
+            targetX = tracked.getAimX();
+            targetY = tracked.getAimY();
+            targetZ = tracked.getAimZ();
+        }
         if (mission.getMissionType() == MissionType.SQUARE_STRIKE && mission.hasSquareArea()) {
             net.vas.rdp.uav.flight.SquareArea area =
                     new net.vas.rdp.uav.flight.SquareArea(
                             mission.getTargetSpec().getX(), mission.getTargetSpec().getZ(),
                             mission.getSquareWidth(), mission.getSquareDepth());
             return area.contains(aircraft.posX, aircraft.posZ)
-                    && Math.abs(aircraft.posY - target.y) <= 3.0D;
+                    && Math.abs(aircraft.posY - targetY) <= 3.0D;
         }
-        double dx = aircraft.posX - target.x;
-        double dz = aircraft.posZ - target.z;
+        double dx = aircraft.posX - targetX;
+        double dz = aircraft.posZ - targetZ;
         double horizontal = Math.sqrt(dx * dx + dz * dz);
-        double vertical = Math.abs(aircraft.posY - target.y);
+        double vertical = Math.abs(aircraft.posY - targetY);
         // A point strike is terminal only at the resolved surface plane. The
         // old 3D-radius-only gate allowed a plane to detonate while hovering
         // tens of blocks above the square.

@@ -4,6 +4,8 @@ import net.vas.rdp.uav.mission.AircraftAssignmentRegistry;
 import net.vas.rdp.uav.mission.MissionState;
 import net.vas.rdp.uav.mission.MissionType;
 import net.vas.rdp.uav.mission.RDPMission;
+import net.vas.rdp.uav.mission.ControlOwner;
+import net.vas.rdp.uav.mission.MissionPhase;
 import net.vas.rdp.uav.target.TargetPriority;
 import net.vas.rdp.uav.target.TargetAcquisition;
 import net.vas.rdp.uav.target.TargetSpec;
@@ -40,6 +42,36 @@ public final class CoreMissionTest {
         mission.transitionTo(MissionState.TARGET_ACQUIRED, 19);
         mission.lockTarget(UUID.randomUUID(), 20);
         check(mission.getState() == MissionState.TARGET_LOCKED, "target lock transitions state");
+        check(mission.getPhase() == MissionPhase.SEARCH, "target lock projects search phase");
+        check(mission.getControlOwner() == ControlOwner.MISSION_AI,
+                "ordinary target lock retains mission AI ownership");
+        RDPMission terminalMission = new RDPMission(
+                UUID.randomUUID(), owner, aircraft, "switchblade",
+                MissionType.RECONNAISSANCE,
+                TargetSpec.manual("srparasites:rupter", TargetPriority.HIGH),
+                true, false, true, 256, 64, 10);
+        terminalMission.transitionTo(MissionState.DISPATCHED, 10);
+        terminalMission.transitionTo(MissionState.TAKEOFF, 12);
+        terminalMission.transitionTo(MissionState.CRUISE, 13);
+        terminalMission.transitionTo(MissionState.SEARCHING, 14);
+        terminalMission.transitionTo(MissionState.TARGET_ACQUIRED, 19);
+        UUID terminalTarget = UUID.randomUUID();
+        terminalMission.lockTarget(terminalTarget, 20);
+        terminalMission.transitionTo(MissionState.KAMIKADZE_TARGET, 21);
+        check(terminalMission.getPhase() == MissionPhase.TERMINAL_GUIDANCE,
+                "terminal state projects terminal guidance phase");
+        check(terminalMission.getControlOwner() == ControlOwner.TERMINAL_GUIDANCE,
+                "terminal guidance owns movement after commitment");
+        boolean replacementRejected = false;
+        try {
+            terminalMission.applyOperatorEntityLock(UUID.randomUUID(), 22);
+        } catch (IllegalArgumentException expected) {
+            replacementRejected = true;
+        }
+        check(replacementRejected, "terminal target replacement rejected");
+        check(terminalTarget.equals(terminalMission.getTargetId()),
+                "terminal target identity retained");
+        terminalMission.transitionTo(MissionState.KAMIKADZE_DETONATED, 23);
         mission.transitionTo(MissionState.APPROACHING, 21);
         mission.transitionTo(MissionState.ON_TARGET, 22);
         mission.transitionTo(MissionState.SCANNING, 30);

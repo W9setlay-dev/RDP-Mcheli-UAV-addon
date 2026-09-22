@@ -50,6 +50,9 @@ public final class ContactSnapshot {
     public double getMaxX() { return maxX; }
     public double getMaxY() { return maxY; }
     public double getMaxZ() { return maxZ; }
+    public double getAimX() { return (minX + maxX) * 0.5D; }
+    public double getAimY() { return (minY + maxY) * 0.5D; }
+    public double getAimZ() { return (minZ + maxZ) * 0.5D; }
     public double getX() { return x; }
     public double getY() { return y; }
     public double getZ() { return z; }

@@ -39,6 +39,8 @@ public final class RDPMission {
     private String recoveryReason;
     private double squareWidth;
     private double squareDepth;
+    private MissionPhase phase = MissionPhase.PLANNING;
+    private ControlOwner controlOwner = ControlOwner.MISSION_AI;
     private static final int MAX_RECOVERY_ATTEMPTS = 5;
 
     public RDPMission(UUID missionId, UUID ownerId, UUID aircraftId, String aircraftType,
@@ -81,6 +83,8 @@ public final class RDPMission {
         state = nextState;
         lastUpdateTick = tick;
         queued = false;
+        phase = phaseFor(nextState);
+        controlOwner = ownerFor(phase);
     }
 
     public boolean isTerminal() {
@@ -90,6 +94,8 @@ public final class RDPMission {
                 || state == MissionState.DIRECT_LAUNCH_COMPLETE;
     }
     public boolean isDestructiveAuthorized() { return destructiveAuthorized; }
+    public MissionPhase getPhase() { return phase; }
+    public ControlOwner getControlOwner() { return controlOwner; }
     public void authorizeDestructiveAction() { destructiveAuthorized = true; }
     public void setDestructiveAuthorized(boolean value) { destructiveAuthorized = value; }
     public boolean isPaused() { return paused; }
@@ -119,6 +125,10 @@ public final class RDPMission {
 
     public void applyOperatorEntityLock(UUID targetId, long tick) {
         if (targetId == null) throw new IllegalArgumentException("Target UUID is required");
+        if (state == MissionState.KAMIKADZE_TARGET
+                && !targetId.equals(this.targetId)) {
+            throw new IllegalArgumentException("Terminal target cannot be replaced");
+        }
         if (state == MissionState.SEARCHING) {
             transitionTo(MissionState.TARGET_ACQUIRED, tick);
         } else if (state == MissionState.WAITING_FOR_TARGET || state == MissionState.LOST
@@ -152,6 +162,65 @@ public final class RDPMission {
         } else {
             lockTarget(targetId, tick);
         }
+    }
+
+    private static MissionPhase phaseFor(MissionState value) {
+        if (value == null) return MissionPhase.FAILED;
+        switch (value) {
+            case PLANNED:
+            case WAITING_FOR_TARGET:
+            case REPLAN:
+                return MissionPhase.PLANNING;
+            case DISPATCHED:
+            case TAXI:
+            case TAKEOFF:
+                return MissionPhase.TAKEOFF;
+            case CRUISE:
+                return MissionPhase.TRANSIT;
+            case SEARCHING:
+            case TARGET_ACQUIRED:
+            case TARGET_LOCKED:
+            case LOST:
+                return MissionPhase.SEARCH;
+            case APPROACHING:
+            case ON_TARGET:
+            case ORBITING:
+                return MissionPhase.APPROACH;
+            case ATTACK_TARGET:
+                return MissionPhase.ATTACK;
+            case KAMIKADZE_TARGET:
+                return MissionPhase.TERMINAL_GUIDANCE;
+            case KAMIKADZE_DETONATED:
+            case DIRECT_LAUNCH_COMPLETE:
+            case REPORTING:
+            case SCANNING:
+            case DEEP_SCANNING:
+                return MissionPhase.PAYLOAD_EXECUTION;
+            case RETURNING:
+            case LANDING:
+            case PARKING:
+            case RECOVERING:
+            case HOLDING:
+            case WAITING_FOR_WORLD:
+            case WAITING_FOR_FUEL:
+            case EXECUTION_STALLED:
+                return MissionPhase.RECOVERY;
+            case COMPLETE:
+                return MissionPhase.COMPLETE;
+            case ABORTED:
+            case FAILED:
+            default:
+                return MissionPhase.FAILED;
+        }
+    }
+
+    private static ControlOwner ownerFor(MissionPhase value) {
+        if (value == MissionPhase.TERMINAL_GUIDANCE) return ControlOwner.TERMINAL_GUIDANCE;
+        if (value == MissionPhase.RECOVERY) return ControlOwner.RECOVERY;
+        if (value == MissionPhase.COMPLETE || value == MissionPhase.FAILED) {
+            return ControlOwner.SAFETY;
+        }
+        return ControlOwner.MISSION_AI;
     }
 
     public void applyOperatorAreaLock(double x, double y, double z, long tick) {
@@ -299,6 +368,8 @@ public final class RDPMission {
                 missionType, targetSpec, attack, eliminateAllCost, deepScan, searchRadius,
                 observationDistance, createdTick);
         mission.state = state;
+        mission.phase = phaseFor(state);
+        mission.controlOwner = ownerFor(mission.phase);
         mission.targetId = targetId;
         mission.lastUpdateTick = lastUpdateTick;
         mission.failureReason = failureReason;

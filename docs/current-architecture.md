@@ -33,11 +33,18 @@ McHeliCE / WingMan / Minecraft world
 - `MissionManager` owns assignment state, aircraft auth, and queue behavior.
 - `RDPMission` owns the mission’s target, state, last update tick, and failure reason.
 - `MissionLifecycle` owns the dispatch/update loop and conversion of target findings into state transitions.
+- `RDPMission.getPhase()` and `getControlOwner()` expose compatibility projections for
+  flight ownership without replacing the persisted `MissionState` graph. A
+  `KAMIKADZE_TARGET` mission is owned by terminal guidance; ordinary target
+  locking remains mission-AI ownership and does not install a pilot override.
 
 ## Target architecture
 
 - `TargetSpec` defines the mission target definition.
 - `TargetSelector` decides the best valid candidate from candidate lists.
+- `ContactSnapshot` exposes the center of the tracked hitbox as the world-space
+  aim point. Terminal geometry uses this point when a live tracked contact is
+  available, rather than an arbitrary camera-relative or stale marker position.
 - `TargetResolver` searches the live world for entities near a location.
 - `TargetClassifier` decides whether an entity registry ID is actually hostile or modded hostile.
 - `ContactSnapshot` is the authoritative tracked-contact projection: it carries
@@ -76,6 +83,10 @@ McHeliCE / WingMan / Minecraft world
 - `MissionLifecycle.dispatch(...)` validates mission conditions before a dispatch is attempted.
 - `KamikazeImpactDetector` checks nose impact and proximity-detonation conditions.
 - `KamikazePilotOverride` supports explicit operator-triggered self-destruct logic.
+- `KAMIKADZE_TARGET` is a terminal commitment boundary: entity target
+  replacement is rejected by `RDPMission`, and the lifecycle fails the mission
+  with `TERMINAL_TIMEOUT` if native execution does not complete within the
+  configured terminal window.
 
 ## Persistence architecture
 
