@@ -207,7 +207,7 @@ public class MissionLifecycleContractTest {
     }
 
     @Test
-    public void nativePayloadLaunchDoesNotProveDetonation() {
+    public void payloadLaunchRequiresExplicitEffectConfirmation() {
         RDPMission mission = mission(0);
         mission.transitionTo(MissionState.DISPATCHED, 1);
         mission.transitionTo(MissionState.TAKEOFF, 2);
@@ -221,7 +221,9 @@ public class MissionLifecycleContractTest {
 
         assertTrue(mission.isKamikazePayloadLaunched());
         assertEquals(MissionState.KAMIKADZE_TARGET, mission.getState());
-        mission.markKamikazeDetonated(9);
+        // Native fire acceptance is not an effect observation.
+        assertNotEquals(MissionState.KAMIKADZE_DETONATED, mission.getState());
+        mission.confirmKamikazeEffect(9);
         assertEquals(MissionState.KAMIKADZE_DETONATED, mission.getState());
     }
 

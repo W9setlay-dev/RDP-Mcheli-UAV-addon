@@ -22,6 +22,8 @@
 | final sequential validation | `.\gradlew.bat test --no-daemon` then `.\gradlew.bat build --no-daemon` | PASS | Tests and reobfuscated build passed sequentially; no deployment claim is made |
 | guided weapon capability and native seeker contract | `.\gradlew.bat test --no-daemon` | PASS | Verified objective compatibility, UUID continuity, native API decision handling, and explicit unsupported outcomes |
 | guided weapon live launch/seeker/impact | controlled RDP gameplay session | BLOCKED | Source and native API wiring are complete, but this environment cannot reliably drive a controlled in-game launch and observe seeker acquisition, trajectory, impact, or damage |
+| native PARKED route completion | source contract and regression review | PASS | PARKED no longer implies mission success: locked missions advance only inside the validated execution envelope, and post-launch terminal guidance cannot re-route or launch twice |
+| packet string framing | `.\gradlew.bat test --no-daemon` | PASS | Shared network string framing rejects null and strings over 1024 UTF-8 bytes before allocation/use |
 
 ## Remaining risk
 

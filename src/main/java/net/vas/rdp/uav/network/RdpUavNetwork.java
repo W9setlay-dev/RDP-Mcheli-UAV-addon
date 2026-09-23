@@ -25,6 +25,7 @@ import net.vas.rdp.uav.mission.MissionValidationResult;
 import java.util.Objects;
 
 public final class RdpUavNetwork {
+    private static final int MAX_PACKET_STRING_LENGTH = 1024;
     private static final SimpleNetworkWrapper CHANNEL = NetworkRegistry.INSTANCE.newSimpleChannel(
             new ResourceLocation(RDPUavMod.MOD_ID, "control").toString());
     private static final net.vas.rdp.uav.flight.WingManFlightAdapter FLIGHT_ADAPTER =
@@ -1144,11 +1145,19 @@ public final class RdpUavNetwork {
 
     private static String readString(ByteBuf buffer) {
         int length = buffer.readUnsignedShort();
+        if (length > MAX_PACKET_STRING_LENGTH) {
+            throw new IllegalArgumentException("Packet string exceeds "
+                    + MAX_PACKET_STRING_LENGTH + " bytes");
+        }
         return buffer.readCharSequence(length, java.nio.charset.StandardCharsets.UTF_8).toString();
     }
     private static void writeString(ByteBuf buffer, String value) {
+        if (value == null) throw new IllegalArgumentException("Packet string is required");
         byte[] bytes = value.getBytes(java.nio.charset.StandardCharsets.UTF_8);
-        if (bytes.length > 65535) throw new IllegalArgumentException("Mission row is too long");
+        if (bytes.length > MAX_PACKET_STRING_LENGTH) {
+            throw new IllegalArgumentException("Packet string exceeds "
+                    + MAX_PACKET_STRING_LENGTH + " bytes");
+        }
         buffer.writeShort(bytes.length).writeBytes(bytes);
     }
 

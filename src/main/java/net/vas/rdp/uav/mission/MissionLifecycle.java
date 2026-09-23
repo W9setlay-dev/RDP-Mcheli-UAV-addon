@@ -627,6 +627,13 @@ public final class MissionLifecycle {
             }
         }
         if (flight.isParked(aircraft) && mission.getState() != MissionState.RETURNING) {
+            // A terminal payload launch is irreversible. Native PARKED/attack
+            // completion is not effect confirmation and must not trigger a
+            // replacement route or a second launch.
+            if (mission.getState() == MissionState.KAMIKADZE_TARGET
+                    && mission.isKamikazePayloadLaunched()) {
+                return false;
+            }
             if (mission.isAttack() && profile(aircraft).isReusable()
                     && mission.getState() == MissionState.ATTACK_TARGET
                     && flight.isAttackComplete(aircraft)) {
@@ -657,6 +664,17 @@ public final class MissionLifecycle {
                         mission.getObservationDistance(), 0, true,
                         target.entity == null ? null : target.entity.getUniqueID())) {
                     mission.transitionTo(MissionState.REPLAN, tick);
+                    return true;
+                }
+            }
+            if (target != null && withinMissionExecutionRange(aircraft, target, mission)) {
+                if (mission.getState() == MissionState.TARGET_LOCKED) {
+                    mission.transitionTo(MissionState.APPROACHING, tick);
+                    return true;
+                }
+                if (mission.getState() == MissionState.APPROACHING) {
+                    mission.transitionTo(MissionState.ON_TARGET, tick);
+                    mission.transitionTo(MissionState.SCANNING, tick);
                     return true;
                 }
             }
@@ -850,7 +868,9 @@ public final class MissionLifecycle {
                 return false;
             case KAMIKADZE_TARGET:
                 if (flight.isReturning(aircraft)) {
-                    mission.transitionTo(MissionState.RETURNING, tick);
+                    fail(world, mission, mission.isKamikazePayloadLaunched()
+                            ? "KAMIKAZE_RETURNED_WITHOUT_EFFECT_CONFIRMATION"
+                            : "KAMIKAZE_RETURNED_BEFORE_PAYLOAD_LAUNCH", tick);
                     return true;
                 }
                 if (flight.isAttackComplete(aircraft)) {

@@ -408,12 +408,22 @@ public final class RDPMission {
         recoveryReason = reason == null || reason.trim().isEmpty() ? null : reason;
     }
 
-    public void markKamikazeDetonated(long tick) {
+    /**
+     * Records a server-observed in-game effect after the native payload launch.
+     * Launch acceptance alone must never call this operation.
+     */
+    public void confirmKamikazeEffect(long tick) {
         if (state == MissionState.KAMIKADZE_DETONATED) return;
         if (state != MissionState.KAMIKADZE_TARGET || !kamikazePayloadLaunched) {
             throw new IllegalStateException("Kamikaze effect requires observed payload launch");
         }
         transitionTo(MissionState.KAMIKADZE_DETONATED, tick, "KAMIKAZE_DETONATED");
+    }
+
+    /** @deprecated Use {@link #confirmKamikazeEffect(long)} at the native effect boundary. */
+    @Deprecated
+    public void markKamikazeDetonated(long tick) {
+        confirmKamikazeEffect(tick);
     }
 
     public void setReportId(String reportId) {
