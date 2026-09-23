@@ -50,13 +50,13 @@ public final class TargetAuthority {
         return resolver.find(world, x, y, z, radius, specification, operator);
     }
 
-    public ContactSnapshot observe(World world, Entity entity, double distance, long tick,
-                                   ContactLifecycle lifecycle) {
-        return contacts.observe(world, entity, distance, tick, lifecycle);
+    public void observe(World world, Entity entity, double distance, long tick,
+                        ContactLifecycle lifecycle) {
+        contacts.observe(world, entity, distance, tick, lifecycle);
     }
 
-    public ContactSnapshot markLost(UUID targetId, long tick) {
-        return contacts.markLost(targetId, tick);
+    public void markLost(UUID targetId, long tick) {
+        contacts.markLost(targetId, tick);
     }
 
     public ContactSnapshot get(UUID targetId) {
@@ -67,7 +67,7 @@ public final class TargetAuthority {
         return contacts.selectable();
     }
 
-    public ContactSnapshot select(UUID targetId) {
-        return contacts.select(targetId);
+    public void select(UUID targetId) {
+        contacts.select(targetId);
     }
 }

@@ -1,5 +1,7 @@
 package net.vas.rdp.uav;
 
+import com.norwood.mcheli.aircraft.MCH_EntityAircraft;
+import net.minecraft.world.World;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.common.event.FMLInitializationEvent;
 import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
@@ -79,16 +81,16 @@ public final class RDPUavMod {
         return ORCHESTRATOR.cycleContact(world, aircraft, next);
     }
 
-    public static boolean cycleContact(net.minecraft.world.World world,
-                                       com.norwood.mcheli.aircraft.MCH_EntityAircraft aircraft,
-                                       net.minecraft.entity.player.EntityPlayer operator,
-                                       boolean next) {
-        return ORCHESTRATOR.cycleContact(world, aircraft, operator, next);
+    public static void cycleContact(World world,
+                                    MCH_EntityAircraft aircraft,
+                                    EntityPlayer operator,
+                                    boolean next) {
+        ORCHESTRATOR.cycleContact(world, aircraft, operator, next);
     }
 
-    public static boolean clearContact(net.minecraft.world.World world,
-                                       com.norwood.mcheli.aircraft.MCH_EntityAircraft aircraft) {
-        return ORCHESTRATOR.clearContact(world, aircraft);
+    public static void clearContact(World world,
+                                    MCH_EntityAircraft aircraft) {
+        ORCHESTRATOR.clearContact(world, aircraft);
     }
 
     private static final class ServerTickHandler {

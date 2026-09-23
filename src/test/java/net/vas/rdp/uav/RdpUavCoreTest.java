@@ -155,6 +155,7 @@ public class RdpUavCoreTest {
         assertEquals(1, snapshot.getInclude().size());
         assertEquals("hostile:target", snapshot.getInclude().get(0));
         try {
+            //noinspection DataFlowIssue
             snapshot.getInclude().add("minecraft:player");
             fail("Policy snapshot must be immutable");
         } catch (UnsupportedOperationException expected) {

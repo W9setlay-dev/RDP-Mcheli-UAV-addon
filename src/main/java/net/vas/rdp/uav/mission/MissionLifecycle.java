@@ -1013,7 +1013,7 @@ public final class MissionLifecycle {
                 ? flight.refreshBoundedDetour(aircraft, target.x, guidanceY, target.z,
                 mission.getObservationDistance(), mission.getTargetId())
                 : flight.refreshObservationRoute(aircraft, target.x, guidanceY, target.z,
-                mission.getObservationDistance(), orbit, mission.getTargetId());
+                mission.getObservationDistance(), false, mission.getTargetId());
         if (refreshed) {
             routeRefreshes.put(aircraftId, new RouteRefresh(tick, target.x, guidanceY, target.z));
         }

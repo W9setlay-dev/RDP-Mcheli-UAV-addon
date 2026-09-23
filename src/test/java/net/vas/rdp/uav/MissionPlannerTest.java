@@ -14,7 +14,7 @@ import static org.junit.Assert.assertEquals;
 public class MissionPlannerTest {
     @Test
     public void stationaryTargetCanProgressToExecution() {
-        ContactSnapshot target = observed(ContactLifecycle.TRACKING, 1, 10, 0);
+        ContactSnapshot target = observed();
         MissionPlanner planner = new MissionPlanner();
         assertEquals(MissionPlanDecision.TRACK_TARGET, planner.decide(target, false));
         assertEquals(MissionPlanDecision.EXECUTE_OBJECTIVE, planner.decide(target, true));
@@ -31,10 +31,9 @@ public class MissionPlannerTest {
                 new MissionPlanner().decide(lost, true));
     }
 
-    private static ContactSnapshot observed(ContactLifecycle lifecycle, double x,
-                                            double y, double z) {
+    private static ContactSnapshot observed() {
         ContactTracker tracker = new ContactTracker();
         return tracker.observe(0, UUID.randomUUID(), "minecraft:zombie",
-                x, y, z, 20, 1, lifecycle);
+                1, 10, 0, 20, 1, ContactLifecycle.TRACKING);
     }
 }

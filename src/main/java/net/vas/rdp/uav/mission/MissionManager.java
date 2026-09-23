@@ -41,7 +41,7 @@ public final class MissionManager {
                 || existing.getDimension() != aircraft.dimension;
     }
 
-    public RDPMission create(World world, RDPMission mission) {
+    public void create(World world, RDPMission mission) {
         if (!assignments.reserve(mission.getAircraftId(), mission.getMissionId())) {
             throw new IllegalStateException("AIRCRAFT_ALREADY_ASSIGNED");
         }
@@ -53,7 +53,6 @@ public final class MissionManager {
             }
             RDPMissionWorldData.get(world).add(mission);
             queue.enqueue(mission);
-            return mission;
         } catch (RuntimeException failure) {
             assignments.release(mission.getAircraftId(), mission.getMissionId());
             aircraft.release(mission.getAircraftId());

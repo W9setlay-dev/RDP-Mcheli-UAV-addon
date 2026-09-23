@@ -82,8 +82,8 @@ public final class MissionCoordinator {
         return claim(aircraftId, replacementTargetId, role, coverageZone, force);
     }
 
-    public synchronized boolean release(UUID aircraftId) {
-        if (aircraftId == null) return false;
+    public synchronized void release(UUID aircraftId) {
+        if (aircraftId == null) return;
         Set<UUID> targets = targetsByAircraft.remove(aircraftId);
         if (targets != null) {
             for (UUID targetId : targets) {
@@ -96,12 +96,11 @@ public final class MissionCoordinator {
         }
         rolesByAircraft.remove(aircraftId);
         coverageByAircraft.remove(aircraftId);
-        return true;
     }
 
-    public synchronized boolean release(UUID aircraftId, UUID targetId) {
+    public synchronized void release(UUID aircraftId, UUID targetId) {
         if (aircraftId == null) {
-            return false;
+            return;
         }
         if (targetId != null) {
             UUID assignedAircraft = aircraftByTarget.get(targetId);
@@ -123,7 +122,6 @@ public final class MissionCoordinator {
         if (targetsByAircraft.get(aircraftId) == null) {
             coverageByAircraft.remove(aircraftId);
         }
-        return true;
     }
 
     public synchronized boolean isAssigned(UUID aircraftId, UUID targetId) {

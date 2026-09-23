@@ -14,7 +14,7 @@ import static org.junit.Assert.assertEquals;
 public class TargetVectorGuidanceTest {
     @Test
     public void stationaryTargetProducesDirectVector() {
-        ContactSnapshot target = observe(10, 20, 30, 1);
+        ContactSnapshot target = observe();
         GuidanceVector vector = new TargetVectorGuidance().calculate(
                 0, 0, 0, target, 0);
         assertEquals(10D, vector.getX(), 0D);
@@ -35,8 +35,8 @@ public class TargetVectorGuidanceTest {
         assertEquals(8D, vector.getX(), 0.001D);
     }
 
-    private static ContactSnapshot observe(double x, double y, double z, long tick) {
+    private static ContactSnapshot observe() {
         return new ContactTracker().observe(0, UUID.randomUUID(),
-                "minecraft:zombie", x, y, z, 10, tick, ContactLifecycle.TRACKING);
+                "minecraft:zombie", 10, 20, 30, 10, 1, ContactLifecycle.TRACKING);
     }
 }

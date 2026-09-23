@@ -21,7 +21,7 @@ public final class MissionRepository {
     }
 
     public synchronized List<RDPMission> byOwner(UUID ownerId) {
-        List<RDPMission> result = new ArrayList<RDPMission>();
+        List<RDPMission> result = new ArrayList<>();
         for (RDPMission mission : missions.values()) {
             if (mission.getOwnerId().equals(ownerId)) {
                 result.add(mission);

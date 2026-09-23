@@ -9,6 +9,8 @@ import net.vas.rdp.uav.mission.MissionRepository;
 import net.vas.rdp.uav.mission.RDPMission;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.UUID;
+
 public final class RDPMissionWorldData extends WorldSavedData {
     public static final String DATA_NAME = "rdpuav_missions";
     private final MissionRepository repository = new MissionRepository();
@@ -42,10 +44,9 @@ public final class RDPMissionWorldData extends WorldSavedData {
         markDirty();
     }
 
-    public boolean remove(java.util.UUID missionId) {
+    public void remove(UUID missionId) {
         boolean removed = repository.remove(missionId);
         if (removed) markDirty();
-        return removed;
     }
 
     public void restoreQueued(net.vas.rdp.uav.mission.MissionQueue queue) {

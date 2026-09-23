@@ -18,7 +18,7 @@ public final class GuidedTargetFilter {
                 || Double.isInfinite(maximumRange)) {
             throw new IllegalArgumentException("Filter rules and range are required");
         }
-        this.rules = Collections.unmodifiableList(new ArrayList<Rule>(rules));
+        this.rules = Collections.unmodifiableList(new ArrayList<>(rules));
         this.maximumRange = maximumRange;
     }
 

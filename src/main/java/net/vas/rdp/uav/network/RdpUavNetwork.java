@@ -968,13 +968,10 @@ public final class RdpUavNetwork {
 
                 public TargetTelemetry() { }
 
-                private TargetTelemetry(boolean active, boolean hasPosition, String missionId, String aircraftType,
-                                        String missionState, String targetState, String registryId, String targetUuid,
-                                        String priority, String scanState, String deepScanState, int dimension,
-                                        double x, double y, double z, double distance) {
-                    this(active, hasPosition, missionId, aircraftType, missionState, targetState,
-                            registryId, targetUuid, priority, scanState, deepScanState,
-                            "", "NONE", "none", dimension, x, y, z, distance);
+                private TargetTelemetry(int dimension) {
+                    this(false, false, "", "", "NO TARGET", "NO TARGET",
+                            null, null, "NORMAL", "READY", "OFF",
+                            "", "NONE", "none", dimension, 0, 0, 0, 0);
                 }
 
                 private TargetTelemetry(boolean active, boolean hasPosition, String missionId, String aircraftType,
@@ -998,8 +995,8 @@ public final class RdpUavNetwork {
                     MCH_EntityAircraft ridden = net.vas.rdp.uav.mission.UavControlAccess
                             .findControlledAircraft(player);
                     if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(ridden, player)) {
-                        return new TargetTelemetry(false, false, "", "", "NO TARGET", "NO TARGET",
-                                null, null, "NORMAL", "READY", "OFF", player.dimension, 0, 0, 0, 0);
+                        return new TargetTelemetry(
+                                player.dimension);
                     }
                     java.util.List<net.vas.rdp.uav.mission.RDPMission> missions =
                             net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
@@ -1011,8 +1008,8 @@ public final class RdpUavNetwork {
                             break;
                         }
                     }
-                    if (selected == null) return new TargetTelemetry(false, false, "", "", "NO TARGET", "NO TARGET",
-                            null, null, "NORMAL", "READY", "OFF", player.dimension, 0, 0, 0, 0);
+                    if (selected == null) return new TargetTelemetry(
+                            player.dimension);
 
                     net.minecraft.entity.Entity aircraftEntity = null;
                     for (net.minecraft.entity.Entity entity : player.world.loadedEntityList) {
