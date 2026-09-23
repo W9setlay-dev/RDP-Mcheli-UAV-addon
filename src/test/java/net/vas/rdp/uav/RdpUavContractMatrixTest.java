@@ -105,7 +105,8 @@ public class RdpUavContractMatrixTest {
                 boolean terminal = state == MissionState.COMPLETE
                         || state == MissionState.ABORTED
                         || state == MissionState.FAILED
-                        || state == MissionState.KAMIKADZE_DETONATED;
+                        || state == MissionState.KAMIKADZE_DETONATED
+                        || state == MissionState.AIRCRAFT_LOST;
                 boolean expected = !terminal && (next == MissionState.FAILED
                         || next == MissionState.ABORTED
                         || declaredSuccessor(state, next));
@@ -121,7 +122,7 @@ public class RdpUavContractMatrixTest {
     public void terminalMissionStatesCannotBeResurrected() {
         for (MissionState terminal : new MissionState[] {
                 MissionState.COMPLETE, MissionState.ABORTED, MissionState.FAILED,
-                MissionState.KAMIKADZE_DETONATED }) {
+                MissionState.KAMIKADZE_DETONATED, MissionState.AIRCRAFT_LOST }) {
             assertFalse(terminal.canTransitionTo(MissionState.RETURNING));
             assertFalse(terminal.canTransitionTo(MissionState.COMPLETE));
         }
@@ -624,7 +625,8 @@ public class RdpUavContractMatrixTest {
                     || next == MissionState.KAMIKADZE_TARGET;
             case KAMIKADZE_TARGET: return next == MissionState.ON_TARGET
                     || next == MissionState.RETURNING
-                    || next == MissionState.KAMIKADZE_DETONATED;
+                    || next == MissionState.KAMIKADZE_DETONATED
+                    || next == MissionState.AIRCRAFT_LOST;
             case APPROACHING: return next == MissionState.ON_TARGET
                     || next == MissionState.LOST;
             case ON_TARGET: return next == MissionState.ORBITING

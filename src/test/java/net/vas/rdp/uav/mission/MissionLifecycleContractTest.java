@@ -86,6 +86,25 @@ public class MissionLifecycleContractTest {
     }
 
     @Test
+    public void lostKamikazeAircraftIsNotReportedAsDetonated() {
+        RDPMission mission = mission(0);
+        mission.transitionTo(MissionState.DISPATCHED, 1);
+        mission.transitionTo(MissionState.TAKEOFF, 2);
+        mission.transitionTo(MissionState.CRUISE, 3);
+        mission.transitionTo(MissionState.SEARCHING, 4);
+        mission.transitionTo(MissionState.TARGET_ACQUIRED, 5);
+        mission.lockTarget(UUID.randomUUID(), 6);
+        mission.transitionTo(MissionState.ATTACK_TARGET, 7);
+        mission.transitionTo(MissionState.KAMIKADZE_TARGET, 8);
+        mission.transitionTo(MissionState.AIRCRAFT_LOST, 9,
+                "AIRCRAFT_LOST_BEFORE_EFFECT_CONFIRMATION");
+
+        assertTrue(mission.isTerminal());
+        assertEquals(MissionState.AIRCRAFT_LOST, mission.getState());
+        assertFalse(mission.getState() == MissionState.KAMIKADZE_DETONATED);
+    }
+
+    @Test
     public void transitionReasonSurvivesPersistenceRoundTrip() {
         RDPMission source = mission(12);
         source.abort("OPERATOR_ABORT", 18);

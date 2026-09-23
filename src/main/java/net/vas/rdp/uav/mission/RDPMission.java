@@ -109,7 +109,8 @@ public final class RDPMission {
     public boolean isTerminal() {
         return state == MissionState.COMPLETE || state == MissionState.ABORTED
                 || state == MissionState.FAILED
-                || state == MissionState.KAMIKADZE_DETONATED;
+                || state == MissionState.KAMIKADZE_DETONATED
+                || state == MissionState.AIRCRAFT_LOST;
     }
     public boolean isTimedOut(long tick, long timeoutTicks) {
         if (tick < createdTick || timeoutTicks < 1L) return false;

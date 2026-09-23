@@ -60,6 +60,11 @@ public final class GuiMissionControl extends GuiScreen {
         receiveMissionData(rows, ids, new String[0], new String[0]);
     }
 
+    private boolean selectedMissionIsActionable() {
+        return selected >= 0 && selected < missionRows.length
+                && MissionUiState.isActionable(missionState(missionRows[selected]));
+    }
+
     private static final class TargetSuggestion {
         private final java.util.UUID entityId;
         private final String registryId;
@@ -200,8 +205,8 @@ public final class GuiMissionControl extends GuiScreen {
                     "Clear lock [" + RdpUavClientKeys.clearLockKey() + "]"));
             buttonList.add(new GuiButton(8, right + 105, height - 54, 115, 20,
                     "Nose-dive [" + RdpUavClientKeys.kamikazeKey() + "]"));
-            buttonList.add(new GuiButton(14, left, height - 80, 100, 20, "Clear selected"));
-            buttonList.add(new GuiButton(15, left + 105, height - 80, 100, 20, "Clear all"));
+            buttonList.add(new GuiButton(14, left, height - 80, 100, 20, "Archive selected"));
+            buttonList.add(new GuiButton(15, left + 105, height - 80, 100, 20, "Archive all"));
             buttonList.add(new GuiButton(9, right, height - 80, 100, 20, "Square strike"));
             buttonList.add(new GuiButton(10, right + 105, height - 80, 115, 20,
                     "Entity lock [" + RdpUavClientKeys.entityLockKey() + "]"));
@@ -224,13 +229,13 @@ public final class GuiMissionControl extends GuiScreen {
             buttonList.add(new GuiButton(19, left + 105, height - 132, 100, 20,
                     "Duplicates " + (swarmAllowDuplicates ? "ON" : "OFF")));
         } else if (guidedMode) {
-            buttonList.add(new GuiButton(3, left, height - 54, 100, 20, "Guide selected"));
-            buttonList.add(new GuiButton(4, left + 105, height - 54, 100, 20, "Abort guide"));
+            buttonList.add(new GuiButton(3, left, height - 54, 100, 20, "Authorize mission"));
+            buttonList.add(new GuiButton(4, left + 105, height - 54, 100, 20, "Abort mission"));
             buttonList.add(new GuiButton(10, right, height - 54, 110, 20,
                     "Entity lock [" + RdpUavClientKeys.entityLockKey() + "]"));
             buttonList.add(new GuiButton(9, right + 115, height - 54, 105, 20,
                     "Area [" + RdpUavClientKeys.areaLockKey() + "]"));
-            buttonList.add(new GuiButton(13, left, height - 80, 100, 20, "Take player control"));
+            buttonList.add(new GuiButton(13, left, height - 80, 100, 20, "Release AI control"));
             buttonList.add(new GuiButton(14, left + 105, height - 80, 100, 20, "Weapon details"));
             buttonList.add(new GuiButton(23, right, height - 106, 220, 20,
                     guidedWeaponButtonLabel()));
@@ -252,6 +257,21 @@ public final class GuiMissionControl extends GuiScreen {
                     (i == selected ? "> " : "  ") + missionRows[i]));
             shown++;
         }
+        boolean actionable = selectedMissionIsActionable();
+        boolean hasSelection = selected >= 0 && selected < missionRows.length;
+        for (GuiButton button : buttonList) {
+            if (button.id == 3 || button.id == 4 || button.id == 8
+                    || button.id == 13 || button.id == 16 || button.id == 24
+                    || button.id == 25) {
+                button.enabled = actionable;
+            } else if (button.id == 14) {
+                // Terminal records can still be archived.
+                button.enabled = hasSelection;
+            } else if (button.id == 9) {
+                // A new area mission is independent of the selected record.
+                button.enabled = true;
+            }
+        }
     }
 
     private void refreshMode() {
@@ -268,7 +288,11 @@ public final class GuiMissionControl extends GuiScreen {
             if (aircraft == null || aircraft.getWeapons() == null) return;
             for (MCH_WeaponSet weapon : aircraft.getWeapons()) {
                 if (weapon == null || weapon.getInfo() == null) continue;
-                if (GuidedWeaponRegistry.find(weapon.getName(), weapon.getInfo().type) == null) continue;
+                net.vas.rdp.uav.weapon.GuidedWeaponCapability capability =
+                        GuidedWeaponRegistry.find(weapon.getName(), weapon.getInfo().type);
+                if (capability == null
+                        || capability.getBehavior()
+                        == net.vas.rdp.uav.weapon.GuidedNativeBehavior.UNSUPPORTED) continue;
                 if (weapon.getAmmo() > 0 || weapon.getAmmoReserve() > 0) {
                     guidedMode = true;
                     guidanceSummary = weapon.getName() + " / " + weapon.getInfo().type
@@ -296,14 +320,22 @@ public final class GuiMissionControl extends GuiScreen {
         String query = filterField == null ? "" : filterField.getText().trim().toLowerCase(java.util.Locale.ROOT);
         if (!query.isEmpty() && !normalized.contains(query)) return true;
         if (filterMode == 1) {
-            return normalized.contains("complete") || normalized.contains("aborted")
-                    || normalized.contains("failed") || normalized.contains("detonated");
+            return MissionUiState.isTerminal(missionState(row))
+                    || "OUTCOME_UNKNOWN".equals(missionState(row));
         }
         if (filterMode == 2) {
-            return !normalized.contains("failed") && !normalized.contains("lost")
+            return !MissionUiState.isTerminal(missionState(row))
+                    && !"OUTCOME_UNKNOWN".equals(missionState(row))
+                    && !normalized.contains("failed") && !normalized.contains("lost")
                     && !normalized.contains("out");
         }
         return false;
+    }
+
+    private String missionState(String row) {
+        if (row == null) return "";
+        String[] fields = row.trim().split("\\s+");
+        return fields.length < 2 ? "" : fields[1];
     }
 
     private void requestData() { RdpUavNetwork.requestMissionData(); }
@@ -369,8 +401,8 @@ public final class GuiMissionControl extends GuiScreen {
         else if (button.id == 2) mc.displayGuiScreen(null);
         else if (button.id == 3) confirmDangerAction("authorize", GuiMissionControl::authorizeSelected, "Authorizing the selected mission will arm server-side controls.");
         else if (button.id == 4) confirmDangerAction("abort", GuiMissionControl::abortSelected, "Aborting this mission will end the active task.");
-        else if (button.id == 14) confirmDangerAction("clear-selected", GuiMissionControl::clearSelected, "Clear the selected mission record?");
-        else if (button.id == 15) confirmDangerAction("clear-all", GuiMissionControl::clearAll, "Clear all of your mission records?");
+        else if (button.id == 14) confirmDangerAction("clear-selected", GuiMissionControl::clearSelected, "Archive the selected mission record? It remains in server history.");
+        else if (button.id == 15) confirmDangerAction("clear-all", GuiMissionControl::clearAll, "Archive all of your mission records? They remain in server history.");
         else if (button.id == 16) confirmDangerAction("return-to-base", GuiMissionControl::returnSelected, "Request native McHeli return and landing for the selected mission?");
         else if (button.id == 5) createEntityMission(false);
         else if (button.id == 6) confirmDangerAction("attack", () -> createEntityMission(true), "Launch an autonomous hostile-target attack?");
@@ -467,10 +499,13 @@ public final class GuiMissionControl extends GuiScreen {
             rebuildButtons();
             return;
         }
-        RdpUavNetwork.createMission(target, attack, targetPriority,
-                selectedGuidedWeaponName());
-        status = attack ? "Autonomous attack submitted; WingMan arms after target lock."
-                : "Recon mission submitted.";
+        definition.setGuidedWeapon(selectedGuidedWeaponName());
+        if (RdpUavNetwork.launchMissionDefinition(definition)) {
+            status = attack ? "Versioned autonomous attack submitted for server validation."
+                    : "Versioned reconnaissance mission submitted for server validation.";
+        } else {
+            status = "Mission definition rejected before submission.";
+        }
     }
 
     private String targetPriorityLabel() {
@@ -619,15 +654,17 @@ public final class GuiMissionControl extends GuiScreen {
             int y = panelTop + 20;
             for (String row : missionRows) {
                 if (matchesFilter(row)) continue;
-                drawString(fontRenderer, row, left, y, 0xFFFFFF);
+                drawString(fontRenderer, fontRenderer.trimStringToWidth(row, 205), left, y, 0xFFFFFF);
                 y += 17;
                 if (y > height - 124) break;
             }
         }
         drawString(fontRenderer, "SELECTED MISSION", right, panelTop + 2, 0xB0D8FF);
         if (selected >= 0 && selected < missionRows.length) {
-            drawString(fontRenderer, missionRows[selected], right, panelTop + 20, 0xFFFFFF);
-            drawString(fontRenderer, "ID: " + missionIds[selected], right, panelTop + 35, 0xAAAAAA);
+            drawString(fontRenderer, fontRenderer.trimStringToWidth(missionRows[selected], 220),
+                    right, panelTop + 20, 0xFFFFFF);
+            drawString(fontRenderer, fontRenderer.trimStringToWidth(
+                    "ID: " + missionIds[selected], 220), right, panelTop + 35, 0xAAAAAA);
         } else {
             drawString(fontRenderer, "Select a mission to inspect.", right, panelTop + 20, 0xAAAAAA);
         }

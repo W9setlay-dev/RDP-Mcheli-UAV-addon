@@ -26,6 +26,8 @@ public enum MissionState {
     IMPACT_OBSERVED,
     EFFECT_CONFIRMED,
     OUTCOME_UNKNOWN,
+    /** The aircraft was lost before the payload effect could be observed. */
+    AIRCRAFT_LOST,
     /** Legacy name retained for persisted missions; no longer terminal. */
     DIRECT_LAUNCH_COMPLETE,
     HOLDING,
@@ -43,7 +45,7 @@ public enum MissionState {
 
     public boolean canTransitionTo(MissionState next) {
         if (next == null || this == COMPLETE || this == ABORTED || this == FAILED
-                || this == KAMIKADZE_DETONATED) {
+                || this == KAMIKADZE_DETONATED || this == AIRCRAFT_LOST) {
             return false;
         }
         if (next == FAILED || next == ABORTED) {
@@ -81,7 +83,7 @@ public enum MissionState {
             case ATTACK_TARGET: return next == APPROACHING || next == ON_TARGET
                     || next == RETURNING || next == KAMIKADZE_TARGET;
             case KAMIKADZE_TARGET: return next == ON_TARGET || next == RETURNING
-                    || next == KAMIKADZE_DETONATED;
+                    || next == KAMIKADZE_DETONATED || next == AIRCRAFT_LOST;
             case APPROACHING: return next == ON_TARGET || next == LOST;
             case ON_TARGET: return next == ORBITING || next == SCANNING;
             case ORBITING: return next == SCANNING;

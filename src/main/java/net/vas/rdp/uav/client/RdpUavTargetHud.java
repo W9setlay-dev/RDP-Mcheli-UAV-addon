@@ -49,7 +49,8 @@ public final class RdpUavTargetHud {
                         event.getResolution().getScaledHeight(), alert);
             }
         }
-        if (RdpUavHudConfig.markerVisible && telemetry.hasPosition) drawMarker(mc,
+        if (RdpUavHudConfig.markerVisible && telemetry.hasPosition
+                && MissionUiState.isMarkerVisible(telemetry.missionState, telemetry.markerState)) drawMarker(mc,
                 event.getResolution().getScaledWidth(), event.getResolution().getScaledHeight());
     }
 

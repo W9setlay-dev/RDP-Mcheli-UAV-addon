@@ -364,7 +364,16 @@ public final class MissionLifecycle {
             MCH_EntityAircraft aircraft = findAircraft(world, mission.getAircraftId());
             if (aircraft == null) {
                 if (mission.getState() == MissionState.KAMIKADZE_TARGET) {
-                    mission.markKamikazeDetonated(tick);
+                    // Destruction/removal is not evidence that the self-destruct
+                    // payload fired or that a world effect was produced.
+                    mission.transitionTo(MissionState.AIRCRAFT_LOST, tick,
+                            "AIRCRAFT_LOST_BEFORE_EFFECT_CONFIRMATION");
+                    RdpUavDebug.event("TerminalGuidance", "AIRCRAFT_LOST",
+                            "mission", mission.getMissionId(),
+                            "aircraft", mission.getAircraftId(),
+                            "target", mission.getTargetId(),
+                            "tick", tick,
+                            "reason", "EFFECT_NOT_CONFIRMED");
                     manager.release(mission);
                     dirty = true;
                     continue;
@@ -1406,7 +1415,8 @@ public final class MissionLifecycle {
 
     private boolean terminal(MissionState state) {
         return state == MissionState.COMPLETE || state == MissionState.ABORTED
-                || state == MissionState.FAILED || state == MissionState.KAMIKADZE_DETONATED;
+                || state == MissionState.FAILED || state == MissionState.KAMIKADZE_DETONATED
+                || state == MissionState.AIRCRAFT_LOST;
     }
 
     private static final class Target {

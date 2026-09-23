@@ -27,6 +27,9 @@ The architecture and audit notes for this rework are recorded in `docs/`:
 - `docs/phase-b-profile-capabilities.md`
 - `docs/phase-c-weapon-payload-rework.md`
 - `docs/phase-d-authority-persistence-rework.md`
+- `docs/phase-e-ui-hud-rework.md`
+- `docs/phase-f-validation-and-feature-overlap.md`
+- `docs/ai-lock-movement-validation.md`
 - `docs/changelog.md`
 
 This keeps the project grounded in the actual McHeliCE/WingMan mission boundary and makes the hostile-world utility case explicit rather than relying on unsupported AI rhetoric.

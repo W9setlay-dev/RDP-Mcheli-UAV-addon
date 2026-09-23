@@ -1026,12 +1026,14 @@ public final class RdpUavNetwork {
                             == net.vas.rdp.uav.target.TargetSelectionMode.POINT;
                     boolean targetStateRequiresEntity = !point && selected.getTargetId() != null;
                     boolean lost = targetStateRequiresEntity && target == null;
-                    boolean locked = selected.getState() == net.vas.rdp.uav.mission.MissionState.TARGET_LOCKED
+                    boolean terminal = selected.isTerminal();
+                    boolean locked = !terminal && (selected.getState() == net.vas.rdp.uav.mission.MissionState.TARGET_LOCKED
                             || selected.getState() == net.vas.rdp.uav.mission.MissionState.ATTACK_TARGET
-                            || selected.getState() == net.vas.rdp.uav.mission.MissionState.KAMIKADZE_TARGET;
+                            || selected.getState() == net.vas.rdp.uav.mission.MissionState.KAMIKADZE_TARGET);
                     boolean noCandidate = selected.getState()
                             == net.vas.rdp.uav.mission.MissionState.WAITING_FOR_TARGET;
-                    String targetState = noCandidate ? "NO_CANDIDATE"
+                    String targetState = terminal ? "MISSION_TERMINAL"
+                            : noCandidate ? "NO_CANDIDATE"
                             : lost ? "TARGET_LOST"
                             : locked ? "TARGET_LOCKED"
                             : selected.getState() == net.vas.rdp.uav.mission.MissionState.SEARCHING
@@ -1058,7 +1060,7 @@ public final class RdpUavNetwork {
                     String wingmanNode = wingman == null || wingman.mission == null ? "none"
                             : wingman.missionIndex + "/" + wingman.mission.size()
                             + (wingman.currentNode() == null ? "" : " " + wingman.currentNode().type.name());
-                    TargetTelemetry telemetry = new TargetTelemetry(true, !lost && (point || target != null), selected.getMissionId().toString(),
+                    TargetTelemetry telemetry = new TargetTelemetry(true, !terminal && !lost && (point || target != null), selected.getMissionId().toString(),
                             selected.getAircraftType(), selected.getState().name(), targetState, registry,
                             selected.getTargetId() == null ? null : selected.getTargetId().toString(),
                             selected.getTargetPriority().name(), scan, deep,
@@ -1079,7 +1081,7 @@ public final class RdpUavNetwork {
                         telemetry.elevation = contact.getElevation();
                         telemetry.visible = contact.isVisible();
                         telemetry.lifecycle = contact.getLifecycle().name();
-                        telemetry.markerState = contact.getMarkerState();
+                        telemetry.markerState = terminal ? "HIDDEN" : contact.getMarkerState();
                         if (aircraftEntity != null
                                 && telemetry.bearing == 0.0D && telemetry.elevation == 0.0D) {
                             double dx = tx - aircraftEntity.posX;
@@ -1711,13 +1713,8 @@ public final class RdpUavNetwork {
                     rejectTargetLock(player, aircraft, message.targetId, "OPERATOR_AUTHORIZATION");
                     return;
                 }
-                if (!message.clear && (message.targetId == null
-                        || message.targetId.trim().isEmpty())
-                        && KamikazePilotOverride.targetFor(aircraft.getUniqueID()) != null) {
-                    clearTargetLock(player, aircraft);
-                    return;
-                }
-                if (message.clear) {
+                if (message.clear || (message.targetId == null
+                        || message.targetId.trim().isEmpty())) {
                     clearTargetLock(player, aircraft);
                     return;
                 }
@@ -1786,7 +1783,7 @@ public final class RdpUavNetwork {
                     player.sendMessage(new net.minecraft.util.text.TextComponentString(
                             "UAV target lock accepted for "
                                     + key
-                                    + ". Press the target-lock key again to restore player control."));
+                                    + ". Use Clear lock to release AI control."));
                     RdpUavDebug.event("TargetLock", "ACCEPTED",
                             "player", player.getUniqueID(), "aircraft", aircraft.getUniqueID(),
                             "target", target.getUniqueID(), "registryId", key.toString(),
