@@ -31,6 +31,12 @@ The phase plan is now internally consistent for source-level behavior:
 - one-way square strikes require the configured terminal payload path;
 - point and square targets remain distinct coordinate objectives;
 - client marker rendering does not become targeting authority.
+- clear-lock/release-AI remains available from an operator-controlled
+  aircraft even when the selected mission is terminal or absent;
+- square-strike packet validation now returns explicit operator-facing
+  rejection reasons for missing authorization and malformed parameters.
+- square-strike packet weapon assignment is applied only to a mission created
+  by that request; a rejected request cannot mutate an older active mission.
 
 The plan is **not** complete for runtime acceptance. Packet delivery, native
 WingMan movement, collision ordering, projectile/effect callbacks, GUI

@@ -8,10 +8,14 @@ ownership converge without duplicate launches.
 - Mission queue restoration now recognizes membership correctly. Queue
   insertion is idempotent, so repeated world-load hooks cannot dispatch the
   same mission twice.
+- Restored queued missions are now actually re-enqueued after world reload;
+  the restoration guard rejects only missions already present in memory.
 - Active persisted missions re-claim their durable target UUID during manager
   restoration. A conflicting target claim fails explicitly with
   `TARGET_RESTORE_CONFLICT` instead of allowing two missions to act on one
   target.
+- All terminal states, including `AIRCRAFT_LOST`, are excluded from restored
+  assignment reservations.
 - Clearing missions aborts and releases them but retains terminal records,
   transition reasons, and failure/audit state in `WorldSavedData`.
 - Existing packet handlers continue to receive client intent only; mission

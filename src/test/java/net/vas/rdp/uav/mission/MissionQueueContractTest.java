@@ -24,6 +24,17 @@ public class MissionQueueContractTest {
         assertFalse(queue.contains(mission));
     }
 
+    @Test
+    public void queuedMissionCanBeReenqueuedAfterDispatchQueueRecreation() {
+        MissionManager manager = new MissionManager();
+        RDPMission mission = mission();
+
+        manager.enqueueQueuedMission(mission);
+
+        assertSame(mission, manager.peekQueuedMission());
+        assertEquals(1, manager.queuedMissionCount());
+    }
+
     private static RDPMission mission() {
         return new RDPMission(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
                 "switchblade", MissionType.RECONNAISSANCE,

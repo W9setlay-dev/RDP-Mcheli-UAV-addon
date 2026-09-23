@@ -77,9 +77,7 @@ public final class MissionManager {
     public void restoreAssignments(World world) {
         if (world == null) return;
         for (RDPMission mission : RDPMissionWorldData.get(world).getRepository().snapshot()) {
-            if (mission.getState() == MissionState.COMPLETE
-                    || mission.getState() == MissionState.ABORTED
-                    || mission.getState() == MissionState.FAILED) {
+            if (mission.isTerminal()) {
                 continue;
             }
             assignments.reserve(mission.getAircraftId(), mission.getMissionId());
@@ -104,7 +102,7 @@ public final class MissionManager {
     }
 
     public void enqueueQueuedMission(RDPMission mission) {
-        if (mission != null && mission.isQueued() && queue.contains(mission)) {
+        if (mission != null && mission.isQueued() && !queue.contains(mission)) {
             queue.enqueue(mission);
         }
     }

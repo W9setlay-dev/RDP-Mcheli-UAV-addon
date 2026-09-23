@@ -1666,21 +1666,46 @@ public final class RdpUavNetwork {
             Objects.requireNonNull(player.getServer()).addScheduledTask(() -> {
                 MCH_EntityAircraft aircraft =
                         net.vas.rdp.uav.mission.UavControlAccess.findControlledAircraft(player);
-                if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, player)
-                        || message.parameters == null
-                        || !message.parameters.matches("-?[0-9.]+\\s+-?[0-9.]+\\s+-?[0-9.]+(\\s+[0-9.]+)?")) {
+                if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, player)) {
+                    player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                            "Square strike rejected: operator aircraft is unavailable."));
+                    return;
+                }
+                String parameters = message.parameters == null ? "" : message.parameters.trim();
+                String[] values = parameters.isEmpty() ? new String[0] : parameters.split("\\s+");
+                if (values.length < 3 || values.length > 4) {
+                    player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                            "Square strike rejected: use centerX centerY centerZ [size]."));
+                    return;
+                }
+                try {
+                    for (String value : values) {
+                        if (!Double.isFinite(Double.parseDouble(value))) {
+                            throw new NumberFormatException("non-finite");
+                        }
+                    }
+                } catch (NumberFormatException invalid) {
+                    player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                            "Square strike rejected: coordinates and size must be finite numbers."));
                     return;
                 }
 
+                java.util.Set<java.util.UUID> existingMissionIds = new java.util.HashSet<>();
+                for (net.vas.rdp.uav.mission.RDPMission mission :
+                        net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
+                                .getRepository().byOwner(player.getUniqueID())) {
+                    existingMissionIds.add(mission.getMissionId());
+                }
                 Objects.requireNonNull(player.getServer()).getCommandManager().executeCommand(player,
-                        "rdpuav mission square " + message.parameters);
+                        "rdpuav mission square " + parameters);
                 if (message.weapon != null && !message.weapon.trim().isEmpty()) {
                     java.util.List<net.vas.rdp.uav.mission.RDPMission> missions =
                             net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
                                     .getRepository().byOwner(player.getUniqueID());
                     for (int i = missions.size() - 1; i >= 0; i--) {
                         net.vas.rdp.uav.mission.RDPMission mission = missions.get(i);
-                        if (mission.getAircraftId().equals(aircraft.getUniqueID())
+                        if (!existingMissionIds.contains(mission.getMissionId())
+                                && mission.getAircraftId().equals(aircraft.getUniqueID())
                                 && !mission.isTerminal()) {
                             mission.setGuidedWeapon(message.weapon);
                             net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)

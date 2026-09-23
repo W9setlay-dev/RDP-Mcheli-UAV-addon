@@ -50,8 +50,11 @@ public final class RDPMissionWorldData extends WorldSavedData {
     }
 
     public void restoreQueued(net.vas.rdp.uav.mission.MissionQueue queue) {
+        if (queue == null) {
+            throw new IllegalArgumentException("Mission queue is required");
+        }
         for (RDPMission mission : repository.snapshot()) {
-            if (mission.isQueued() && queue.contains(mission)) queue.enqueue(mission);
+            if (mission.isQueued() && !queue.contains(mission)) queue.enqueue(mission);
         }
     }
 

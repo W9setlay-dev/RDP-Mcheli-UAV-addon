@@ -259,17 +259,23 @@ public final class GuiMissionControl extends GuiScreen {
         }
         boolean actionable = selectedMissionIsActionable();
         boolean hasSelection = selected >= 0 && selected < missionRows.length;
+        boolean hasControlledAircraft = mc != null && mc.player != null
+                && UavControlAccess.findControlledAircraft(mc.player) != null;
         for (GuiButton button : buttonList) {
             if (button.id == 3 || button.id == 4 || button.id == 8
-                    || button.id == 13 || button.id == 16 || button.id == 24
+                    || button.id == 16 || button.id == 24
                     || button.id == 25) {
                 button.enabled = actionable;
+            } else if (button.id == 13) {
+                // Lock release is an aircraft action, not an action on the
+                // currently selected mission record.
+                button.enabled = hasControlledAircraft;
             } else if (button.id == 14) {
                 // Terminal records can still be archived.
                 button.enabled = hasSelection;
             } else if (button.id == 9) {
                 // A new area mission is independent of the selected record.
-                button.enabled = true;
+                button.enabled = uavMode;
             }
         }
     }
