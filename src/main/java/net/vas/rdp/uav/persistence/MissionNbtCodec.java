@@ -11,11 +11,13 @@ import net.vas.rdp.uav.target.TargetSpec;
 import java.util.UUID;
 
 public final class MissionNbtCodec {
+    private static final int CURRENT_SCHEMA = 2;
     private MissionNbtCodec() {
     }
 
     public static NBTTagCompound write(RDPMission mission) {
         NBTTagCompound tag = new NBTTagCompound();
+        tag.setInteger("schemaVersion", CURRENT_SCHEMA);
         tag.setString("missionId", mission.getMissionId().toString());
         tag.setString("ownerId", mission.getOwnerId().toString());
         tag.setString("aircraftId", mission.getAircraftId().toString());
@@ -65,8 +67,22 @@ public final class MissionNbtCodec {
                 : TargetSpec.point(tag.getDouble("targetX"), tag.getDouble("targetY"),
                         tag.getDouble("targetZ"), TargetPriority.valueOf(tag.getString("priority")));
         String targetUuid = tag.getString("targetUuid");
-        String failure = tag.getString("failureReason");
+        String failureReason = tag.getString("failureReason");
         String report = tag.getString("reportId");
+        int schemaVersion = tag.hasKey("schemaVersion") ? tag.getInteger("schemaVersion") : 1;
+        String stateName = tag.getString("state");
+        MissionState restoredState;
+        try {
+            restoredState = MissionState.valueOf(stateName);
+        } catch (IllegalArgumentException failure) {
+            restoredState = MissionState.FAILED;
+        }
+        // v1 used DIRECT_LAUNCH_COMPLETE for an accepted release. It did not
+        // prove impact, so migrate it to the new non-terminal state.
+        if (schemaVersion < CURRENT_SCHEMA
+                && restoredState == MissionState.DIRECT_LAUNCH_COMPLETE) {
+            restoredState = MissionState.LAUNCH_ACCEPTED;
+        }
         RDPMission mission = RDPMission.restore(UUID.fromString(tag.getString("missionId")),
                 UUID.fromString(tag.getString("ownerId")),
                 UUID.fromString(tag.getString("aircraftId")),
@@ -75,9 +91,9 @@ public final class MissionNbtCodec {
                 tag.getBoolean("attack"), tag.getBoolean("eliminateAllCost"),
                 tag.getBoolean("deepScan"), tag.getDouble("searchRadius"),
                 tag.getDouble("observationDistance"), tag.getLong("createdTick"),
-                MissionState.valueOf(tag.getString("state")),
+                restoredState,
                 targetUuid.isEmpty() ? null : UUID.fromString(targetUuid),
-                tag.getLong("lastUpdateTick"), failure.isEmpty() ? null : failure,
+                tag.getLong("lastUpdateTick"), failureReason.isEmpty() ? null : failureReason,
                 report.isEmpty() ? null : report);
         mission.setDimension(tag.getInteger("dimension"));
         if (tag.hasKey("squareWidth") && tag.hasKey("squareDepth")

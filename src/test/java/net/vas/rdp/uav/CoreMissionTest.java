@@ -114,6 +114,12 @@ public final class CoreMissionTest {
         check(nodes.size() == 9, "square creates two native nodes and one attack per pass");
         check(nodes.get(2).type == MissionNode.Type.ATTACK, "square pass ends with attack node");
         check(nodes.get(3).type == MissionNode.Type.FLY_TO, "square alternates into next pass");
+        check(Math.abs(nodes.get(0).x - 70.0D) < 1.0E-6,
+                "square preserves the X offset for the first leg");
+        check(Math.abs(nodes.get(0).z - (-80.0D)) < 1.0E-6,
+                "square preserves the Z offset for the first leg");
+        check(Math.abs(nodes.get(1).x - 130.0D) < 1.0E-6,
+                "square preserves the second leg X coordinate");
         boolean rejected = false;
         try {
             new SquareStrikePlan(0, 100, 0, 10, 10, 0, 20, 5, 1);

@@ -514,12 +514,19 @@ public final class WingManFlightAdapter {
         return -1;
     }
 
-    public boolean hasFuelForMission(MCH_EntityAircraft aircraft) {
+    /** Returns true only when the aircraft is below the mission reserve. */
+    public boolean isFuelInsufficientForMission(MCH_EntityAircraft aircraft) {
         if (aircraft == null) return true;
         if (UavEnergyHandler.hasOperatingEnergy(aircraft)) return false;
         if (!aircraft.canUseFuel()) return false;
         return aircraft.getMaxFuel() <= 0
                 || aircraft.getFuel() <= Math.max(1, aircraft.getMaxFuel() / 5);
+    }
+
+    /** @deprecated use {@link #isFuelInsufficientForMission(MCH_EntityAircraft)}. */
+    @Deprecated
+    public boolean hasFuelForMission(MCH_EntityAircraft aircraft) {
+        return isFuelInsufficientForMission(aircraft);
     }
 
     public boolean hasAttackAmmunition(MCH_EntityAircraft aircraft) {
@@ -654,18 +661,45 @@ public final class WingManFlightAdapter {
                     "minimumDistance", metrics.getMinimumDistance(),
                     "phase", phase, "controlOwner", controlOwner);
         }
-        entry.mission = new ArrayList<>();
-        entry.mission.add(MissionNode.flyTo(solution.getX(), safeY, solution.getZ()));
-        entry.missionIndex = 0;
-        entry.missionNodeTimer = 0;
+        int activeIndex = entry.missionIndex;
+        MissionNode current = entry.currentNode();
+        if (current == null) {
+            entry.mission = new ArrayList<>();
+            entry.mission.add(MissionNode.flyTo(solution.getX(), safeY, solution.getZ()));
+            entry.missionIndex = 0;
+            activeIndex = 0;
+        } else if (current.type != MissionNode.Type.FLY_TO) {
+            RdpUavDebug.event("TerminalGuidance", "WAYPOINT_UPDATE_REJECTED",
+                    "mission", missionId, "aircraft", aircraftId, "target", target.getUniqueID(),
+                    "tick", tick, "reason", "NATIVE_NODE_NOT_FLY_TO",
+                    "node", current.type, "missionIndex", entry.missionIndex);
+            return;
+        } else {
+            double waypointDx = solution.getX() - current.x;
+            double waypointDy = safeY - current.y;
+            double waypointDz = solution.getZ() - current.z;
+            if (waypointDx * waypointDx + waypointDy * waypointDy + waypointDz * waypointDz
+                    < 4.0D) {
+                return;
+            }
+            // MissionNode is immutable, but replacing only the active node
+            // preserves WingMan's route suffix, mission index, and timer.
+            entry.mission.set(activeIndex, MissionNode.flyTo(
+                    solution.getX(), safeY, solution.getZ()));
+        }
         entry.currentAutoTarget = target.getUniqueID();
         entry.autoTargetX = solution.getX();
         entry.autoTargetY = safeY;
         entry.autoTargetZ = solution.getZ();
-        entry.autoState = AutonomousState.ENROUTE;
         int replacements = terminalWaypointReplacements.containsKey(aircraftId)
                 ? terminalWaypointReplacements.get(aircraftId) + 1 : 1;
         terminalWaypointReplacements.put(aircraftId, replacements);
+        RdpUavDebug.event("TerminalGuidance", "WAYPOINT_UPDATE_ACCEPTED",
+                "mission", missionId, "aircraft", aircraftId, "target", target.getUniqueID(),
+                "tick", tick, "missionIndex", activeIndex,
+                "nodeTimer", entry.missionNodeTimer,
+                "routeSize", entry.mission == null ? 0 : entry.mission.size(),
+                "replacements", replacements);
         emitTerminalDiagnostics(aircraft, target, entry, tick, missionId, phase,
                 controlOwner, replacements, solution);
         if (isFpv(aircraft)) {

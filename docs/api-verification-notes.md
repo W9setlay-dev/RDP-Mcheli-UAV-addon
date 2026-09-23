@@ -79,14 +79,17 @@ The project uses dependency-free Java tests to validate mission-state transition
 
 `GuidedWeaponRegistry` is configuration-driven and keyed by the McHeli
 weapon-set definition and `MCH_WeaponInfo.type`. The verified native mapping is
-`aamissile`/`atmissile` entity seeker and `asmissile`/`tvmissile`
-coordinate/TV/laser. `GuidedWeaponAdapter` validates ammunition, objective form, speed policy, and
-server safety before dispatch. Entity seekers resolve the locked UUID in the
-loaded server world, assign it through the native guidance system, and invoke
-`MCH_WeaponSet.use(...)`; a missing lock is rejected as
-`GUIDED_TARGET_LOST`. Coordinate/TV/laser definitions retain WingMan's native
-coordinate behavior. It does not create, steer, teleport, or mutate
-projectiles. Unsupported definition/type/objective combinations are rejected.
+`aamissile`/`atmissile` entity seekers and `asmissile` coordinate/ballistic.
+`atmissile` is entity-only until a native square-coordinate contract is
+verified. `tvmissile` is intentionally unsupported by the default AI
+capability matrix: its wire/laser control path is not evidence of an
+autonomous coordinate handoff. `GuidedWeaponAdapter` validates ammunition,
+objective form, speed policy, and server safety before dispatch. Entity seekers
+resolve the locked UUID in the loaded server world, assign it through the
+native guidance system, and invoke `MCH_WeaponSet.use(...)`; a missing lock is
+rejected as `GUIDED_TARGET_LOST`. Unsupported definition/type/objective
+combinations are rejected rather than presented as working autonomous
+guidance. The adapter does not create, steer, teleport, or mutate projectiles.
 ## Rework safety boundaries
 
 The addon now keeps target filtering server-authoritative: vehicle-classified

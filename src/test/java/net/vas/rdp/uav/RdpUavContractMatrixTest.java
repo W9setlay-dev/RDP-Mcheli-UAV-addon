@@ -600,8 +600,25 @@ public class RdpUavContractMatrixTest {
             case TARGET_LOCKED: return next == MissionState.APPROACHING
                     || next == MissionState.ATTACK_TARGET
                     || next == MissionState.KAMIKADZE_TARGET
+                    || next == MissionState.LAUNCH_ACCEPTED
                     || next == MissionState.DIRECT_LAUNCH_COMPLETE
                     || next == MissionState.LOST;
+            case LAUNCH_ACCEPTED: return next == MissionState.PROJECTILE_TRACKED
+                    || next == MissionState.IMPACT_OBSERVED
+                    || next == MissionState.OUTCOME_UNKNOWN;
+            case PROJECTILE_TRACKED: return next == MissionState.IMPACT_OBSERVED
+                    || next == MissionState.EFFECT_CONFIRMED
+                    || next == MissionState.OUTCOME_UNKNOWN;
+            case IMPACT_OBSERVED: return next == MissionState.EFFECT_CONFIRMED
+                    || next == MissionState.OUTCOME_UNKNOWN
+                    || next == MissionState.RETURNING;
+            case EFFECT_CONFIRMED: return next == MissionState.RETURNING
+                    || next == MissionState.COMPLETE;
+            case OUTCOME_UNKNOWN: return next == MissionState.RETURNING
+                    || next == MissionState.COMPLETE;
+            case DIRECT_LAUNCH_COMPLETE: return next == MissionState.LAUNCH_ACCEPTED
+                    || next == MissionState.PROJECTILE_TRACKED
+                    || next == MissionState.OUTCOME_UNKNOWN;
             case ATTACK_TARGET: return next == MissionState.APPROACHING
                     || next == MissionState.ON_TARGET || next == MissionState.RETURNING
                     || next == MissionState.KAMIKADZE_TARGET;

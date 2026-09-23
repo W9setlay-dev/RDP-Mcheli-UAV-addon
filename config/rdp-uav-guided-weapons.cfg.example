@@ -14,7 +14,7 @@ noOrbit=true
 type=atmissile
 supportsUnloadedTargetExecution=false
 behavior=ENTITY_SEEKER
-objectives=ENTITY,SQUARE
+objectives=ENTITY
 maximumAircraftSpeed=0
 minimumAltitude=0
 maximumAltitude=4096
@@ -24,7 +24,7 @@ noOrbit=true
 type=asmissile
 supportsUnloadedTargetExecution=false
 behavior=COORDINATE_BALLISTIC
-objectives=ENTITY,SQUARE
+objectives=SQUARE
 maximumAircraftSpeed=0
 minimumAltitude=0
 maximumAltitude=4096
@@ -35,16 +35,15 @@ coordinateCorrectionInterval=2
 [weapon.tvmissile]
 type=tvmissile
 supportsUnloadedTargetExecution=false
-behavior=COORDINATE_TV_LASER
-objectives=ENTITY,SQUARE
+behavior=UNSUPPORTED
+objectives=
 maximumAircraftSpeed=0
 minimumAltitude=0
 maximumAltitude=4096
 noOrbit=true
 
-# An active authorized mission owns TV guidance even when the player is
-# viewing the missile camera. Abort clears the AI ownership and returns to
-# native player guidance where McHeli supports it.
+# TV/wire guidance is intentionally unsupported for autonomous AI until the
+# concrete McHeli weapon definition proves an AI laser/control handoff.
 # COORDINATE_BALLISTIC preserves the weapon's native gravity and collision;
 # the addon only validates the release corridor and submits the target point.
 

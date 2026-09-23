@@ -20,6 +20,13 @@ public enum MissionState {
     SCANNING,
     DEEP_SCANNING,
     REPORTING,
+    /** Native launch was accepted; outcome is not established yet. */
+    LAUNCH_ACCEPTED,
+    PROJECTILE_TRACKED,
+    IMPACT_OBSERVED,
+    EFFECT_CONFIRMED,
+    OUTCOME_UNKNOWN,
+    /** Legacy name retained for persisted missions; no longer terminal. */
     DIRECT_LAUNCH_COMPLETE,
     HOLDING,
     WAITING_FOR_WORLD,
@@ -58,8 +65,19 @@ public enum MissionState {
             case LOST: return next == SEARCHING || next == WAITING_FOR_TARGET;
             case TARGET_ACQUIRED: return next == TARGET_LOCKED || next == LOST;
             case TARGET_LOCKED: return next == APPROACHING || next == ATTACK_TARGET
-                    || next == KAMIKADZE_TARGET || next == DIRECT_LAUNCH_COMPLETE
+                    || next == KAMIKADZE_TARGET || next == LAUNCH_ACCEPTED
+                    || next == DIRECT_LAUNCH_COMPLETE
                     || next == LOST;
+            case LAUNCH_ACCEPTED: return next == PROJECTILE_TRACKED
+                    || next == IMPACT_OBSERVED || next == OUTCOME_UNKNOWN;
+            case PROJECTILE_TRACKED: return next == IMPACT_OBSERVED
+                    || next == EFFECT_CONFIRMED || next == OUTCOME_UNKNOWN;
+            case IMPACT_OBSERVED: return next == EFFECT_CONFIRMED
+                    || next == OUTCOME_UNKNOWN || next == RETURNING;
+            case EFFECT_CONFIRMED: return next == RETURNING || next == COMPLETE;
+            case OUTCOME_UNKNOWN: return next == RETURNING || next == COMPLETE;
+            case DIRECT_LAUNCH_COMPLETE: return next == LAUNCH_ACCEPTED
+                    || next == PROJECTILE_TRACKED || next == OUTCOME_UNKNOWN;
             case ATTACK_TARGET: return next == APPROACHING || next == ON_TARGET
                     || next == RETURNING || next == KAMIKADZE_TARGET;
             case KAMIKADZE_TARGET: return next == ON_TARGET || next == RETURNING

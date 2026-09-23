@@ -41,6 +41,9 @@ public final class MissileGuidanceController {
             new HashMap<>();
     private static final Map<UUID, Long> LAST_CORRIDOR_LOG =
             new HashMap<>();
+    private static final Map<UUID, String> UNKNOWN_OUTCOMES =
+            new HashMap<>();
+    private static final int MAX_UNKNOWN_OUTCOMES = 512;
     private static final int MAX_ROUTE_SAMPLES = 12;
     private static final int MAX_AVOIDANCE_CANDIDATES = 8;
     private static final double AVOIDANCE_OFFSET = 6.0D;
@@ -166,6 +169,31 @@ public final class MissileGuidanceController {
         return result;
     }
 
+    /**
+     * Bridges the native projectile observation back to the owning mission.
+     * A launch is not considered tracked until the spawned projectile has
+     * actually been seen in the server world.
+     */
+    public static synchronized boolean isProjectileTracked(UUID objectiveId) {
+        if (objectiveId == null) return false;
+        for (ProjectileGuidanceMission projectile : PROJECTILES.values()) {
+            if (objectiveId.equals(projectile.getObjective().getObjectiveId())
+                    && projectile.getState() != ProjectileGuidanceState.ABORTED
+                    && projectile.getState() != ProjectileGuidanceState.TIMED_OUT) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Returns true when a previously observed projectile disappeared without
+     * an authoritative impact/effect event. Disappearance is not success.
+     */
+    public static synchronized boolean isProjectileOutcomeUnknown(UUID objectiveId) {
+        return objectiveId != null && UNKNOWN_OUTCOMES.containsKey(objectiveId);
+    }
+
     private static boolean matchesNative(MCH_EntityBaseBullet missile) {
         return !(missile instanceof MCH_EntityASMissile)
                 && !(missile instanceof MCH_EntityTvMissile)
@@ -217,6 +245,24 @@ public final class MissileGuidanceController {
             apply(world, missile, assignment);
         }
         synchronized (MissileGuidanceController.class) {
+            for (ProjectileGuidanceMission projectile : PROJECTILES.values()) {
+                UUID projectileId = projectile.getProjectileId();
+                if (liveProjectiles.contains(projectileId)
+                        || projectile.getState() == ProjectileGuidanceState.IMPACTED
+                        || projectile.getState() == ProjectileGuidanceState.ABORTED
+                        || projectile.getState() == ProjectileGuidanceState.TIMED_OUT) {
+                    continue;
+                }
+                projectile.timeout();
+                UNKNOWN_OUTCOMES.put(projectile.getObjective().getObjectiveId(),
+                        "PROJECTILE_DISAPPEARED_WITHOUT_IMPACT");
+                RdpUavDebug.event("Guidance", "projectile_outcome_unknown",
+                        "aircraft", projectile.getAircraftId(),
+                        "projectile", projectileId,
+                        "objective", projectile.getObjective().getObjectiveId(),
+                        "weapon", projectile.getWeapon(),
+                        "reason", "PROJECTILE_DISAPPEARED_WITHOUT_IMPACT");
+            }
             PROJECTILES.keySet().retainAll(liveProjectiles);
             AVOIDANCE_PLANS.keySet().retainAll(liveProjectiles);
             LAST_COORDINATE_LOG.keySet().retainAll(liveProjectiles);
@@ -225,6 +271,9 @@ public final class MissileGuidanceController {
             LAST_OVERRIDE_LOG.keySet().retainAll(liveProjectiles);
             LAST_CORRECTION_TICK.keySet().retainAll(liveProjectiles);
             LAST_CORRIDOR_LOG.keySet().retainAll(liveProjectiles);
+            while (UNKNOWN_OUTCOMES.size() > MAX_UNKNOWN_OUTCOMES) {
+                UNKNOWN_OUTCOMES.remove(UNKNOWN_OUTCOMES.keySet().iterator().next());
+            }
         }
     }
 

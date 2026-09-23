@@ -22,11 +22,14 @@ public final class GuidedWeaponRegistry {
         register(config, "aamissile", "aamissile", GuidedNativeBehavior.ENTITY_SEEKER,
                 "ENTITY");
         register(config, "atmissile", "atmissile", GuidedNativeBehavior.ENTITY_SEEKER,
-                "ENTITY,SQUARE");
+                "ENTITY");
         register(config, "asmissile", "asmissile", GuidedNativeBehavior.COORDINATE_BALLISTIC,
                 "SQUARE");
-        register(config, "tvmissile", "tvmissile", GuidedNativeBehavior.COORDINATE_TV_LASER,
-                "ENTITY,SQUARE");
+        // McHeli TV/wire guidance is not an AI coordinate contract. Keep it
+        // explicitly unsupported until a native laser/control handoff is
+        // proven for the active weapon definition.
+        register(config, "tvmissile", "tvmissile", GuidedNativeBehavior.UNSUPPORTED,
+                "");
         for (String category : config.getCategoryNames()) {
             if (!category.startsWith("weapon.") || isBuiltIn(category.substring("weapon.".length()))) {
                 continue;
@@ -79,6 +82,12 @@ public final class GuidedWeaponRegistry {
         GuidedNativeBehavior behavior;
         try { behavior = GuidedNativeBehavior.valueOf(behaviorName.trim().toUpperCase(Locale.ROOT)); }
         catch (IllegalArgumentException e) { behavior = GuidedNativeBehavior.UNSUPPORTED; }
+        if ("tvmissile".equalsIgnoreCase(type)) {
+            // Older configs advertised coordinate TV guidance without proving
+            // that the concrete McHeli implementation consumes AI updates.
+            behavior = GuidedNativeBehavior.UNSUPPORTED;
+            objectiveNames = "";
+        }
         EnumSet<GuidedObjectiveType> objectives = EnumSet.noneOf(GuidedObjectiveType.class);
         for (String value : objectiveNames.split(",")) {
             try { objectives.add(GuidedObjectiveType.valueOf(value.trim().toUpperCase(Locale.ROOT))); }
@@ -119,6 +128,10 @@ public final class GuidedWeaponRegistry {
         GuidedNativeBehavior behavior;
         try { behavior = GuidedNativeBehavior.valueOf(behaviorName.trim().toUpperCase(Locale.ROOT)); }
         catch (IllegalArgumentException e) { behavior = GuidedNativeBehavior.UNSUPPORTED; }
+        if ("tvmissile".equalsIgnoreCase(type)) {
+            behavior = GuidedNativeBehavior.UNSUPPORTED;
+            objectiveNames = "";
+        }
         EnumSet<GuidedObjectiveType> objectives = EnumSet.noneOf(GuidedObjectiveType.class);
         for (String value : objectiveNames.split(",")) {
             try { objectives.add(GuidedObjectiveType.valueOf(value.trim().toUpperCase(Locale.ROOT))); }

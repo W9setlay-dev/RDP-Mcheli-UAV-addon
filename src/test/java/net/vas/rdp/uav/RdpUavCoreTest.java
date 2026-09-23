@@ -115,6 +115,27 @@ public class RdpUavCoreTest {
     }
 
     @Test
+    public void legacyAcceptedLaunchMigratesToNonTerminalOutcomeState() {
+        RDPMission mission = mission(TargetSpec.point(10, 70, 20, TargetPriority.HIGH));
+        mission.transitionTo(MissionState.DISPATCHED, 1);
+        mission.transitionTo(MissionState.TAKEOFF, 2);
+        mission.transitionTo(MissionState.CRUISE, 3);
+        mission.transitionTo(MissionState.SEARCHING, 4);
+        mission.transitionTo(MissionState.TARGET_ACQUIRED, 5);
+        mission.lockPoint(6);
+        mission.transitionTo(MissionState.DIRECT_LAUNCH_COMPLETE, 7);
+
+        net.minecraft.nbt.NBTTagCompound legacy = MissionNbtCodec.write(mission);
+        legacy.setInteger("schemaVersion", 1);
+        legacy.setString("state", "DIRECT_LAUNCH_COMPLETE");
+
+        RDPMission restored = MissionNbtCodec.read(legacy);
+
+        assertEquals(MissionState.LAUNCH_ACCEPTED, restored.getState());
+        assertFalse(restored.isTerminal());
+    }
+
+    @Test
     public void targetSpecsNormalizeAndRejectInvalidInput() {
         assertEquals("mod:target", TargetSpec.manual(" MOD:Target ", TargetPriority.NORMAL).getRegistryId());
         assertEquals("mod", TargetSpec.automatic(" Mod ", TargetPriority.NORMAL).getNamespace());

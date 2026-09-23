@@ -47,7 +47,7 @@ public class GuidedMissileMissionLifecycleTest {
         mission.transitionTo(MissionState.SEARCHING, 5);
         mission.transitionTo(MissionState.TARGET_ACQUIRED, 6);
         mission.lockPoint(7);
-        mission.transitionTo(MissionState.DIRECT_LAUNCH_COMPLETE, 8);
+        mission.transitionTo(MissionState.LAUNCH_ACCEPTED, 8);
 
         ProjectileGuidanceMission projectile = new ProjectileGuidanceMission(
                 UUID.randomUUID(), aircraftId, "asmissile",
@@ -60,8 +60,8 @@ public class GuidedMissileMissionLifecycleTest {
 
         assertEquals(ProjectileGuidanceState.IMPACTED, projectile.getState());
         assertEquals(GuidedObjectiveState.COMPLETE, objective.getState());
-        assertEquals(MissionState.DIRECT_LAUNCH_COMPLETE, mission.getState());
-        assertTrue(mission.isTerminal());
+        assertEquals(MissionState.LAUNCH_ACCEPTED, mission.getState());
+        assertFalse("Accepted launch is not proof of mission completion", mission.isTerminal());
     }
 
     @Test

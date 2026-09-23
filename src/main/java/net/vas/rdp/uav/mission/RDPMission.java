@@ -101,8 +101,7 @@ public final class RDPMission {
     public boolean isTerminal() {
         return state == MissionState.COMPLETE || state == MissionState.ABORTED
                 || state == MissionState.FAILED
-                || state == MissionState.KAMIKADZE_DETONATED
-                || state == MissionState.DIRECT_LAUNCH_COMPLETE;
+                || state == MissionState.KAMIKADZE_DETONATED;
     }
     public boolean isDestructiveAuthorized() { return destructiveAuthorized; }
     public MissionPhase getPhase() { return phase; }
@@ -202,6 +201,11 @@ public final class RDPMission {
             case KAMIKADZE_TARGET:
                 return MissionPhase.TERMINAL_GUIDANCE;
             case KAMIKADZE_DETONATED:
+            case LAUNCH_ACCEPTED:
+            case PROJECTILE_TRACKED:
+            case IMPACT_OBSERVED:
+            case EFFECT_CONFIRMED:
+            case OUTCOME_UNKNOWN:
             case DIRECT_LAUNCH_COMPLETE:
             case REPORTING:
             case SCANNING:

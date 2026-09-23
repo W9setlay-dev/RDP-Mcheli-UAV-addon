@@ -44,6 +44,7 @@ import net.vas.rdp.uav.RdpUavDebug;
 public final class MissionLifecycle {
     private static final Logger LOGGER = LogManager.getLogger("RDP-UAV/MissionLifecycle");
     private static final long MISSION_TIMEOUT = 12000L;
+    private static final long PROJECTILE_OBSERVATION_TIMEOUT = 100L;
     private static final long WINGMAN_ENTRY_GRACE_TICKS = 20L;
     private static final long GUIDANCE_RETRY_INTERVAL = 10L;
 
@@ -136,7 +137,7 @@ public final class MissionLifecycle {
         // MissionManager.create already assigned this aircraft. Re-registering
         // it here would replace the ON_MISSION record with a fresh READY
         // record and allow a second mission to claim the same entity.
-        if (flight.hasFuelForMission(aircraft)) {
+        if (flight.isFuelInsufficientForMission(aircraft)) {
             defer(world, mission, "INSUFFICIENT_FUEL", MissionState.WAITING_FOR_FUEL, tick);
             return;
         }
@@ -205,7 +206,7 @@ public final class MissionLifecycle {
                 mission.transitionTo(MissionState.TARGET_ACQUIRED, tick);
                 if (target.entity == null) mission.lockPoint(tick);
                 else mission.lockTarget(target.entity.getUniqueID(), tick);
-                mission.transitionTo(MissionState.DIRECT_LAUNCH_COMPLETE, tick);
+                mission.transitionTo(MissionState.LAUNCH_ACCEPTED, tick);
                 manager.release(mission);
                 RDPMissionWorldData.get(world).markDirty();
                 return;
@@ -260,6 +261,42 @@ public final class MissionLifecycle {
         for (RDPMission mission : missions) {
             if (mission.isQueued() || terminal(mission.getState())
                     || mission.getDimension() != world.provider.getDimension()) continue;
+            if (mission.getState() == MissionState.LAUNCH_ACCEPTED
+                    || mission.getState() == MissionState.DIRECT_LAUNCH_COMPLETE) {
+                if (net.vas.rdp.uav.weapon.MissileGuidanceController
+                        .isProjectileTracked(mission.getMissionId())) {
+                    mission.transitionTo(MissionState.PROJECTILE_TRACKED, tick);
+                    RDPMissionWorldData.get(world).markDirty();
+                } else if (net.vas.rdp.uav.weapon.MissileGuidanceController
+                        .isProjectileOutcomeUnknown(mission.getMissionId())
+                        || tick - mission.getLastUpdateTick() > PROJECTILE_OBSERVATION_TIMEOUT) {
+                    mission.transitionTo(MissionState.OUTCOME_UNKNOWN, tick);
+                    RdpUavDebug.event("MissionRuntime", "PAYLOAD_OUTCOME_UNKNOWN",
+                            "mission", mission.getMissionId(),
+                            "aircraft", mission.getAircraftId(),
+                            "state", mission.getState(),
+                            "reason", net.vas.rdp.uav.weapon.MissileGuidanceController
+                                    .isProjectileOutcomeUnknown(mission.getMissionId())
+                                    ? "PROJECTILE_DISAPPEARED_WITHOUT_IMPACT"
+                                    : "PROJECTILE_NOT_OBSERVED_WITHIN_TIMEOUT",
+                            "tick", tick);
+                    RDPMissionWorldData.get(world).markDirty();
+                }
+                continue;
+            }
+            if (mission.getState() == MissionState.PROJECTILE_TRACKED
+                    && net.vas.rdp.uav.weapon.MissileGuidanceController
+                    .isProjectileOutcomeUnknown(mission.getMissionId())) {
+                mission.transitionTo(MissionState.OUTCOME_UNKNOWN, tick);
+                RdpUavDebug.event("MissionRuntime", "PAYLOAD_OUTCOME_UNKNOWN",
+                        "mission", mission.getMissionId(),
+                        "aircraft", mission.getAircraftId(),
+                        "state", mission.getState(),
+                        "reason", "PROJECTILE_DISAPPEARED_WITHOUT_IMPACT",
+                        "tick", tick);
+                RDPMissionWorldData.get(world).markDirty();
+                continue;
+            }
             if (mission.isPaused()) {
                 flight.clearGuidance(findAircraft(world, mission.getAircraftId()));
                 continue;
@@ -301,7 +338,7 @@ public final class MissionLifecycle {
                 continue;
             }
             if (mission.getState() == MissionState.WAITING_FOR_FUEL
-                    && flight.hasFuelForMission(aircraft)) {
+                    && flight.isFuelInsufficientForMission(aircraft)) {
                 dirty = true;
                 continue;
             }
@@ -315,7 +352,7 @@ public final class MissionLifecycle {
                 }
                 dirty = true;
             }
-            if (flight.hasFuelForMission(aircraft)
+            if (flight.isFuelInsufficientForMission(aircraft)
                     && mission.getState() != MissionState.RETURNING
                     && mission.getState() != MissionState.LANDING
                     && mission.getState() != MissionState.PARKING) {
@@ -1241,7 +1278,7 @@ public final class MissionLifecycle {
         }
         objective.release();
         mission.transitionTo(MissionState.TARGET_LOCKED, tick);
-        mission.transitionTo(MissionState.DIRECT_LAUNCH_COMPLETE, tick);
+        mission.transitionTo(MissionState.LAUNCH_ACCEPTED, tick);
         manager.release(mission);
         RDPMissionWorldData.get(world).markDirty();
     }
