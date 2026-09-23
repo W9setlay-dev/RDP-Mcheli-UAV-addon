@@ -482,19 +482,23 @@ public final class RdpUavCommand extends CommandBase {
             return;
         }
         try {
-            assert aircraft.getAcInfo() != null;
+            if (aircraft.getAcInfo() == null) {
+                throw new IllegalArgumentException("UAV metadata is unavailable");
+            }
             net.vas.rdp.uav.profile.UavVehicleProfile vehicleProfile =
                     UavVehicleProfiles.forAircraft(aircraft.getAcInfo().name);
-            if (aircraft.isUAV() && vehicleProfile.getExecutionProfile()
-                    == net.vas.rdp.uav.profile.UavExecutionProfile.UNKNOWN) {
+            if (aircraft.isUAV() && (vehicleProfile == null
+                    || vehicleProfile.getExecutionProfile()
+                    == net.vas.rdp.uav.profile.UavExecutionProfile.UNKNOWN)) {
                 throw new IllegalArgumentException("UAV definition has no configured execution profile");
             }
             double x = Double.parseDouble(args[2]);
             double y = Double.parseDouble(args[3]);
             double z = Double.parseDouble(args[4]);
             double size = args.length >= 6 ? Double.parseDouble(args[5]) : 64.0D;
-            if (aircraft.getAcInfo() == null) {
-                throw new IllegalArgumentException("UAV metadata is unavailable");
+            if (!Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)
+                    || !Double.isFinite(size)) {
+                throw new IllegalArgumentException("coordinates and size must be finite");
             }
             double dx = aircraft.posX - x;
             double dy = aircraft.posY - y;

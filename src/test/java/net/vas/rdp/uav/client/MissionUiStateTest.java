@@ -17,6 +17,7 @@ public class MissionUiStateTest {
     @Test
     public void terminalStatesHideMarkersButActiveLocksRemainVisible() {
         assertFalse(MissionUiState.isMarkerVisible("COMPLETE", "CONTACT"));
+        assertFalse(MissionUiState.isMarkerVisible("AIRCRAFT_LOST", "CONTACT"));
         assertFalse(MissionUiState.isMarkerVisible("OUTCOME_UNKNOWN", "CONTACT"));
         assertTrue(MissionUiState.isMarkerVisible("TARGET_LOCKED", "CONTACT"));
         assertFalse(MissionUiState.isMarkerVisible("TARGET_LOCKED", "HIDDEN"));

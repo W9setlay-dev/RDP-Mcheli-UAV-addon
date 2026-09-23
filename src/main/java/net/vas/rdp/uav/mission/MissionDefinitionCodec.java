@@ -65,9 +65,11 @@ public final class MissionDefinitionCodec {
             if (tag.hasKey("recoveryMode")) definition.setRecoveryMode(tag.getString("recoveryMode"));
             NBTTagList selected = tag.getTagList("selectedUavs", 10);
             for (int i = 0; i < selected.tagCount(); i++) {
-                try { definition.selectUav(java.util.UUID.fromString(
-                        selected.getCompoundTagAt(i).getString("id"))); }
-                catch (IllegalArgumentException ignored) { }
+                String selectedId = selected.getCompoundTagAt(i).getString("id");
+                if (selectedId == null || selectedId.trim().isEmpty()) {
+                    throw new IllegalArgumentException("Selected UAV identity is missing");
+                }
+                definition.selectUav(java.util.UUID.fromString(selectedId));
             }
             if (tag.hasKey("policyDomain") && !"ENTITY".equals(tag.getString("policyDomain"))) {
                 throw new IllegalArgumentException("Unsupported target policy domain");

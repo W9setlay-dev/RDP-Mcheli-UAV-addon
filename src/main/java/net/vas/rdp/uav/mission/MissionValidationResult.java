@@ -17,8 +17,25 @@ public final class MissionValidationResult {
         List<String> errors = new ArrayList<>();
         if (definition.getTarget().isEmpty()) {
             errors.add("Target is required");
-        } else if (definition.getMissionType() != MissionType.SQUARE_STRIKE
-                && !definition.getTarget().matches(
+        } else if (definition.getMissionType() == MissionType.SQUARE_STRIKE) {
+            String[] values = definition.getTarget().trim().split("\\s+");
+            if (values.length < 3 || values.length > 4) {
+                errors.add("Square target must be centerX centerY centerZ [size]");
+            } else {
+                for (int i = 0; i < values.length; i++) {
+                    try {
+                        double value = Double.parseDouble(values[i]);
+                        if (!Double.isFinite(value)) {
+                            errors.add("Square coordinates and size must be finite");
+                            break;
+                        }
+                    } catch (NumberFormatException invalid) {
+                        errors.add("Square coordinates and size must be numeric");
+                        break;
+                    }
+                }
+            }
+        } else if (!definition.getTarget().matches(
                 "(?i)(mod=[A-Za-z0-9_.-]+|[A-Za-z0-9_.-]+:[A-Za-z0-9_./-]+)")) {
             errors.add("Target must be namespace:id or mod=namespace");
         }

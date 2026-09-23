@@ -762,7 +762,27 @@ public final class MissionLifecycle {
                     }
                     if (!profile(aircraft).isReusable()
                             && mission.getMissionType() == MissionType.SQUARE_STRIKE) {
-                        fail(world, mission, "ONE_WAY_SQUARE_TERMINAL_PAYLOAD_REQUIRED", tick);
+                        net.vas.rdp.uav.flight.SquareStrikePlan squarePlan =
+                                new net.vas.rdp.uav.flight.SquareStrikePlan(
+                                        mission.getTargetSpec().getX(),
+                                        target.y,
+                                        mission.getTargetSpec().getZ(),
+                                        mission.getSquareWidth(),
+                                        mission.getSquareDepth(),
+                                        net.vas.rdp.uav.flight.SquareStrikeConfig.headingDegrees,
+                                        Math.max(1.0D, Math.min(mission.getSquareDepth(),
+                                                mission.getSquareDepth()
+                                                        * net.vas.rdp.uav.flight.SquareStrikeConfig.passSpacingFactor)),
+                                        profile(aircraft).getAttackEnvelope(),
+                                        Math.max(1, (int) Math.ceil(mission.getSquareDepth()
+                                                / Math.max(1.0D, mission.getSquareDepth()
+                                                * net.vas.rdp.uav.flight.SquareStrikeConfig.passSpacingFactor))));
+                        if (!flight.armSquareStrike(aircraft, squarePlan,
+                                mission.getTargetId())) {
+                            fail(world, mission, "ONE_WAY_SQUARE_TERMINAL_PAYLOAD_REQUIRED", tick);
+                        } else {
+                            mission.transitionTo(MissionState.ATTACK_TARGET, tick);
+                        }
                         return true;
                     }
                     if (!flight.armAttack(aircraft, target.x, target.y, target.z,

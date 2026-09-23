@@ -3,6 +3,8 @@ package net.vas.rdp.uav.client;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.client.renderer.GlStateManager;
+import net.minecraft.util.math.RayTraceResult;
+import net.minecraft.util.math.Vec3d;
 import net.minecraftforge.client.event.RenderGameOverlayEvent;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.relauncher.Side;
@@ -97,6 +99,15 @@ public final class RdpUavTargetHud {
     }
 
     private void drawMarker(Minecraft mc, int width, int height) {
+        if (telemetry.dimension != mc.world.provider.getDimension()) return;
+        net.minecraft.entity.Entity camera = mc.getRenderViewEntity();
+        if (camera == null) camera = mc.player;
+        if (camera == null) return;
+        Vec3d cameraPosition = camera.getPositionEyes(mc.getRenderPartialTicks());
+        Vec3d targetPosition = new Vec3d(telemetry.x, telemetry.y, telemetry.z);
+        RayTraceResult obstruction = mc.world.rayTraceBlocks(cameraPosition, targetPosition,
+                false, true, false);
+        if (obstruction != null && obstruction.typeOfHit == RayTraceResult.Type.BLOCK) return;
         double[] screen = project(mc, telemetry.x, telemetry.y, telemetry.z, width, height);
         if (screen == null) return;
         GlStateManager.pushMatrix();
@@ -123,12 +134,9 @@ public final class RdpUavTargetHud {
     }
 
     private double[] project(Minecraft mc, double x, double y, double z, int width, int height) {
-        net.minecraft.entity.Entity origin = mc.player;
-        net.minecraft.entity.Entity controlled = net.vas.rdp.uav.mission.UavControlAccess
-                .findControlledAircraft(mc.player);
-        if (controlled != null && !controlled.isDead) {
-            origin = controlled;
-        }
+        net.minecraft.entity.Entity origin = mc.getRenderViewEntity();
+        if (origin == null) origin = mc.player;
+        if (origin == null) return null;
         double px = origin.prevPosX + (origin.posX - origin.prevPosX) * mc.getRenderPartialTicks();
         double py = origin.prevPosY + (origin.posY - origin.prevPosY) * mc.getRenderPartialTicks()
                 + origin.getEyeHeight();

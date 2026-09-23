@@ -29,6 +29,7 @@ The architecture and audit notes for this rework are recorded in `docs/`:
 - `docs/phase-d-authority-persistence-rework.md`
 - `docs/phase-e-ui-hud-rework.md`
 - `docs/phase-f-validation-and-feature-overlap.md`
+- `docs/phase-g-validation-and-marker-rework.md`
 - `docs/ai-lock-movement-validation.md`
 - `docs/changelog.md`
 
