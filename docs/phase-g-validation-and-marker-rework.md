@@ -40,6 +40,13 @@ The phase plan is now internally consistent for source-level behavior:
 - attack authorization now rejects missing metadata, unsupported profiles,
   failed native arming, and invalid ownership/state with explicit feedback;
   legacy launch-packet weapon assignment is also request-scoped.
+- abort, clear-lock, and archive now preserve terminal commitment: a mission in
+  `KAMIKADZE_TARGET` rejects the action with
+  `ABORT_IMPOSSIBLE_AFTER_TERMINAL_COMMIT`, without releasing native control.
+- Captured CRM runtime evidence exposed and corrected a false-success path:
+  native WingMan/self-destruct acceptance no longer reports detonation without
+  an observed effect. Missing locked entities now enter bounded target recovery
+  rather than repeatedly substituting or re-planning an unrelated target.
 
 The plan is **not** complete for runtime acceptance. Packet delivery, native
 WingMan movement, collision ordering, projectile/effect callbacks, GUI

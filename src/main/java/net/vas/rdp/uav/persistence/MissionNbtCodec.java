@@ -4,6 +4,8 @@ import net.minecraft.nbt.NBTTagCompound;
 import net.vas.rdp.uav.mission.MissionState;
 import net.vas.rdp.uav.mission.MissionType;
 import net.vas.rdp.uav.mission.RDPMission;
+import net.vas.rdp.uav.mission.MissionPhase;
+import net.vas.rdp.uav.mission.ControlOwner;
 import net.vas.rdp.uav.target.TargetPriority;
 import net.vas.rdp.uav.target.TargetSelectionMode;
 import net.vas.rdp.uav.target.TargetSpec;
@@ -11,7 +13,7 @@ import net.vas.rdp.uav.target.TargetSpec;
 import java.util.UUID;
 
 public final class MissionNbtCodec {
-    private static final int CURRENT_SCHEMA = 3;
+    private static final int CURRENT_SCHEMA = 4;
     private MissionNbtCodec() {
     }
 
@@ -40,6 +42,8 @@ public final class MissionNbtCodec {
         tag.setLong("createdTick", mission.getCreatedTick());
         tag.setLong("lastUpdateTick", mission.getLastUpdateTick());
         tag.setString("state", mission.getState().name());
+        tag.setString("phase", mission.getPhase().name());
+        tag.setString("controlOwner", mission.getControlOwner().name());
         tag.setString("targetUuid", mission.getTargetId() == null ? "" : mission.getTargetId().toString());
         tag.setString("failureReason", mission.getFailureReason() == null ? "" : mission.getFailureReason());
         tag.setString("lastTransitionReason", mission.getLastTransitionReason() == null
@@ -49,6 +53,7 @@ public final class MissionNbtCodec {
         tag.setBoolean("queued", mission.isQueued());
         tag.setString("recoveryPolicy", mission.getRecoveryPolicy());
         tag.setBoolean("destructiveAuthorized", mission.isDestructiveAuthorized());
+        tag.setBoolean("kamikazePayloadLaunched", mission.isKamikazePayloadLaunched());
         tag.setBoolean("paused", mission.isPaused());
         tag.setString("guidedWeapon", mission.getGuidedWeapon() == null ? "" : mission.getGuidedWeapon());
         tag.setInteger("recoveryAttempts", mission.getRecoveryAttempts());
@@ -59,42 +64,38 @@ public final class MissionNbtCodec {
     }
 
     public static RDPMission read(NBTTagCompound tag) {
+        if (tag == null) throw new IllegalArgumentException("Mission NBT is required");
         String registryId = tag.getString("targetId");
         String namespace = tag.getString("targetNamespace");
-        TargetSelectionMode mode = TargetSelectionMode.valueOf(tag.getString("targetMode"));
+        TargetSelectionMode mode = enumValue(tag, "targetMode", TargetSelectionMode.class);
+        TargetPriority priority = enumValue(tag, "priority", TargetPriority.class);
         TargetSpec spec = mode == TargetSelectionMode.MANUAL
-                ? TargetSpec.manual(registryId, TargetPriority.valueOf(tag.getString("priority")))
+                ? TargetSpec.manual(registryId, priority)
                 : mode == TargetSelectionMode.AUTO
-                ? TargetSpec.automatic(namespace, TargetPriority.valueOf(tag.getString("priority")))
-                : TargetSpec.point(tag.getDouble("targetX"), tag.getDouble("targetY"),
-                        tag.getDouble("targetZ"), TargetPriority.valueOf(tag.getString("priority")));
+                ? TargetSpec.automatic(namespace, priority)
+                : TargetSpec.point(finiteDouble(tag, "targetX"),
+                        finiteDouble(tag, "targetY"), finiteDouble(tag, "targetZ"), priority);
         String targetUuid = tag.getString("targetUuid");
         String failureReason = tag.getString("failureReason");
         String report = tag.getString("reportId");
         int schemaVersion = tag.hasKey("schemaVersion") ? tag.getInteger("schemaVersion") : 1;
-        String stateName = tag.getString("state");
-        MissionState restoredState;
-        try {
-            restoredState = MissionState.valueOf(stateName);
-        } catch (IllegalArgumentException failure) {
-            restoredState = MissionState.FAILED;
-        }
+        MissionState restoredState = enumValue(tag, "state", MissionState.class);
         // v1 used DIRECT_LAUNCH_COMPLETE for an accepted release. It did not
         // prove impact, so migrate it to the new non-terminal state.
         if (schemaVersion < CURRENT_SCHEMA
                 && restoredState == MissionState.DIRECT_LAUNCH_COMPLETE) {
             restoredState = MissionState.LAUNCH_ACCEPTED;
         }
-        RDPMission mission = RDPMission.restore(UUID.fromString(tag.getString("missionId")),
-                UUID.fromString(tag.getString("ownerId")),
-                UUID.fromString(tag.getString("aircraftId")),
-                tag.getString("aircraftType"),
-                MissionType.valueOf(tag.getString("missionType")), spec,
+        RDPMission mission = RDPMission.restore(requiredUuid(tag, "missionId"),
+                requiredUuid(tag, "ownerId"),
+                requiredUuid(tag, "aircraftId"),
+                requiredString(tag, "aircraftType"),
+                enumValue(tag, "missionType", MissionType.class), spec,
                 tag.getBoolean("attack"), tag.getBoolean("eliminateAllCost"),
-                tag.getBoolean("deepScan"), tag.getDouble("searchRadius"),
-                tag.getDouble("observationDistance"), tag.getLong("createdTick"),
+                tag.getBoolean("deepScan"), positiveDouble(tag, "searchRadius"),
+                positiveDouble(tag, "observationDistance"), tag.getLong("createdTick"),
                 restoredState,
-                targetUuid.isEmpty() ? null : UUID.fromString(targetUuid),
+                targetUuid.isEmpty() ? null : parseUuid(targetUuid, "targetUuid"),
                 tag.getLong("lastUpdateTick"), failureReason.isEmpty() ? null : failureReason,
                 report.isEmpty() ? null : report);
         mission.setDimension(tag.getInteger("dimension"));
@@ -106,12 +107,78 @@ public final class MissionNbtCodec {
             mission.setSquareArea(tag.getDouble("squareWidth"), tag.getDouble("squareDepth"));
         }
         mission.setQueued(tag.hasKey("queued") && tag.getBoolean("queued"));
+        if (mission.isQueued() && mission.isTerminal()) {
+            throw new IllegalArgumentException("Terminal mission cannot be queued");
+        }
         if (tag.hasKey("recoveryPolicy")) mission.setRecoveryPolicy(tag.getString("recoveryPolicy"));
         mission.setDestructiveAuthorized(tag.getBoolean("destructiveAuthorized"));
+        mission.restoreKamikazePayloadLaunched(tag.getBoolean("kamikazePayloadLaunched"));
         mission.setPaused(tag.getBoolean("paused"));
         if (tag.hasKey("guidedWeapon")) mission.setGuidedWeapon(tag.getString("guidedWeapon"));
         String recoveryReason = tag.getString("recoveryReason");
         mission.restoreRecovery(tag.getInteger("recoveryAttempts"), recoveryReason);
+        if (tag.hasKey("phase")) {
+            MissionPhase persistedPhase = enumValue(tag, "phase", MissionPhase.class);
+            if (persistedPhase != mission.getPhase()) {
+                throw new IllegalArgumentException("Mission phase does not match state");
+            }
+        }
+        if (tag.hasKey("controlOwner")) {
+            ControlOwner persistedOwner = enumValue(tag, "controlOwner", ControlOwner.class);
+            if (persistedOwner != mission.getControlOwner()) {
+                throw new IllegalArgumentException("Mission control owner does not match state");
+            }
+        }
         return mission;
+    }
+
+    private static String requiredString(NBTTagCompound tag, String key) {
+        String value = tag.getString(key);
+        if (value == null || value.trim().isEmpty()) {
+            throw new IllegalArgumentException("Mission NBT field is required: " + key);
+        }
+        return value;
+    }
+
+    private static UUID requiredUuid(NBTTagCompound tag, String key) {
+        return parseUuid(requiredString(tag, key), key);
+    }
+
+    private static double positiveDouble(NBTTagCompound tag, String key) {
+        double value = finiteDouble(tag, key);
+        if (value <= 0.0D) {
+            throw new IllegalArgumentException("Mission NBT field must be positive: " + key);
+        }
+        return value;
+    }
+
+    private static double finiteDouble(NBTTagCompound tag, String key) {
+        if (!tag.hasKey(key)) {
+            throw new IllegalArgumentException("Mission NBT field is required: " + key);
+        }
+        double value = tag.getDouble(key);
+        if (!Double.isFinite(value)) {
+            throw new IllegalArgumentException("Mission NBT field must be finite: " + key);
+        }
+        return value;
+    }
+
+    private static UUID parseUuid(String value, String key) {
+        try {
+            return UUID.fromString(value);
+        } catch (IllegalArgumentException failure) {
+            throw new IllegalArgumentException("Invalid mission NBT UUID: " + key, failure);
+        }
+    }
+
+    private static <E extends Enum<E>> E enumValue(NBTTagCompound tag, String key,
+                                                    Class<E> type) {
+        String value = requiredString(tag, key);
+        try {
+            return Enum.valueOf(type, value);
+        } catch (IllegalArgumentException failure) {
+            throw new IllegalArgumentException("Invalid mission NBT value for " + key
+                    + ": " + value, failure);
+        }
     }
 }

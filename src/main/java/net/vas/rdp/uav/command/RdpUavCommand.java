@@ -443,6 +443,25 @@ public final class RdpUavCommand extends CommandBase {
             player.sendMessage(new TextComponentString("UAV metadata is unavailable; mission rejected."));
             return;
         }
+        net.vas.rdp.uav.profile.UavVehicleProfile profile =
+                net.vas.rdp.uav.profile.UavVehicleProfiles.forAircraft(aircraft.getAcInfo().name);
+        if (profile == null
+                || profile.getExecutionProfile()
+                == net.vas.rdp.uav.profile.UavExecutionProfile.UNKNOWN) {
+            player.sendMessage(new TextComponentString(
+                    "Point attack rejected: aircraft profile is unsupported."));
+            return;
+        }
+        double dx = aircraft.posX - hit.hitVec.x;
+        double dy = aircraft.posY - hit.hitVec.y;
+        double dz = aircraft.posZ - hit.hitVec.z;
+        double distanceSquared = dx * dx + dy * dy + dz * dz;
+        if (!Double.isFinite(distanceSquared)
+                || distanceSquared > profile.getDetectionRange() * profile.getDetectionRange()) {
+            player.sendMessage(new TextComponentString(
+                    "Point attack rejected: designated point is outside the aircraft profile range."));
+            return;
+        }
         long tick = player.world.getTotalWorldTime();
         RDPMission mission = new RDPMission(UUID.randomUUID(), player.getUniqueID(),
                 aircraft.getUniqueID(), aircraft.getAcInfo().name, MissionType.STRIKE,

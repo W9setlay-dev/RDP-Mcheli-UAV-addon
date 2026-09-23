@@ -1170,14 +1170,21 @@ public final class RdpUavNetwork {
                                 net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
                                         .getRepository().find(id);
                         if (mission == null || !player.getUniqueID().equals(mission.getOwnerId())
-                                || mission.getState() == net.vas.rdp.uav.mission.MissionState.COMPLETE
-                                || mission.getState() == net.vas.rdp.uav.mission.MissionState.ABORTED
-                                || mission.getState() == net.vas.rdp.uav.mission.MissionState.FAILED) {
+                                || mission.isTerminal()) {
+                                player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                        "Abort rejected: mission is missing, unauthorized, or already terminal."));
                                 RdpUavDebug.debug("Network", "abort rejected player={} mission={}",
                                         player.getUniqueID(), message.missionId);
                                 return;
                         }
-                        mission.abort("OPERATOR_ABORT", player.world.getTotalWorldTime());
+                        try {
+                            mission.abort("OPERATOR_ABORT", player.world.getTotalWorldTime());
+                        } catch (IllegalStateException impossible) {
+                            player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                    "Abort rejected: ABORT_IMPOSSIBLE_AFTER_TERMINAL_COMMIT."));
+                            sendMissionData(player);
+                            return;
+                        }
                         net.vas.rdp.uav.weapon.MissileGuidanceController.abort(mission.getAircraftId());
                         for (net.minecraft.entity.Entity entity : player.world.loadedEntityList) {
                             if (entity instanceof MCH_EntityAircraft
@@ -1193,7 +1200,9 @@ public final class RdpUavNetwork {
                         sendMissionData(player);
                         RdpUavDebug.debug("Network", "abort accepted player={} mission={}",
                                 player.getUniqueID(), message.missionId);
-                    } catch (IllegalArgumentException ignored) {
+                    } catch (IllegalArgumentException invalid) {
+                        player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                "Abort rejected: invalid mission identifier."));
                         RdpUavDebug.debug("Network", "abort rejected invalid UUID player={} value={}",
                                 player.getUniqueID(), message.missionId);
                     }
@@ -1216,6 +1225,12 @@ public final class RdpUavNetwork {
                         net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
                                 .getRepository().byOwner(player.getUniqueID())) {
                     if (!message.all && !mission.getMissionId().equals(selected)) continue;
+                    if (mission.getState()
+                            == net.vas.rdp.uav.mission.MissionState.KAMIKADZE_TARGET) {
+                        player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                "Archive rejected: ABORT_IMPOSSIBLE_AFTER_TERMINAL_COMMIT."));
+                        continue;
+                    }
                     for (net.minecraft.entity.Entity entity : player.world.loadedEntityList) {
                         if (entity instanceof MCH_EntityAircraft
                                 && mission.getAircraftId().equals(entity.getUniqueID())) {
@@ -1886,16 +1901,23 @@ public final class RdpUavNetwork {
         }
 
         private void clearTargetLock(EntityPlayerMP player, MCH_EntityAircraft aircraft) {
-            KamikazePilotOverride.clear(aircraft.getUniqueID());
             java.util.List<net.vas.rdp.uav.mission.RDPMission> missions =
                     net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
                             .getRepository().byOwner(player.getUniqueID());
             for (net.vas.rdp.uav.mission.RDPMission mission : missions) {
-                if (!aircraft.getUniqueID().equals(mission.getAircraftId())
-                        || mission.isTerminal()) continue;
+                if (!aircraft.getUniqueID().equals(mission.getAircraftId())) continue;
+                if (mission.getState()
+                        == net.vas.rdp.uav.mission.MissionState.KAMIKADZE_TARGET) {
+                    player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                            "Clear lock rejected: ABORT_IMPOSSIBLE_AFTER_TERMINAL_COMMIT."));
+                    sendMissionData(player);
+                    return;
+                }
+                if (mission.isTerminal()) continue;
                 mission.abort("TARGET_LOCK_CLEARED", player.world.getTotalWorldTime());
                 RDPUavMod.missions().release(mission);
             }
+            KamikazePilotOverride.clear(aircraft.getUniqueID());
             FLIGHT_ADAPTER.release(aircraft);
             net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world).markDirty();
             RdpUavDebug.event("TargetLock", "CLEARED",

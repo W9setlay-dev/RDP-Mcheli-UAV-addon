@@ -18,13 +18,18 @@ Phase C makes guided payload support explicit and fail-closed.
   contracts. `MissileGuidanceController.markImpactObserved` and
   `markEffectConfirmed` only record observations supplied by a native/event
   integration; they do not infer success or modify projectile physics.
+- Native self-destruct fire acceptance is also separate from detonation. The
+  mission persists `kamikazePayloadLaunched` and prevents duplicate firing,
+  while `KAMIKADZE_DETONATED` remains reserved for an explicit observed effect.
 - `MissionLifecycle` projects those observed outcomes to
   `IMPACT_OBSERVED` and `EFFECT_CONFIRMED`. Without an event, the mission
   remains tracked until it converges to `OUTCOME_UNKNOWN` or timeout.
 
 ## Runtime boundary
 
-The repository does not currently prove a McHeli impact callback or effect
-callback is wired to these methods. Therefore this phase does not claim live
-impact, effect, or payload completion. A Forge/McHeli smoke test remains
-required before those outcomes can be considered runtime-proven.
+The captured CRM runtime log proves native WingMan route acceptance and a
+`FLY_TO reached` report, but it showed no `IMPACT_OBSERVED` or
+`EFFECT_CONFIRMED` event for the kamikaze path. It therefore does not prove
+impact, effect, or payload completion. A fresh Forge/McHeli smoke test with an
+observable native effect callback remains required before those outcomes can be
+considered runtime-proven.

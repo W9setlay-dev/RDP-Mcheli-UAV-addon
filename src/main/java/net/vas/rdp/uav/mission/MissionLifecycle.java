@@ -434,13 +434,15 @@ public final class MissionLifecycle {
                         flight.release(aircraft);
                     }
                 }
-                if (mission.isAttack() && mission.getMissionType() != MissionType.SQUARE_STRIKE
+                if (mission.getTargetId() != null
+                        && mission.isAttack()
+                        && mission.getMissionType() != MissionType.SQUARE_STRIKE
                         && (mission.getState() == MissionState.ATTACK_TARGET
                         || mission.getState() == MissionState.TARGET_LOCKED
                         || mission.getState() == MissionState.APPROACHING
                         || mission.getState() == MissionState.KAMIKADZE_TARGET)) {
                     defer(world, mission, "TARGET_TEMPORARILY_UNAVAILABLE",
-                            MissionState.REPLAN, tick);
+                            MissionState.WAITING_FOR_TARGET, tick);
                     dirty = true;
                     continue;
                 }
@@ -516,13 +518,17 @@ public final class MissionLifecycle {
                     }
                     continue;
                 }
-                if (flight.fireSelfDestructWeapon(aircraft, true)) {
-                    LOGGER.info("Mission {} kamikaze detonation aircraft={} impact={} inRadius={} target={} tick={}",
+                if (!mission.isKamikazePayloadLaunched()
+                        && flight.fireSelfDestructWeapon(aircraft, true)) {
+                    LOGGER.info("Mission {} kamikaze payload launch accepted aircraft={} impact={} inRadius={} target={} tick={}",
                             mission.getMissionId(), aircraft.getUniqueID(), noseImpact,
                             targetInRadius, formatTarget(target), tick);
-                    mission.markKamikazeDetonated(tick);
-                    flight.release(aircraft);
-                    manager.release(mission);
+                    mission.markKamikazePayloadLaunched(tick);
+                    RdpUavDebug.event("TerminalGuidance", "PAYLOAD_LAUNCH_ACCEPTED",
+                            "mission", mission.getMissionId(),
+                            "aircraft", mission.getAircraftId(),
+                            "target", mission.getTargetId(), "tick", tick);
+                    RDPMissionWorldData.get(world).markDirty();
                     dirty = true;
                     continue;
                 }
@@ -632,13 +638,17 @@ public final class MissionLifecycle {
             if (mission.isAttack() && !profile(aircraft).isReusable() && target != null) {
                 if (withinMissionExecutionRange(aircraft, target, mission)
                         && terminalGeometrySatisfied(aircraft, target, mission)
+                        && !mission.isKamikazePayloadLaunched()
                         && flight.fireSelfDestructWeapon(aircraft)) {
                     if (armKamikazeTerminalState(mission, target, tick)) {
                         fail(world, mission, "KAMIKAZE_TERMINAL_STATE_REJECTED", tick);
                         return true;
                     }
-                    mission.markKamikazeDetonated(tick);
-                    manager.release(mission);
+                    mission.markKamikazePayloadLaunched(tick);
+                    RdpUavDebug.event("TerminalGuidance", "PAYLOAD_LAUNCH_ACCEPTED",
+                            "mission", mission.getMissionId(),
+                            "aircraft", mission.getAircraftId(),
+                            "target", mission.getTargetId(), "tick", tick);
                     return true;
                 }
                 flight.release(aircraft);
@@ -815,14 +825,17 @@ public final class MissionLifecycle {
                         if ("SELF_DESTRUCT".equalsIgnoreCase(
                                 profile(aircraft).getTerminalPayloadBehavior())
                                 && terminalGeometrySatisfied(aircraft, target, mission)
+                                && !mission.isKamikazePayloadLaunched()
                                 && flight.fireSelfDestructWeapon(aircraft)) {
                             if (armKamikazeTerminalState(mission, target, tick)) {
                                 fail(world, mission, "KAMIKAZE_TERMINAL_STATE_REJECTED", tick);
                                 return true;
                             }
-                            mission.markKamikazeDetonated(tick);
-                            flight.release(aircraft);
-                            manager.release(mission);
+                            mission.markKamikazePayloadLaunched(tick);
+                            RdpUavDebug.event("TerminalGuidance", "PAYLOAD_LAUNCH_ACCEPTED",
+                                    "mission", mission.getMissionId(),
+                                    "aircraft", mission.getAircraftId(),
+                                    "target", mission.getTargetId(), "tick", tick);
                             return true;
                         }
 
@@ -841,7 +854,11 @@ public final class MissionLifecycle {
                     return true;
                 }
                 if (flight.isAttackComplete(aircraft)) {
-                    mission.markKamikazeDetonated(tick);
+                    if (mission.isKamikazePayloadLaunched()) {
+                        RdpUavDebug.debug("Lifecycle",
+                                "mission {} native attack complete without effect confirmation",
+                                mission.getMissionId());
+                    }
                     return true;
                 }
                 return false;

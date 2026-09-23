@@ -26,8 +26,8 @@ boundary; they must not mutate mission state directly.
 - A hard mission deadline is evaluated from `createdTick`, independent of
   recoverable-state refreshes. Expired queued and active missions become
   `FAILED` with `MISSION_TIMEOUT`.
-- Persistence schema 3 stores the last transition reason while retaining
-  compatibility with schema 1 and 2 records.
+- Persistence schema 4 stores the last transition reason, lifecycle phase, and
+  control owner while retaining compatibility with schema 1 through 3 records.
 
 ## Decision record
 
@@ -44,6 +44,13 @@ sources of truth and increase migration risk.
 **Safety/compatibility impact:** Existing callers remain source-compatible;
 terminal operations cannot resurrect or overwrite a completed mission, and
 timeouts cannot be postponed by same-state retries.
+
+Control ownership is projected from the authoritative mission state rather than
+only from the compatibility phase. Terminal states, including confirmed
+kamikaze detonation and aircraft loss, map to `SAFETY`; recovery and return
+states map to `RECOVERY`; and `KAMIKADZE_TARGET` alone maps to
+`TERMINAL_GUIDANCE`. The same projection is reconstructed on persistence
+restore, preventing a stale `MISSION_AI` owner after reload.
 
 **Validation:** Focused lifecycle tests, full Gradle tests, build, and
 `git diff --check`. Live Forge/Minecraft mission execution remains unverified.

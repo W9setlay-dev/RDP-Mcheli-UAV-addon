@@ -34,6 +34,7 @@ public final class RDPMission {
     private boolean queued = true;
     private String recoveryPolicy = "RETURN_TO_BASE";
     private boolean destructiveAuthorized;
+    private boolean kamikazePayloadLaunched;
     private boolean paused;
     private String guidedWeapon;
     private int recoveryAttempts;
@@ -93,7 +94,7 @@ public final class RDPMission {
         lastUpdateTick = tick;
         queued = false;
         phase = phaseFor(nextState);
-        controlOwner = ownerFor(phase);
+        controlOwner = ownerFor(nextState);
         lastTransitionReason = reason.trim();
         RdpUavDebug.event("MissionLifecycle", "MISSION_STATE_TRANSITION",
                 "mission", missionId,
@@ -121,6 +122,19 @@ public final class RDPMission {
     public ControlOwner getControlOwner() { return controlOwner; }
     public void authorizeDestructiveAction() { destructiveAuthorized = true; }
     public void setDestructiveAuthorized(boolean value) { destructiveAuthorized = value; }
+    public boolean isKamikazePayloadLaunched() { return kamikazePayloadLaunched; }
+    public void markKamikazePayloadLaunched(long tick) {
+        if (tick < lastUpdateTick) {
+            throw new IllegalArgumentException("Payload launch tick is before mission activity");
+        }
+        if (kamikazePayloadLaunched) return;
+        kamikazePayloadLaunched = true;
+        lastUpdateTick = tick;
+        lastTransitionReason = "KAMIKAZE_PAYLOAD_LAUNCH_ACCEPTED";
+    }
+    public void restoreKamikazePayloadLaunched(boolean value) {
+        kamikazePayloadLaunched = value;
+    }
     public boolean isPaused() { return paused; }
     public void setPaused(boolean paused) { this.paused = paused; }
     public String getGuidedWeapon() { return guidedWeapon; }
@@ -242,10 +256,26 @@ public final class RDPMission {
         }
     }
 
-    private static ControlOwner ownerFor(MissionPhase value) {
-        if (value == MissionPhase.TERMINAL_GUIDANCE) return ControlOwner.TERMINAL_GUIDANCE;
-        if (value == MissionPhase.RECOVERY) return ControlOwner.RECOVERY;
-        if (value == MissionPhase.COMPLETE || value == MissionPhase.FAILED) {
+    private static ControlOwner ownerFor(MissionState value) {
+        if (value == MissionState.KAMIKADZE_TARGET) {
+            return ControlOwner.TERMINAL_GUIDANCE;
+        }
+        if (value == MissionState.WAITING_FOR_WORLD
+                || value == MissionState.WAITING_FOR_FUEL
+                || value == MissionState.EXECUTION_STALLED
+                || value == MissionState.REPLAN
+                || value == MissionState.RECOVERING
+                || value == MissionState.RETURNING
+                || value == MissionState.LANDING
+                || value == MissionState.PARKING
+                || value == MissionState.HOLDING) {
+            return ControlOwner.RECOVERY;
+        }
+        if (value == MissionState.COMPLETE
+                || value == MissionState.ABORTED
+                || value == MissionState.FAILED
+                || value == MissionState.KAMIKADZE_DETONATED
+                || value == MissionState.AIRCRAFT_LOST) {
             return ControlOwner.SAFETY;
         }
         return ControlOwner.MISSION_AI;
@@ -330,6 +360,9 @@ public final class RDPMission {
             throw new IllegalArgumentException("Abort reason is required");
         }
         if (state == MissionState.ABORTED) return;
+        if (state == MissionState.KAMIKADZE_TARGET) {
+            throw new IllegalStateException("ABORT_IMPOSSIBLE_AFTER_TERMINAL_COMMIT");
+        }
         if (isTerminal()) {
             throw new IllegalStateException("Cannot abort terminal mission " + missionId
                     + " in state " + state);
@@ -377,6 +410,9 @@ public final class RDPMission {
 
     public void markKamikazeDetonated(long tick) {
         if (state == MissionState.KAMIKADZE_DETONATED) return;
+        if (state != MissionState.KAMIKADZE_TARGET || !kamikazePayloadLaunched) {
+            throw new IllegalStateException("Kamikaze effect requires observed payload launch");
+        }
         transitionTo(MissionState.KAMIKADZE_DETONATED, tick, "KAMIKAZE_DETONATED");
     }
 
@@ -419,7 +455,7 @@ public final class RDPMission {
                 observationDistance, createdTick);
         mission.state = state;
         mission.phase = phaseFor(state);
-        mission.controlOwner = ownerFor(mission.phase);
+        mission.controlOwner = ownerFor(state);
         mission.targetId = targetId;
         mission.lastUpdateTick = lastUpdateTick;
         mission.failureReason = failureReason;

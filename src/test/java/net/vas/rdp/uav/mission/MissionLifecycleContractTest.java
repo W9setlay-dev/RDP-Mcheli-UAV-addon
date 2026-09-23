@@ -105,6 +105,62 @@ public class MissionLifecycleContractTest {
     }
 
     @Test
+    public void terminalCommitMakesAbortImpossible() {
+        RDPMission mission = mission(0);
+        mission.transitionTo(MissionState.DISPATCHED, 1);
+        mission.transitionTo(MissionState.TAKEOFF, 2);
+        mission.transitionTo(MissionState.CRUISE, 3);
+        mission.transitionTo(MissionState.SEARCHING, 4);
+        mission.transitionTo(MissionState.TARGET_ACQUIRED, 5);
+        mission.lockTarget(UUID.randomUUID(), 6);
+        mission.transitionTo(MissionState.KAMIKADZE_TARGET, 7);
+
+        try {
+            mission.abort("OPERATOR_ABORT", 8);
+            fail("Terminal commitment must reject abort");
+        } catch (IllegalStateException expected) {
+            assertEquals("ABORT_IMPOSSIBLE_AFTER_TERMINAL_COMMIT",
+                    expected.getMessage());
+        }
+        assertEquals(MissionState.KAMIKADZE_TARGET, mission.getState());
+    }
+
+    @Test
+    public void controlOwnerFollowsAuthoritativeMissionState() {
+        RDPMission mission = mission(0);
+        assertEquals(ControlOwner.MISSION_AI, mission.getControlOwner());
+
+        mission.transitionTo(MissionState.WAITING_FOR_WORLD, 1);
+        assertEquals(ControlOwner.RECOVERY, mission.getControlOwner());
+
+        mission.transitionTo(MissionState.REPLAN, 2);
+        mission.transitionTo(MissionState.SEARCHING, 3);
+        mission.transitionTo(MissionState.TARGET_ACQUIRED, 4);
+        mission.lockTarget(UUID.randomUUID(), 5);
+        mission.transitionTo(MissionState.ATTACK_TARGET, 6);
+        mission.transitionTo(MissionState.KAMIKADZE_TARGET, 7);
+        assertEquals(ControlOwner.TERMINAL_GUIDANCE, mission.getControlOwner());
+
+        mission.transitionTo(MissionState.KAMIKADZE_DETONATED, 8);
+        assertEquals(ControlOwner.SAFETY, mission.getControlOwner());
+    }
+
+    @Test
+    public void restoredTerminalMissionRetainsSafetyOwnership() {
+        RDPMission source = mission(0);
+        source.abort("OPERATOR_ABORT", 1);
+
+        RDPMission restored = RDPMission.restore(source.getMissionId(), source.getOwnerId(),
+                source.getAircraftId(), source.getAircraftType(), source.getMissionType(),
+                source.getTargetSpec(), source.isAttack(), source.isEliminateAllCost(),
+                source.isDeepScan(), source.getSearchRadius(), source.getObservationDistance(),
+                source.getCreatedTick(), source.getState(), source.getTargetId(),
+                source.getLastUpdateTick(), source.getFailureReason(), source.getReportId());
+
+        assertEquals(ControlOwner.SAFETY, restored.getControlOwner());
+    }
+
+    @Test
     public void transitionReasonSurvivesPersistenceRoundTrip() {
         RDPMission source = mission(12);
         source.abort("OPERATOR_ABORT", 18);
@@ -114,6 +170,59 @@ public class MissionLifecycleContractTest {
 
         assertEquals(MissionState.ABORTED, restored.getState());
         assertEquals("OPERATOR_ABORT", restored.getLastTransitionReason());
+    }
+
+    @Test
+    public void persistenceRetainsAndValidatesControlProjection() {
+        RDPMission source = mission(0);
+        source.transitionTo(MissionState.WAITING_FOR_WORLD, 1);
+
+        NBTTagCompound encoded = MissionNbtCodec.write(source);
+        RDPMission restored = MissionNbtCodec.read(encoded);
+
+        assertEquals(MissionPhase.RECOVERY, restored.getPhase());
+        assertEquals(ControlOwner.RECOVERY, restored.getControlOwner());
+
+        encoded.setString("controlOwner", ControlOwner.MISSION_AI.name());
+        try {
+            MissionNbtCodec.read(encoded);
+            fail("Tampered control ownership must be rejected");
+        } catch (IllegalArgumentException expected) {
+            assertEquals("Mission control owner does not match state",
+                    expected.getMessage());
+        }
+    }
+
+    @Test
+    public void malformedPersistenceRecordFailsClosed() {
+        NBTTagCompound encoded = MissionNbtCodec.write(mission(0));
+        encoded.setString("missionId", "not-a-uuid");
+
+        try {
+            MissionNbtCodec.read(encoded);
+            fail("Malformed mission UUID must be rejected");
+        } catch (IllegalArgumentException expected) {
+            assertEquals("Invalid mission NBT UUID: missionId", expected.getMessage());
+        }
+    }
+
+    @Test
+    public void nativePayloadLaunchDoesNotProveDetonation() {
+        RDPMission mission = mission(0);
+        mission.transitionTo(MissionState.DISPATCHED, 1);
+        mission.transitionTo(MissionState.TAKEOFF, 2);
+        mission.transitionTo(MissionState.CRUISE, 3);
+        mission.transitionTo(MissionState.SEARCHING, 4);
+        mission.transitionTo(MissionState.TARGET_ACQUIRED, 5);
+        mission.lockTarget(UUID.randomUUID(), 6);
+        mission.transitionTo(MissionState.KAMIKADZE_TARGET, 7);
+
+        mission.markKamikazePayloadLaunched(8);
+
+        assertTrue(mission.isKamikazePayloadLaunched());
+        assertEquals(MissionState.KAMIKADZE_TARGET, mission.getState());
+        mission.markKamikazeDetonated(9);
+        assertEquals(MissionState.KAMIKADZE_DETONATED, mission.getState());
     }
 
     private static RDPMission mission(long createdTick) {

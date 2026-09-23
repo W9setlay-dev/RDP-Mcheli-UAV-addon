@@ -18,7 +18,9 @@ The current flow is centered on `MissionManager`, `MissionLifecycle`, and the pe
 
 ### Current mission flow: gaps
 
-- Queue restoration and assignment reconstruction are only partially implemented.
+- Queue restoration is idempotent and assignment reconstruction excludes all
+  terminal states; live restart and multi-client race behavior remain
+  runtime-unverified.
 - `RDPUavMod.ServerTickHandler` is still a placeholder abstraction rather than a full execution scheduler.
 - Mission completion and failure are handled by state transitions but not by a robust mission outcome pipeline.
 
@@ -41,9 +43,19 @@ The target flow begins in `TargetSpec` and is resolved through `TargetSelector` 
 
 ### Target flow: gaps
 
+Point designation remains an explicit server-raytraced block position and is
+rejected when the active aircraft profile is unknown or the point is outside
+that profile's detection range; live camera/render confirmation is still
+runtime-unverified.
+
 - Target classification is still a simple registry-string heuristic, not a real threat model.
 - Structure targets are not model-aware; this is a world point / entity abstraction, not a structural “specific model” attack planner.
 - There is no robust threat level model for bandits, military vehicles, parasitic nests, or dynamic anomalies.
+
+The captured session also showed a route completing while the locked entity was
+unavailable. The lifecycle now preserves UUID identity and enters bounded
+`WAITING_FOR_TARGET` recovery; it does not treat route completion as payload
+success.
 
 ## Movement flow
 
@@ -58,6 +70,9 @@ Movement is routed through the WingMan adapter layer rather than custom direct m
 
 - The addition keeps motion under the real aircraft controller rather than faking movement.
 - The mission system is explicitly not a fake physics abstraction.
+- A captured CRM session observed native WingMan route acceptance and
+  `FLY_TO reached`; this proves route execution evidence for that session, not
+  universal aircraft convergence.
 
 ### Movement flow gaps
 
@@ -74,6 +89,9 @@ The packet path is implemented in `RdpUavNetwork` and the GUI/HUD layer uses the
 - Client requests are treated as commands that the server verifies before mutating state.
 
 ### Network flow strengths
+
+Point, square, and entity requests are validated on the server before mission
+creation or target mutation.
 
 - Client/server separation is explicit.
 - Mission aborts are server-authoritative.
@@ -98,7 +116,9 @@ Mission persistence is handled by `RDPMissionWorldData` and `MissionNbtCodec`.
 
 ### Persistence flow gaps
 
-- Assignment and queue restoration is not fully authoritative.
+- Assignment and queue restoration are source-level authoritative and
+  idempotent; live restart recovery remains runtime-unverified.
+- Malformed NBT records now fail closed with contextual validation errors.
 - There is no robust multi-UAV coordination persistence or route bookkeeping.
 
 ## RDP hostile-world value

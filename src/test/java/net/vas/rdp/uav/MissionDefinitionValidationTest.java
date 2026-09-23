@@ -42,4 +42,23 @@ public class MissionDefinitionValidationTest {
             assertTrue(expected.getMessage().contains("Invalid mission definition"));
         }
     }
+
+    @Test
+    public void pointAndSquareTargetsRemainDistinctMissionModes() {
+        MissionDefinition point = new MissionDefinition()
+                .setMissionType(MissionType.STRIKE)
+                .setTarget("minecraft:stone");
+        MissionDefinition square = new MissionDefinition()
+                .setMissionType(MissionType.SQUARE_STRIKE)
+                .setTarget("10 80 20 64");
+
+        assertTrue(net.vas.rdp.uav.mission.MissionValidationResult
+                .validate(point).isValid());
+        assertTrue(net.vas.rdp.uav.mission.MissionValidationResult
+                .validate(square).isValid());
+        assertFalse(net.vas.rdp.uav.mission.MissionValidationResult
+                .validate(new MissionDefinition().setMissionType(MissionType.STRIKE)
+                        .setTarget("10 80 20 64")).isValid());
+    }
+
 }
