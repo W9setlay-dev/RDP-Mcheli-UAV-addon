@@ -88,6 +88,10 @@ public final class MissionManager {
                 aircraft.register(new AircraftRecord(mission.getAircraftId(), mission.getOwnerId(),
                         mission.getDimension(), mission.getAircraftType(), false, true));
             }
+            if (mission.getTargetId() != null
+                    && !coordinator.claim(mission.getAircraftId(), mission.getTargetId())) {
+                mission.fail("TARGET_RESTORE_CONFLICT", mission.getLastUpdateTick());
+            }
         }
     }
 

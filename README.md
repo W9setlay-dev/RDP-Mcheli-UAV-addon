@@ -25,6 +25,8 @@ The architecture and audit notes for this rework are recorded in `docs/`:
 - `docs/bug-reproduction-matrix.md`
 - `docs/phase-a-lifecycle-rework.md`
 - `docs/phase-b-profile-capabilities.md`
+- `docs/phase-c-weapon-payload-rework.md`
+- `docs/phase-d-authority-persistence-rework.md`
 - `docs/changelog.md`
 
 This keeps the project grounded in the actual McHeliCE/WingMan mission boundary and makes the hostile-world utility case explicit rather than relying on unsupported AI rhetoric.
@@ -153,7 +155,7 @@ No live weapon damage or self-destruct result is inferred by this addon;
 ordinary UAV missions are never forced into an attack.
 
 Guided weapons are selected from the server registry by exact McHeli
-definition/type. UAVs use native WingMan attack nodes for coordinate/TV
+definition/type. UAVs use native WingMan attack nodes for coordinate
 weapons and McHeli's guidance system for entity seekers. A piloted non-UAV
 aircraft uses the same existing mission GUI in reduced **GUIDED WEAPON
 CONTROL** mode; a UAV carrying guided weapons uses the combined UAV + payload
@@ -178,8 +180,8 @@ the nearest safe loaded entity inside the bounded strike area and passes that
 entity to McHeli's native AT seeker; it does not pretend that the AT missile
 has coordinate guidance. `asmissile` is native coordinate/ballistic guidance:
 the addon validates and submits a point/square objective but does not turn it
-into a UAV-like entity hunter. `tvmissile` can use the verified coordinate/TV
-AI handoff for an authorized objective. AI ownership overrides camera input
+into a UAV-like entity hunter. `tvmissile` is currently unsupported for addon
+AI guidance because its native coordinate/laser handoff is not proven. AI ownership overrides camera input
 only while the mission is active; abort/takeover clears the addon assignment
 and returns control to McHeli's native player guidance where supported.
 Obstacle avoidance is best-effort and weapon-family specific. Native seekers
@@ -199,7 +201,8 @@ acceleration, gravity, steering, collision, terrain interaction, fuse, and
 impact. The addon never performs projectile avoidance by moving the carrier
 aircraft or player camera, and never replaces projectile motion every tick.
 
-ATGM/TV missions use only verified native target or TV coordinate inputs.
+ATGM missions use only verified native target inputs; TV missions are rejected
+until a native coordinate/laser handoff is proven.
 ASM/Maverick missions retain the native McHeli Maverick flight mechanic; a
 square objective changes the validated launch solution, not the projectile
 physics. Gravity-defined weapons such as AGM-154-style payloads use a
@@ -224,7 +227,7 @@ treated as proof of a completed pass, weapon release, impact, or damage; a
 server mission command and live runtime verification are still required before
 this capability can be considered production-ready.
 
-Entity-seeker and TV/coordinate missions may optionally attach a server-owned
+Entity-seeker missions may optionally attach a server-owned
 priority filter. Rules accept exact registry IDs or namespace patterns such as
 `srparasites:*`; while the projectile is alive, a newly loaded valid contact
 with a higher rule priority can replace the current UUID objective. Manual
@@ -403,9 +406,9 @@ state transitions.
 
 Copy `config/rdp-uav-guided-weapons.cfg.example` to the instance config
 directory to authorize McHeli weapon definition/type pairs. `aamissile` and `atmissile` are entity-seeker weapons; `asmissile` and
-`tvmissile` accept coordinate/TV/laser entity or square objectives when their
-capability is configured. During an authorized active mission, TV missiles use
-server-owned AI guidance even if the player is viewing the missile camera.
+`tvmissile` is explicitly unsupported for addon AI guidance, even if an older
+configuration advertises coordinate/TV/laser objectives. During an authorized
+active mission, only capabilities with a proven native handoff are accepted.
 Abort removes the AI ownership and returns to native player guidance where
 McHeli supports it. `asmissile` pursuit uses bounded server-side 3D obstacle
 sampling and replanning toward the configured square; it preserves McHeli

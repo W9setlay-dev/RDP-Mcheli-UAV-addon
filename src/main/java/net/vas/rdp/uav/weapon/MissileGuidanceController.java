@@ -43,6 +43,8 @@ public final class MissileGuidanceController {
             new HashMap<>();
     private static final Map<UUID, String> UNKNOWN_OUTCOMES =
             new HashMap<>();
+    private static final Map<UUID, Boolean> CONFIRMED_EFFECTS =
+            new HashMap<>();
     private static final int MAX_UNKNOWN_OUTCOMES = 512;
     private static final int MAX_ROUTE_SAMPLES = 12;
     private static final int MAX_AVOIDANCE_CANDIDATES = 8;
@@ -192,6 +194,51 @@ public final class MissileGuidanceController {
      */
     public static synchronized boolean isProjectileOutcomeUnknown(UUID objectiveId) {
         return objectiveId != null && UNKNOWN_OUTCOMES.containsKey(objectiveId);
+    }
+
+    /**
+     * Records an impact observed by a server-authoritative native event hook.
+     * This method does not infer impact from projectile disappearance.
+     */
+    public static synchronized boolean markImpactObserved(UUID projectileId) {
+        ProjectileGuidanceMission projectile = PROJECTILES.get(projectileId);
+        if (projectile == null) return false;
+        projectile.impacted();
+        UNKNOWN_OUTCOMES.remove(projectile.getObjective().getObjectiveId());
+        return true;
+    }
+
+    /**
+     * Records a confirmed game effect only when the caller has observed that
+     * effect on the server. It never upgrades an unknown or absent projectile.
+     */
+    public static synchronized boolean markEffectConfirmed(UUID projectileId) {
+        ProjectileGuidanceMission projectile = PROJECTILES.get(projectileId);
+        if (projectile == null || projectile.getState() != ProjectileGuidanceState.IMPACTED) {
+            return false;
+        }
+        projectile.getObjective().complete();
+        CONFIRMED_EFFECTS.put(projectile.getObjective().getObjectiveId(), Boolean.TRUE);
+        return true;
+    }
+
+    public static synchronized ProjectileGuidanceState projectileState(UUID projectileId) {
+        ProjectileGuidanceMission projectile = PROJECTILES.get(projectileId);
+        return projectile == null ? null : projectile.getState();
+    }
+
+    public static synchronized ProjectileGuidanceState projectileStateForObjective(UUID objectiveId) {
+        if (objectiveId == null) return null;
+        for (ProjectileGuidanceMission projectile : PROJECTILES.values()) {
+            if (objectiveId.equals(projectile.getObjective().getObjectiveId())) {
+                return projectile.getState();
+            }
+        }
+        return null;
+    }
+
+    public static synchronized boolean effectConfirmedForObjective(UUID objectiveId) {
+        return objectiveId != null && Boolean.TRUE.equals(CONFIRMED_EFFECTS.get(objectiveId));
     }
 
     private static boolean matchesNative(MCH_EntityBaseBullet missile) {

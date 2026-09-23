@@ -4,6 +4,8 @@ import net.minecraftforge.common.config.Configuration;
 import net.vas.rdp.uav.RdpUavDebug;
 import java.io.File;
 import java.util.EnumSet;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -160,7 +162,7 @@ public final class GuidedWeaponRegistry {
         // therefore accept either a matching native type or a definition name
         // that resolves to the same capability, even when those identifiers differ.
         if (!normalizedType.isEmpty()) {
-            for (GuidedWeaponCapability capability : CAPABILITIES.values()) {
+            for (GuidedWeaponCapability capability : orderedCapabilities()) {
                 if (normalizedType.equals(capability.getType())) {
                     return capability;
                 }
@@ -170,7 +172,7 @@ public final class GuidedWeaponRegistry {
             }
         }
         if (!normalizedDefinition.isEmpty()) {
-            for (GuidedWeaponCapability capability : CAPABILITIES.values()) {
+            for (GuidedWeaponCapability capability : orderedCapabilities()) {
                 if (normalizedDefinition.equals(capability.getType())) {
                     return capability;
                 }
@@ -180,6 +182,16 @@ public final class GuidedWeaponRegistry {
             }
         }
         return null;
+    }
+
+    private static ArrayList<GuidedWeaponCapability> orderedCapabilities() {
+        ArrayList<GuidedWeaponCapability> result =
+                new ArrayList<>(CAPABILITIES.values());
+        Collections.sort(result, (left, right) -> {
+            int definition = left.getDefinition().compareTo(right.getDefinition());
+            return definition != 0 ? definition : left.getType().compareTo(right.getType());
+        });
+        return result;
     }
 
     public static void clear() { CAPABILITIES.clear(); }

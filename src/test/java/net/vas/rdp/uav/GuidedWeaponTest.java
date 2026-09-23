@@ -289,6 +289,16 @@ public class GuidedWeaponTest {
     }
 
     @Test
+    public void unsupportedCapabilityReportsExplicitObjectiveReason() {
+        GuidedWeaponCapability capability = new GuidedWeaponCapability("tv", "tvmissile",
+                GuidedNativeBehavior.UNSUPPORTED,
+                EnumSet.of(GuidedObjectiveType.ENTITY, GuidedObjectiveType.SQUARE),
+                new GuidedTerminalProfile(100, true));
+        assertEquals("UNSUPPORTED_GUIDANCE",
+                capability.validateObjective(GuidedObjectiveType.ENTITY));
+    }
+
+    @Test
     public void registryNativeTypeFallbackDoesNotMatchUnknownType() {
         GuidedWeaponRegistry.clear();
         GuidedWeaponCapability capability = new GuidedWeaponCapability("asmissile", "asmissile",

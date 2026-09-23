@@ -1227,8 +1227,6 @@ public final class RdpUavNetwork {
                         } catch (RuntimeException invalidState) { continue; }
                     }
                     RDPUavMod.missions().release(mission);
-                    net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
-                            .remove(mission.getMissionId());
                     changed = true;
                 }
                 if (changed) {

@@ -305,6 +305,23 @@ public final class MissionLifecycle {
             }
             if (mission.getState() == MissionState.PROJECTILE_TRACKED
                     && net.vas.rdp.uav.weapon.MissileGuidanceController
+                    .projectileStateForObjective(mission.getMissionId())
+                    == net.vas.rdp.uav.weapon.ProjectileGuidanceState.IMPACTED) {
+                mission.transitionTo(MissionState.IMPACT_OBSERVED, tick,
+                        "IMPACT_OBSERVED");
+                RDPMissionWorldData.get(world).markDirty();
+                continue;
+            }
+            if (mission.getState() == MissionState.IMPACT_OBSERVED
+                    && net.vas.rdp.uav.weapon.MissileGuidanceController
+                    .effectConfirmedForObjective(mission.getMissionId())) {
+                mission.transitionTo(MissionState.EFFECT_CONFIRMED, tick,
+                        "EFFECT_CONFIRMED");
+                RDPMissionWorldData.get(world).markDirty();
+                continue;
+            }
+            if (mission.getState() == MissionState.PROJECTILE_TRACKED
+                    && net.vas.rdp.uav.weapon.MissileGuidanceController
                     .isProjectileOutcomeUnknown(mission.getMissionId())) {
                 mission.transitionTo(MissionState.OUTCOME_UNKNOWN, tick);
                 RdpUavDebug.event("MissionRuntime", "PAYLOAD_OUTCOME_UNKNOWN",

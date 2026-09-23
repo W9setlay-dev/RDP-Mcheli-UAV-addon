@@ -10,7 +10,9 @@ public final class MissionQueue {
         if (mission == null) {
             throw new IllegalArgumentException("Mission is required");
         }
-        queue.addLast(mission);
+        if (!queue.contains(mission)) {
+            queue.addLast(mission);
+        }
     }
 
     public synchronized RDPMission poll() {
@@ -26,7 +28,7 @@ public final class MissionQueue {
     }
 
     public synchronized boolean contains(RDPMission mission) {
-        return !queue.contains(mission);
+        return queue.contains(mission);
     }
 
     public synchronized int size() {

@@ -50,4 +50,11 @@ public final class GuidedWeaponCapability {
         return objective != null && objectives.contains(objective)
                 && behavior != GuidedNativeBehavior.UNSUPPORTED;
     }
+
+    public String validateObjective(GuidedObjectiveType objective) {
+        if (behavior == GuidedNativeBehavior.UNSUPPORTED) return "UNSUPPORTED_GUIDANCE";
+        if (objective == null) return "OBJECTIVE_TYPE_REQUIRED";
+        return objectives.contains(objective)
+                ? null : "UNSUPPORTED_OBJECTIVE_COMBINATION";
+    }
 }
