@@ -137,6 +137,19 @@ public class GuidedWeaponTest {
     }
 
     @Test
+    public void registryTypeFallbackMatchesDifferentDefinitionName() {
+        GuidedWeaponRegistry.clear();
+        GuidedWeaponCapability capability = new GuidedWeaponCapability("asmissile", "asmissile",
+                GuidedNativeBehavior.COORDINATE_BALLISTIC,
+                EnumSet.of(GuidedObjectiveType.SQUARE),
+                new GuidedTerminalProfile(0, true));
+        GuidedWeaponRegistry.register(capability);
+        assertEquals(capability, GuidedWeaponRegistry.find("custom-definition", "asmissile"));
+        assertNull(GuidedWeaponRegistry.find("custom-definition", "unsupported"));
+        GuidedWeaponRegistry.clear();
+    }
+
+    @Test
     public void asmissileNativeTypeAcceptsMaverickSquareObjective() {
         GuidedWeaponRegistry.clear();
         GuidedWeaponCapability capability = new GuidedWeaponCapability("asmissile",

@@ -149,16 +149,32 @@ public final class GuidedWeaponRegistry {
     }
 
     public static GuidedWeaponCapability find(String definition, String type) {
-        GuidedWeaponCapability exact = CAPABILITIES.get(key(definition, type));
-        if (exact != null) return exact;
-        // McHeli weapon definitions commonly use names such as agm114 while
-        // the native type is atmissile. Built-in and custom type capabilities
-        // must therefore apply to a differently named compatible definition.
+        String normalizedDefinition = normalize(definition);
         String normalizedType = normalize(type);
+
+        GuidedWeaponCapability exact = CAPABILITIES.get(key(normalizedDefinition, normalizedType));
+        if (exact != null) return exact;
+
+        // McHeli weapon definitions commonly use names such as agm114 while
+        // the native type remains atmissile. Compatible type-based lookup must
+        // therefore accept either a matching native type or a definition name
+        // that resolves to the same capability, even when those identifiers differ.
         if (!normalizedType.isEmpty()) {
             for (GuidedWeaponCapability capability : CAPABILITIES.values()) {
-                if (normalizedType.equals(capability.getType())
-                        && normalizedType.equals(capability.getDefinition())) {
+                if (normalizedType.equals(capability.getType())) {
+                    return capability;
+                }
+                if (normalizedType.equals(capability.getDefinition())) {
+                    return capability;
+                }
+            }
+        }
+        if (!normalizedDefinition.isEmpty()) {
+            for (GuidedWeaponCapability capability : CAPABILITIES.values()) {
+                if (normalizedDefinition.equals(capability.getType())) {
+                    return capability;
+                }
+                if (normalizedDefinition.equals(capability.getDefinition())) {
                     return capability;
                 }
             }
