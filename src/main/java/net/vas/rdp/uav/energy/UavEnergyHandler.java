@@ -78,7 +78,7 @@ public final class UavEnergyHandler {
         Integer previous = lastFuel.get(aircraft.getUniqueID());
         int fuel = Math.max(0, aircraft.getFuel());
         if (previous == null || previous != fuel) {
-            assert aircraft.getAcInfo() != null;
+            if (aircraft.getAcInfo() == null) return;
             int maxFuel = Math.max(1, aircraft.getAcInfo().maxFuel);
             int mapped = (int) ((long) fuel * energy.getMaxEnergyStored() / maxFuel);
             energy.extractEnergy(energy.getEnergyStored(), false);
@@ -90,7 +90,7 @@ public final class UavEnergyHandler {
 
     private void writeMcHeliRfFuel(MCH_EntityAircraft aircraft, IEnergyStorage energy) {
         if (!isRfFuel(aircraft)) return;
-        assert aircraft.getAcInfo() != null;
+        if (aircraft.getAcInfo() == null) return;
         int maxFuel = Math.max(1, aircraft.getAcInfo().maxFuel);
         int fuel = (int) ((long) energy.getEnergyStored() * maxFuel
                 / Math.max(1, energy.getMaxEnergyStored()));

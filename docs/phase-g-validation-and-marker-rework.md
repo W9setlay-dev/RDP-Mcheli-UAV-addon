@@ -37,6 +37,9 @@ The phase plan is now internally consistent for source-level behavior:
   rejection reasons for missing authorization and malformed parameters.
 - square-strike packet weapon assignment is applied only to a mission created
   by that request; a rejected request cannot mutate an older active mission.
+- attack authorization now rejects missing metadata, unsupported profiles,
+  failed native arming, and invalid ownership/state with explicit feedback;
+  legacy launch-packet weapon assignment is also request-scoped.
 
 The plan is **not** complete for runtime acceptance. Packet delivery, native
 WingMan movement, collision ordering, projectile/effect callbacks, GUI

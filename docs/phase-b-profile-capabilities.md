@@ -13,6 +13,8 @@ Profiles are now a compatibility policy, not only descriptive metadata.
   altitudes outside the declared minimum/maximum range.
 - Piloted non-UAV aircraft retain their separate native weapon path; this
   phase does not claim autonomous WingMan control for them.
+- RF-fuel synchronization fails closed when McHeli metadata is temporarily
+  unavailable instead of relying on assertions in the server tick handler.
 
 ## Supported policy
 
