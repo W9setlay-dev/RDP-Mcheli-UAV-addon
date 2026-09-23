@@ -1,5 +1,7 @@
 package net.vas.rdp.uav.profile;
 
+import net.vas.rdp.uav.mission.MissionType;
+
 /**
  * Immutable capability projection over the existing vehicle profile.
  *
@@ -71,4 +73,24 @@ public final class VehicleCapability {
     public boolean supportsPositionTarget() { return positionTarget; }
     public boolean supportsTerminalGuidance() { return terminalGuidance; }
     public MissionDoctrine getDoctrine() { return doctrine; }
+
+    /**
+     * Returns a stable rejection reason, or null when the profile can execute
+     * the requested mission intent. This is a policy boundary only; native
+     * aircraft and weapon acceptance remain separate runtime observations.
+     */
+    public String validateMission(MissionType missionType, boolean attack) {
+        if (executionProfile == UavExecutionProfile.UNKNOWN) {
+            return "UNSUPPORTED_AIRCRAFT_PROFILE";
+        }
+        if (missionType == null) return "MISSION_TYPE_REQUIRED";
+        if (missionType == MissionType.SQUARE_STRIKE && !supportsPositionTarget()) {
+            return "PROFILE_DOES_NOT_SUPPORT_POSITION_TARGET";
+        }
+        if (attack && missionType != MissionType.OBSERVATION
+                && !supportsTerminalGuidance() && !supportsMovingTarget()) {
+            return "PROFILE_DOES_NOT_SUPPORT_ATTACK";
+        }
+        return null;
+    }
 }

@@ -23,6 +23,8 @@ The architecture and audit notes for this rework are recorded in `docs/`:
 - `docs/api-verification-notes.md`
 - `docs/runtime-test-matrix.md`
 - `docs/bug-reproduction-matrix.md`
+- `docs/phase-a-lifecycle-rework.md`
+- `docs/phase-b-profile-capabilities.md`
 - `docs/changelog.md`
 
 This keeps the project grounded in the actual McHeliCE/WingMan mission boundary and makes the hostile-world utility case explicit rather than relying on unsupported AI rhetoric.

@@ -182,7 +182,7 @@ public final class SwarmManager {
             } else if (state == SwarmState.DISBANDED) {
                 if (missions != null) missions.removeQueuedMission(mission);
                 if (!mission.isTerminal()) {
-                    mission.transitionTo(MissionState.ABORTED, world.getTotalWorldTime());
+                    mission.abort("SWARM_ABORT", world.getTotalWorldTime());
                 }
                 if (aircraft != null) flight.release(aircraft);
                 if (missions != null) missions.release(mission);

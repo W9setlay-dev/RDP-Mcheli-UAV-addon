@@ -53,8 +53,14 @@ public final class UavVehicleProfile {
                              double lockRange, double missionExecutionRange,
                              String attackWeaponPriority, double oneWaySpeed,
                              double attackEnvelope) {
-        if (executionProfile == null || executionAltitude < 0 || minimumExecutionAltitude < 0
+        if (executionProfile == null || !Double.isFinite(executionAltitude)
+                || !Double.isFinite(minimumExecutionAltitude)
+                || !Double.isFinite(maximumExecutionAltitude)
+                || !Double.isFinite(altitudeTolerance)
+                || executionAltitude < 0 || minimumExecutionAltitude < 0
                 || maximumExecutionAltitude < minimumExecutionAltitude
+                || executionAltitude < minimumExecutionAltitude
+                || executionAltitude > maximumExecutionAltitude
                 || altitudeTolerance < 0 || detectionRange <= 0 || lockRange <= 0
                 || missionExecutionRange <= 0 || lockRange > detectionRange) {
             throw new IllegalArgumentException("Invalid UAV vehicle profile");

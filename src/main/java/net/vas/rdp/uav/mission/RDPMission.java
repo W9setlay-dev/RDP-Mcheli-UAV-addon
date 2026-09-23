@@ -42,7 +42,8 @@ public final class RDPMission {
     private double squareDepth;
     private MissionPhase phase = MissionPhase.PLANNING;
     private ControlOwner controlOwner = ControlOwner.MISSION_AI;
-    private static final int MAX_RECOVERY_ATTEMPTS = 5;
+    public static final int MAX_RECOVERY_ATTEMPTS = 5;
+    private String lastTransitionReason;
 
     public RDPMission(UUID missionId, UUID ownerId, UUID aircraftId, String aircraftType,
                       MissionType missionType, TargetSpec targetSpec, boolean attack,
@@ -70,11 +71,17 @@ public final class RDPMission {
     }
 
     public void transitionTo(MissionState nextState, long tick) {
+        transitionTo(nextState, tick, "STATE_TRANSITION");
+    }
+
+    public void transitionTo(MissionState nextState, long tick, String reason) {
         if (nextState == null || tick < lastUpdateTick) {
             throw new IllegalArgumentException("Invalid mission transition");
         }
+        if (reason == null || reason.trim().isEmpty()) {
+            throw new IllegalArgumentException("Transition reason is required");
+        }
         if (nextState == state) {
-            lastUpdateTick = tick;
             return;
         }
         if (!state.canTransitionTo(nextState)) {
@@ -87,6 +94,7 @@ public final class RDPMission {
         queued = false;
         phase = phaseFor(nextState);
         controlOwner = ownerFor(phase);
+        lastTransitionReason = reason.trim();
         RdpUavDebug.event("MissionLifecycle", "MISSION_STATE_TRANSITION",
                 "mission", missionId,
                 "aircraft", aircraftId,
@@ -102,6 +110,10 @@ public final class RDPMission {
         return state == MissionState.COMPLETE || state == MissionState.ABORTED
                 || state == MissionState.FAILED
                 || state == MissionState.KAMIKADZE_DETONATED;
+    }
+    public boolean isTimedOut(long tick, long timeoutTicks) {
+        if (tick < createdTick || timeoutTicks < 1L) return false;
+        return tick - createdTick >= timeoutTicks;
     }
     public boolean isDestructiveAuthorized() { return destructiveAuthorized; }
     public MissionPhase getPhase() { return phase; }
@@ -309,7 +321,28 @@ public final class RDPMission {
                     + " in state " + state);
         }
         this.failureReason = reason;
-        transitionTo(MissionState.FAILED, tick);
+        transitionTo(MissionState.FAILED, tick, reason);
+    }
+
+    public void abort(String reason, long tick) {
+        if (reason == null || reason.trim().isEmpty()) {
+            throw new IllegalArgumentException("Abort reason is required");
+        }
+        if (state == MissionState.ABORTED) return;
+        if (isTerminal()) {
+            throw new IllegalStateException("Cannot abort terminal mission " + missionId
+                    + " in state " + state);
+        }
+        transitionTo(MissionState.ABORTED, tick, reason);
+    }
+
+    public void complete(long tick) {
+        if (state == MissionState.COMPLETE) return;
+        if (isTerminal()) {
+            throw new IllegalStateException("Cannot complete terminal mission " + missionId
+                    + " in state " + state);
+        }
+        transitionTo(MissionState.COMPLETE, tick, "MISSION_COMPLETE");
     }
 
     /**
@@ -342,7 +375,8 @@ public final class RDPMission {
     }
 
     public void markKamikazeDetonated(long tick) {
-        transitionTo(MissionState.KAMIKADZE_DETONATED, tick);
+        if (state == MissionState.KAMIKADZE_DETONATED) return;
+        transitionTo(MissionState.KAMIKADZE_DETONATED, tick, "KAMIKAZE_DETONATED");
     }
 
     public void setReportId(String reportId) {
@@ -389,6 +423,8 @@ public final class RDPMission {
         mission.lastUpdateTick = lastUpdateTick;
         mission.failureReason = failureReason;
         mission.reportId = reportId;
+        mission.lastTransitionReason = failureReason == null
+                ? "RESTORED_" + state.name() : failureReason;
         return mission;
     }
 
@@ -442,6 +478,11 @@ public final class RDPMission {
     public String getLastTargetReason() { return lastTargetReason; }
     public long getLastTargetTick() { return lastTargetTick; }
     public String getFailureReason() { return failureReason; }
+    public String getLastTransitionReason() { return lastTransitionReason; }
+    public void restoreTransitionReason(String reason) {
+        lastTransitionReason = reason == null || reason.trim().isEmpty()
+                ? null : reason.trim();
+    }
     public String getReportId() { return reportId; }
     public int getDimension() { return dimension; }
     public boolean isQueued() { return queued; }

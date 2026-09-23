@@ -1175,8 +1175,7 @@ public final class RdpUavNetwork {
                                         player.getUniqueID(), message.missionId);
                                 return;
                         }
-                        mission.transitionTo(net.vas.rdp.uav.mission.MissionState.ABORTED,
-                                player.world.getTotalWorldTime());
+                        mission.abort("OPERATOR_ABORT", player.world.getTotalWorldTime());
                         net.vas.rdp.uav.weapon.MissileGuidanceController.abort(mission.getAircraftId());
                         for (net.minecraft.entity.Entity entity : player.world.loadedEntityList) {
                             if (entity instanceof MCH_EntityAircraft
@@ -1224,8 +1223,7 @@ public final class RdpUavNetwork {
                     }
                     if (!mission.isTerminal()) {
                         try {
-                            mission.transitionTo(net.vas.rdp.uav.mission.MissionState.ABORTED,
-                                    player.world.getTotalWorldTime());
+                            mission.abort("CLEAR_MISSIONS", player.world.getTotalWorldTime());
                         } catch (RuntimeException invalidState) { continue; }
                     }
                     RDPUavMod.missions().release(mission);
@@ -1842,8 +1840,7 @@ public final class RdpUavNetwork {
             for (net.vas.rdp.uav.mission.RDPMission mission : missions) {
                 if (!aircraft.getUniqueID().equals(mission.getAircraftId())
                         || mission.isTerminal()) continue;
-                mission.transitionTo(net.vas.rdp.uav.mission.MissionState.ABORTED,
-                        player.world.getTotalWorldTime());
+                mission.abort("TARGET_LOCK_CLEARED", player.world.getTotalWorldTime());
                 RDPUavMod.missions().release(mission);
             }
             FLIGHT_ADAPTER.release(aircraft);

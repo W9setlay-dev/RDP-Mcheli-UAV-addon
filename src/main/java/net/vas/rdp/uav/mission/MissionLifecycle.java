@@ -15,6 +15,7 @@ import net.vas.rdp.uav.scan.RDPScanReport;
 import net.vas.rdp.uav.scan.RDPScanReportRepository;
 import net.vas.rdp.uav.profile.UavVehicleProfile;
 import net.vas.rdp.uav.profile.UavVehicleProfiles;
+import net.vas.rdp.uav.profile.VehicleCapability;
 import net.vas.rdp.uav.target.TargetSelectionMode;
 import net.vas.rdp.uav.target.ContactLifecycle;
 import net.vas.rdp.uav.target.ContactSnapshot;
@@ -43,7 +44,7 @@ import net.vas.rdp.uav.RdpUavDebug;
  */
 public final class MissionLifecycle {
     private static final Logger LOGGER = LogManager.getLogger("RDP-UAV/MissionLifecycle");
-    private static final long MISSION_TIMEOUT = 12000L;
+    static final long MISSION_TIMEOUT = 12000L;
     private static final long PROJECTILE_OBSERVATION_TIMEOUT = 100L;
     private static final long WINGMAN_ENTRY_GRACE_TICKS = 20L;
     private static final long GUIDANCE_RETRY_INTERVAL = 10L;
@@ -116,6 +117,10 @@ public final class MissionLifecycle {
 
     private void dispatch(World world, RDPMission mission) {
         long tick = world.getTotalWorldTime();
+        if (mission.isTimedOut(tick, MISSION_TIMEOUT)) {
+            fail(world, mission, "MISSION_TIMEOUT", tick);
+            return;
+        }
         MCH_EntityAircraft aircraft = findAircraft(world, mission.getAircraftId());
         if (tick % 5L == 0L) {
             RdpUavDebug.event("MissionRuntime", "MISSION_DISPATCH_ATTEMPT",
@@ -133,6 +138,15 @@ public final class MissionLifecycle {
             defer(world, mission, "AIRCRAFT_METADATA_UNAVAILABLE",
                     MissionState.WAITING_FOR_WORLD, tick);
             return;
+        }
+        UavVehicleProfile vehicleProfile = profile(aircraft);
+        if (aircraft.isUAV()) {
+            String capabilityFailure = VehicleCapability.fromProfile(vehicleProfile)
+                    .validateMission(mission.getMissionType(), mission.isAttack());
+            if (capabilityFailure != null) {
+                fail(world, mission, capabilityFailure, tick);
+                return;
+            }
         }
         // MissionManager.create already assigned this aircraft. Re-registering
         // it here would replace the ON_MISSION record with a fresh READY
@@ -261,6 +275,11 @@ public final class MissionLifecycle {
         for (RDPMission mission : missions) {
             if (mission.isQueued() || terminal(mission.getState())
                     || mission.getDimension() != world.provider.getDimension()) continue;
+            if (mission.isTimedOut(tick, MISSION_TIMEOUT)) {
+                fail(world, mission, "MISSION_TIMEOUT", tick);
+                dirty = true;
+                continue;
+            }
             if (mission.getState() == MissionState.LAUNCH_ACCEPTED
                     || mission.getState() == MissionState.DIRECT_LAUNCH_COMPLETE) {
                 if (net.vas.rdp.uav.weapon.MissileGuidanceController
@@ -823,7 +842,7 @@ public final class MissionLifecycle {
                 if (flight.isParked(aircraft)) {
                     mission.transitionTo(MissionState.LANDING, tick);
                     mission.transitionTo(MissionState.PARKING, tick);
-                    mission.transitionTo(MissionState.COMPLETE, tick);
+                    mission.complete(tick);
                     return true;
                 }
                 return false;

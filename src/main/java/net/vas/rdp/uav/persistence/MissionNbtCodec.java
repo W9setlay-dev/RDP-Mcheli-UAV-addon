@@ -11,7 +11,7 @@ import net.vas.rdp.uav.target.TargetSpec;
 import java.util.UUID;
 
 public final class MissionNbtCodec {
-    private static final int CURRENT_SCHEMA = 2;
+    private static final int CURRENT_SCHEMA = 3;
     private MissionNbtCodec() {
     }
 
@@ -42,6 +42,8 @@ public final class MissionNbtCodec {
         tag.setString("state", mission.getState().name());
         tag.setString("targetUuid", mission.getTargetId() == null ? "" : mission.getTargetId().toString());
         tag.setString("failureReason", mission.getFailureReason() == null ? "" : mission.getFailureReason());
+        tag.setString("lastTransitionReason", mission.getLastTransitionReason() == null
+                ? "" : mission.getLastTransitionReason());
         tag.setString("reportId", mission.getReportId() == null ? "" : mission.getReportId());
         tag.setInteger("dimension", mission.getDimension());
         tag.setBoolean("queued", mission.isQueued());
@@ -96,6 +98,9 @@ public final class MissionNbtCodec {
                 tag.getLong("lastUpdateTick"), failureReason.isEmpty() ? null : failureReason,
                 report.isEmpty() ? null : report);
         mission.setDimension(tag.getInteger("dimension"));
+        if (tag.hasKey("lastTransitionReason")) {
+            mission.restoreTransitionReason(tag.getString("lastTransitionReason"));
+        }
         if (tag.hasKey("squareWidth") && tag.hasKey("squareDepth")
                 && tag.getDouble("squareWidth") > 0.0D && tag.getDouble("squareDepth") > 0.0D) {
             mission.setSquareArea(tag.getDouble("squareWidth"), tag.getDouble("squareDepth"));
