@@ -12,7 +12,19 @@ public final class TerminalApproachPlanner {
     public static Plan plan(double aircraftX, double aircraftY, double aircraftZ,
                             double targetX, double targetY, double targetZ,
                             double preferredBearingDegrees) {
+        return plan(aircraftX, aircraftY, aircraftZ, targetX, targetY, targetZ,
+                preferredBearingDegrees, 12.0D, 0.0D, 24.0D);
+    }
+
+    public static Plan plan(double aircraftX, double aircraftY, double aircraftZ,
+                            double targetX, double targetY, double targetZ,
+                            double preferredBearingDegrees, double turnRadius,
+                            double targetRadius, double minimumRun) {
         requireFinite(aircraftX, aircraftY, aircraftZ, targetX, targetY, targetZ);
+        requireFinite(turnRadius, targetRadius, minimumRun);
+        if (turnRadius <= 0.0D || targetRadius < 0.0D || minimumRun <= 0.0D) {
+            throw new IllegalArgumentException("Invalid terminal limits");
+        }
         double dx = aircraftX - targetX;
         double dz = aircraftZ - targetZ;
         double horizontal = Math.sqrt(dx * dx + dz * dz);
@@ -24,9 +36,11 @@ public final class TerminalApproachPlanner {
         }
         double altitude = aircraftY - targetY;
         double angle = chooseAngle(Math.abs(altitude), horizontal);
-        double run = altitude > 0.0D
-                ? clamp(altitude / Math.tan(Math.toRadians(angle)), 24.0D, 192.0D)
-                : clamp(horizontal * 0.35D, 24.0D, 96.0D);
+        double geometryRun = altitude > 0.0D
+                ? altitude / Math.tan(Math.toRadians(angle))
+                : horizontal * 0.35D;
+        double run = clamp(Math.max(geometryRun, turnRadius + targetRadius + minimumRun),
+                minimumRun, altitude > 0.0D ? 192.0D : 96.0D);
         double approachX = targetX + dx / horizontal * run;
         double approachZ = targetZ + dz / horizontal * run;
         double approachY = altitude > 0.0D

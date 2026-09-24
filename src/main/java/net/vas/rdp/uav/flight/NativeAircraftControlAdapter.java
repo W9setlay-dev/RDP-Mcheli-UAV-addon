@@ -92,7 +92,13 @@ public final class NativeAircraftControlAdapter {
                 aircraft.getYaw(), aircraft.getPitch(), aircraft.getRoll(),
                 aircraft.getCurrentThrottle(), dx, dy, dz,
                 profile.isHelicopterProfile(),
-                fpvCommand == null ? Double.NaN : fpvCommand.getForward());
+                fpvCommand == null ? Double.NaN : fpvCommand.getForward(),
+                Math.sqrt(aircraft.motionX * aircraft.motionX
+                        + aircraft.motionY * aircraft.motionY
+                        + aircraft.motionZ * aircraft.motionZ),
+                profile.getCruiseSpeed(), profile.getStallSpeed(),
+                profile.getMaximumClimbRate(), profile.getMaximumDescentRate(),
+                profile.getMaximumBankDegrees());
         return ControlCommand.supported(shaped.getYaw(), shaped.getPitch(),
                 shaped.getRoll(), shaped.getThrottle());
     }

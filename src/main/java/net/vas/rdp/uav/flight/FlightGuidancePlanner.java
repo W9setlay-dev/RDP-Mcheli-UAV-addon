@@ -49,7 +49,8 @@ public final class FlightGuidancePlanner {
         if (terminal) {
             TerminalApproachPlanner.Plan approach = TerminalApproachPlanner.plan(
                     aircraft.getX(), aircraft.getY(), aircraft.getZ(),
-                    predictedX, predictedY, predictedZ, 0.0D);
+                    predictedX, predictedY, predictedZ, 0.0D,
+                    profile.getTurnRadius(), targetRadius, 24.0D);
             double approachDistance = length(approach.getApproachX() - aircraft.getX(),
                     approach.getApproachY() - aircraft.getY(),
                     approach.getApproachZ() - aircraft.getZ());

@@ -17,7 +17,8 @@
 | captured native WingMan route execution | CRM `latest.log` 2026-09-23 | OBSERVED | Server log records accepted `FLY_TO` routes and `FLY_TO reached`; no current process was running during this validation, and trajectory convergence remains unproven |
 | captured kamikaze effect confirmation | CRM `latest.log` 2026-09-23 | NOT OBSERVED | Log contained a detonation-labeled path but zero `IMPACT_OBSERVED`/`EFFECT_CONFIRMED` events; it was treated as false success and the source path was corrected |
 | single-press exact lock / separate clear action | `.\gradlew.bat test --no-daemon` | PASS | Client now sends exact crosshair UUID on `L`; `J` and dashboard clear request recovery; live packet behavior remains unverified |
-| production artifact build | `.\gradlew.bat build --no-daemon` | PASS | Reobfuscated addon JAR built successfully; current SHA-256 `8DE36B3ECC427273AE3D159D5899269CA868B022535D254A23F28F876EA1D3DD` |
+| production artifact build | `.\gradlew.bat build --no-daemon` | PASS | Reobfuscated addon JAR built successfully; current SHA-256 `C662FF4EE30A40B5FFE549B39F98FCAFAE2B5C4E07BA6A263FA818C2C7D24995` |
+| performance-aware native guidance | deterministic unit tests and McHeliCE setter integration | PASS (source) | Native commands now use profile cruise/stall speed, climb/descent, bank, turn-radius, and observed motion-speed limits; McHeliCE remains the physics executor |
 | RDP instance deployment | copy rebuilt `rdp-uav-addon-0.1.0.jar` to an RDP instance | NOT ATTEMPTED | No JAR was copied during the current rework; deployment is intentionally outside source validation |
 | final sequential validation | `.\gradlew.bat test --no-daemon` then `.\gradlew.bat build --no-daemon` | PASS | Tests and reobfuscated build passed sequentially; no deployment claim is made |
 | guided weapon capability and native seeker contract | `.\gradlew.bat test --no-daemon` | PASS | Verified objective compatibility, UUID continuity, native API decision handling, and explicit unsupported outcomes |
@@ -41,7 +42,7 @@
 Build:
 
 - Addon JAR: `D:\Forge Modding\rdp-uav-addon\build\libs\rdp-uav-addon-0.1.0.jar`
-- SHA-256: `8DE36B3ECC427273AE3D159D5899269CA868B022535D254A23F28F876EA1D3DD`
+- SHA-256: `C662FF4EE30A40B5FFE549B39F98FCAFAE2B5C4E07BA6A263FA818C2C7D24995`
 - Expected McHeliCE: `1.5.1`, matching `libs\mcheli-ce-1.5.1.jar`
 - Restart: required after replacing the addon JAR
 

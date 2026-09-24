@@ -25,4 +25,12 @@ public class TerminalApproachPlannerTest {
         assertTrue(plan.getApproachY() - plan.getTargetY() <= 24.0D);
         assertTrue(plan.getRun() <= 96.0D);
     }
+
+    @Test
+    public void terminalRunIncludesTurnAndTargetClearance() {
+        TerminalApproachPlanner.Plan plan = TerminalApproachPlanner.plan(
+                0, 80, 0, 20, 20, 0, 0, 40, 8, 24);
+        assertTrue(plan.getRun() >= 72.0D);
+        assertTrue(plan.getRun() <= 192.0D);
+    }
 }

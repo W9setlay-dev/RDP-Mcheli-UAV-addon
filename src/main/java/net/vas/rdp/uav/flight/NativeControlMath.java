@@ -10,19 +10,44 @@ public final class NativeControlMath {
     public static Command compute(float currentYaw, float currentPitch, float currentRoll,
                                   double currentThrottle, double dx, double dy, double dz,
                                   boolean helicopter, double forwardOverride) {
+        return compute(currentYaw, currentPitch, currentRoll, currentThrottle,
+                dx, dy, dz, helicopter, forwardOverride,
+                0.0D,
+                helicopter ? 0.75D : 1.10D,
+                helicopter ? 0.15D : 0.35D,
+                helicopter ? 0.8D : 0.45D,
+                helicopter ? 0.9D : 0.7D,
+                helicopter ? 0.0D : 35.0D);
+    }
+
+    public static Command compute(float currentYaw, float currentPitch, float currentRoll,
+                                  double currentThrottle, double dx, double dy, double dz,
+                                  boolean helicopter, double forwardOverride,
+                                  double currentSpeed,
+                                  double cruiseSpeed, double stallSpeed,
+                                  double maximumClimbRate, double maximumDescentRate,
+                                  double maximumBankDegrees) {
         double horizontal = Math.sqrt(dx * dx + dz * dz);
         float desiredYaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
         float yaw = approachAngle(currentYaw, desiredYaw, helicopter ? 4.0F : 3.0F);
+        double boundedVertical = clamp(dy,
+                -Math.max(1.0D, maximumDescentRate * 20.0D),
+                Math.max(1.0D, maximumClimbRate * 20.0D));
         float desiredPitch = (float) -Math.toDegrees(
-                Math.atan2(dy, Math.max(1.0D, horizontal)));
-        float pitch = approach(currentPitch, clamp(desiredPitch, -25.0F, 20.0F), 3.0F);
+                Math.atan2(boundedVertical, Math.max(1.0D, horizontal)));
+        float pitch = approach(currentPitch, clamp(desiredPitch,
+                helicopter ? -35.0F : -25.0F, helicopter ? 35.0F : 20.0F), 3.0F);
         float desiredRoll = helicopter ? 0.0F
-                : clamp(angleDelta(desiredYaw, currentYaw) * 0.8F, -35.0F, 35.0F);
+                : clamp(angleDelta(desiredYaw, currentYaw) * 0.8F,
+                (float) -maximumBankDegrees, (float) maximumBankDegrees);
         float roll = approach(currentRoll, desiredRoll, 5.0F);
+        currentSpeed = Math.max(0.0D, currentSpeed);
+        double speedError = cruiseSpeed - currentSpeed;
         double throttle = helicopter
-                ? clamp(0.55D + dy * 0.01D, 0.25D, 1.0D)
-                : 0.65D + Math.min(0.25D,
-                Math.abs(angleDelta(desiredYaw, currentYaw)) / 180.0D);
+                ? clamp(0.55D + boundedVertical * 0.02D, 0.25D, 1.0D)
+                : clamp(0.65D + speedError * 0.25D
+                + Math.min(0.25D, Math.abs(angleDelta(desiredYaw, currentYaw)) / 180.0D),
+                currentSpeed < stallSpeed ? 0.8D : 0.25D, 1.0D);
         if (Double.isFinite(forwardOverride)) {
             throttle = clamp(0.55D + forwardOverride * 0.35D, 0.2D, 1.0D);
         }

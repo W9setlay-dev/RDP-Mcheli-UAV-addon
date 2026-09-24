@@ -115,4 +115,37 @@ public final class UavVehicleProfile {
     @SuppressWarnings("unused")
     public double getOneWaySpeed() { return oneWaySpeed; }
     public double getAttackEnvelope() { return attackEnvelope; }
+
+    /** Conservative performance envelope used by the addon controller. */
+    public double getCruiseSpeed() {
+        if (oneWaySpeed > 0.0D) return oneWaySpeed;
+        switch (executionProfile) {
+            case LONG_RANGE_REUSABLE_UAV: return 1.35D;
+            case REUSABLE_UAV: return 1.10D;
+            case HELICOPTER_ONE_WAY_FPV: return 0.75D;
+            case ONE_WAY: return 1.25D;
+            default: return 0.8D;
+        }
+    }
+
+    public double getStallSpeed() {
+        return isHelicopterProfile() ? 0.15D : Math.max(0.35D, getCruiseSpeed() * 0.45D);
+    }
+
+    public double getMaximumClimbRate() {
+        return isHelicopterProfile() ? 0.8D : 0.45D;
+    }
+
+    public double getMaximumDescentRate() {
+        return isHelicopterProfile() ? 0.9D : 0.7D;
+    }
+
+    public double getMaximumBankDegrees() {
+        return isHelicopterProfile() ? 0.0D : 35.0D;
+    }
+
+    public double getTurnRadius() {
+        return isHelicopterProfile() ? 6.0D
+                : Math.max(12.0D, getCruiseSpeed() * 18.0D);
+    }
 }
