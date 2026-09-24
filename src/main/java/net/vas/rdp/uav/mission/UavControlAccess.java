@@ -52,6 +52,18 @@ public final class UavControlAccess {
         return null;
     }
 
+    /**
+     * Returns true only when a person or non-station entity is physically
+     * riding the aircraft. McHeli may expose the remote UAV station as the
+     * aircraft's rider; that is an observation/control link, not a competing
+     * aircraft pilot.
+     */
+    public static boolean hasDirectAircraftRider(MCH_EntityAircraft aircraft) {
+        if (aircraft == null) return false;
+        Entity rider = aircraft.getRiddenByEntity();
+        return rider != null && !(rider instanceof MCH_EntityUavStation);
+    }
+
     private static boolean sameEntity(Entity first, Entity second) {
         return first == second || (first != null && second != null
                 && first.getUniqueID().equals(second.getUniqueID()));

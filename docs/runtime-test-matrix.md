@@ -17,7 +17,7 @@
 | captured native WingMan route execution | CRM `latest.log` 2026-09-23 | OBSERVED | Server log records accepted `FLY_TO` routes and `FLY_TO reached`; no current process was running during this validation, and trajectory convergence remains unproven |
 | captured kamikaze effect confirmation | CRM `latest.log` 2026-09-23 | NOT OBSERVED | Log contained a detonation-labeled path but zero `IMPACT_OBSERVED`/`EFFECT_CONFIRMED` events; it was treated as false success and the source path was corrected |
 | single-press exact lock / separate clear action | `.\gradlew.bat test --no-daemon` | PASS | Client now sends exact crosshair UUID on `L`; `J` and dashboard clear request recovery; live packet behavior remains unverified |
-| production artifact build | `.\gradlew.bat build --no-daemon` | PASS | Reobfuscated addon JAR built successfully; current SHA-256 `1BF3A772041606DB2C77FD28A948A6A084EE047D767AE20B162E812013A3034C` |
+| production artifact build | `.\gradlew.bat build --no-daemon` | PASS | Reobfuscated addon JAR built successfully; current SHA-256 `8DE36B3ECC427273AE3D159D5899269CA868B022535D254A23F28F876EA1D3DD` |
 | RDP instance deployment | copy rebuilt `rdp-uav-addon-0.1.0.jar` to an RDP instance | NOT ATTEMPTED | No JAR was copied during the current rework; deployment is intentionally outside source validation |
 | final sequential validation | `.\gradlew.bat test --no-daemon` then `.\gradlew.bat build --no-daemon` | PASS | Tests and reobfuscated build passed sequentially; no deployment claim is made |
 | guided weapon capability and native seeker contract | `.\gradlew.bat test --no-daemon` | PASS | Verified objective compatibility, UUID continuity, native API decision handling, and explicit unsupported outcomes |
@@ -28,7 +28,7 @@
 | native aircraft method presence | `javap -classpath libs/mcheli-ce-1.5.1.jar -public com.norwood.mcheli.aircraft.MCH_EntityAircraft` | PASS | Verified public rotation and throttle methods; method presence is not physical-flight evidence |
 | official McHeliCE control-path comparison | `Warfactory-Official/McHeliCE@cbaff7f30e549ff75e485388c24c74a4316c2228` plus local 1.5.1 JAR | PASS | Official WingMan server handlers use bounded `setRotYaw`, `setRotPitch`, `setRotRoll`, `setThrottle`, and `updateControl`; local signatures match |
 | native server control shaping | `.\gradlew.bat test --tests net.vas.rdp.uav.NativeControlMathTest --no-daemon` | PASS | Yaw/pitch/roll rate limits, yaw wrap, helicopter collective behavior, FPV throttle input, and finite bounded commands are deterministic |
-| native server control ownership | source contract and `.\gradlew.bat test --no-daemon` | PASS | Mission lease is required; any directly ridden aircraft is rejected as `OPERATOR_CONTROL_CONFLICT`, including `isUAV()` aircraft; remote UAV-station operation requires the aircraft itself to remain unridden |
+| native server control ownership | source contract and `.\gradlew.bat test --no-daemon` | PASS | Mission lease is required; operator presence never fails an active mission. AI remains the authoritative native-control writer while the operator is observation-only |
 | native physical flight response | controlled Forge/McHeliCE runtime | LIVE_VALIDATION_REQUIRED | The source-compatible server path is implemented, but visible turning, climb, bank, stall, collision, and recovery still require runtime observation |
 | observed aircraft state estimator | `.\gradlew.bat test --tests net.vas.rdp.uav.AircraftStateTest --no-daemon` | PASS | Captures finite position history, velocity, horizontal/vertical speed, mission owner, lease validity, route node, and target distance without issuing controls |
 | terminal approach geometry | `.\gradlew.bat test --tests net.vas.rdp.uav.TerminalApproachPlannerTest --no-daemon` | PASS | Selects bounded 20/30/40/50/60 degree terminal angles, finite dive runs, and bounded climb behavior when the UAV starts below the target |
@@ -41,7 +41,7 @@
 Build:
 
 - Addon JAR: `D:\Forge Modding\rdp-uav-addon\build\libs\rdp-uav-addon-0.1.0.jar`
-- SHA-256: `1BF3A772041606DB2C77FD28A948A6A084EE047D767AE20B162E812013A3034C`
+- SHA-256: `8DE36B3ECC427273AE3D159D5899269CA868B022535D254A23F28F876EA1D3DD`
 - Expected McHeliCE: `1.5.1`, matching `libs\mcheli-ce-1.5.1.jar`
 - Restart: required after replacing the addon JAR
 
@@ -132,12 +132,28 @@ missile guidance, and the mission control lease.
    UAV station. Confirm native AI control continues and no direct pilot input is
    competing with it.
 2. Repeat with an aircraft definition whose McHeli entity reports `isUAV()`.
-3. Mount the aircraft directly during an active mission. The mission must fail
-   with `OPERATOR_CONTROL_CONFLICT`, release WingMan and the lease, and stop
-   issuing native commands.
+3. Mount or observe the aircraft during an active mission. The mission must
+   remain active; operator flight input must not replace the mission lease or
+   native AI command stream.
 4. Press `N` before terminal commitment and confirm the aircraft can be handled
    manually afterward. Visible control restoration and camera/free-look
    alignment remain `LIVE_VALIDATION_REQUIRED`.
+
+### Entity-lock evidence
+
+The entity-lock action is the `3` key or the GUI **Entity lock** button. It
+sends the exact crosshair entity UUID to the server; the server validates
+operator ownership, aircraft profile, loaded target identity, policy filters,
+and lock range. Every request now emits an unconditional `RDP-UAV/Network`
+log line for request, acceptance, or rejection, while detailed structured
+events remain controlled by `rdp-uav-debug.cfg`.
+
+After an accepted lock, `targetId` is persisted for reconnaissance/search
+missions as well as attack missions; it is not restricted to the later attack
+states. Confirm the mission HUD changes to `TARGET_LOCKED` and the log includes
+`Entity lock accepted`. If the entity unloads, the mission must report the
+same UUID as lost/waiting; it must never substitute another entity with the
+same registry type.
 
 ### Profile execution audit
 

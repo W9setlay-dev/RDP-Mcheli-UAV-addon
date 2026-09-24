@@ -407,11 +407,6 @@ public final class MissionLifecycle {
                 dirty = true;
                 continue;
             }
-            if (aircraft.getRiddenByEntity() != null) {
-                fail(world, mission, "OPERATOR_CONTROL_CONFLICT", tick);
-                dirty = true;
-                continue;
-            }
             /*
              * The lease is renewed on every active server tick. This also
              * repairs a lease lost across a server reload, while still
@@ -1104,7 +1099,11 @@ public final class MissionLifecycle {
                     mission.getTargetSpec().getY(), mission.getTargetSpec().getZ());
         }
         Entity current = targets.findLoaded(world, mission.getTargetId());
-        if (current == null && mission.getTargetSelectionMode() == TargetSelectionMode.MANUAL) {
+        // Once an operator has locked an entity UUID, disappearance must
+        // remain TARGET_LOST/WATING_FOR_TARGET until that same UUID returns.
+        // Never substitute another entity sharing the original registry id.
+        if (current == null && mission.getTargetId() == null
+                && mission.getTargetSelectionMode() == TargetSelectionMode.MANUAL) {
             current = targets.findLoadedByRegistryId(world, mission.getTargetSpec().getRegistryId());
         }
         if (current != null && !net.vas.rdp.uav.target.TargetPolicy.builder()

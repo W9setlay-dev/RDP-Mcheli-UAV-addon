@@ -193,18 +193,20 @@ public final class RDPMission {
             transitionTo(MissionState.SEARCHING, tick);
             transitionTo(MissionState.TARGET_ACQUIRED, tick);
         }
-        if (state == MissionState.ATTACK_TARGET || state == MissionState.APPROACHING
-                || state == MissionState.KAMIKADZE_TARGET) {
-            this.targetId = targetId;
-            if (targetLock == null || !targetLock.getEntityId().equals(targetId)) {
-                targetLock = new TargetLock(targetId, "rdpuav:unknown", dimension,
-                        0.0D, 0.0D, 0.0D, tick, ownerId, missionId);
-            }
-            this.lastTargetId = targetId;
-            this.lastTargetTick = tick;
-            this.lastUpdateTick = tick;
-        } else {
-            lockTarget(targetId, tick);
+        // The operator lock is authoritative in every non-terminal phase,
+        // including reconnaissance/search. Do not wait for ATTACK_TARGET or
+        // APPROACHING: those states are downstream consequences of retaining
+        // this identity, not prerequisites for it.
+        this.targetId = targetId;
+        if (targetLock == null || !targetLock.getEntityId().equals(targetId)) {
+            targetLock = new TargetLock(targetId, "rdpuav:unknown", dimension,
+                    0.0D, 0.0D, 0.0D, tick, ownerId, missionId);
+        }
+        this.lastTargetId = targetId;
+        this.lastTargetTick = tick;
+        this.lastUpdateTick = tick;
+        if (state == MissionState.TARGET_ACQUIRED) {
+            transitionTo(MissionState.TARGET_LOCKED, tick);
         }
     }
 

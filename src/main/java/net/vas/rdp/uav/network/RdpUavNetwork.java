@@ -23,8 +23,11 @@ import net.vas.rdp.uav.mission.MissionDefinition;
 import net.vas.rdp.uav.mission.MissionValidationResult;
 
 import java.util.Objects;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 public final class RdpUavNetwork {
+    private static final Logger LOGGER = LogManager.getLogger("RDP-UAV/Network");
     private static final int MAX_PACKET_STRING_LENGTH = 1024;
     private static final SimpleNetworkWrapper CHANNEL = NetworkRegistry.INSTANCE.newSimpleChannel(
             new ResourceLocation(RDPUavMod.MOD_ID, "control").toString());
@@ -1876,6 +1879,9 @@ public final class RdpUavNetwork {
                                     ? null : aircraft.getAcInfo().name,
                             "target", message.targetId, "clear", message.clear,
                             "dimension", player.dimension);
+                LOGGER.info("Entity lock request player={} aircraft={} target={} clear={} dimension={}",
+                        player.getUniqueID(), aircraft == null ? null : aircraft.getUniqueID(),
+                        message.targetId, message.clear, player.dimension);
                 if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, player)
                         || RDPUavMod.missions().ensureAuthorized(aircraft, player)) {
                     rejectTargetLock(player, aircraft, message.targetId, "OPERATOR_AUTHORIZATION");
@@ -1959,6 +1965,9 @@ public final class RdpUavNetwork {
                             "mission", mission.getMissionId(), "state", mission.getState());
                     RdpUavDebug.debug("Network", "AI target lock accepted player={} aircraft={} target={}",
                             player.getUniqueID(), aircraft.getUniqueID(), targetId);
+                    LOGGER.info("Entity lock accepted player={} aircraft={} target={} type={} mission={}",
+                            player.getUniqueID(), aircraft.getUniqueID(), targetId,
+                            key, mission.getMissionId());
                 } catch (IllegalArgumentException failure) {
                     rejectTargetLock(player, aircraft, message.targetId, "INVALID_TARGET_ID",
                             null, null, false, "NOT_CHECKED");
@@ -1993,6 +2002,9 @@ public final class RdpUavNetwork {
                     "filterResult", filterResult);
             player.sendMessage(new net.minecraft.util.text.TextComponentString(
                     "UAV target lock rejected: " + reason.toLowerCase().replace('_', ' ') + "."));
+            LOGGER.warn("Entity lock rejected player={} aircraft={} target={} reason={} registryId={} distance={} loaded={} filter={}",
+                    player.getUniqueID(), aircraft == null ? null : aircraft.getUniqueID(),
+                    targetId, reason, registryId, distance, loaded, filterResult);
         }
 
         private void clearTargetLock(EntityPlayerMP player, MCH_EntityAircraft aircraft) {

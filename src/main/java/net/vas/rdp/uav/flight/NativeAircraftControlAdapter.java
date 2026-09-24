@@ -1,7 +1,6 @@
 package net.vas.rdp.uav.flight;
 
 import com.norwood.mcheli.aircraft.MCH_EntityAircraft;
-import net.minecraft.entity.Entity;
 import net.minecraft.world.World;
 import net.vas.rdp.uav.mission.MissionManager;
 import net.vas.rdp.uav.mission.MissionMovementAuthority;
@@ -54,11 +53,10 @@ public final class NativeAircraftControlAdapter {
     }
 
     private static boolean operatorControlConflict(MCH_EntityAircraft aircraft) {
-        Entity rider = aircraft.getRiddenByEntity();
-        // A directly ridden aircraft is operator-controlled regardless of its
-        // registry flags. A remote UAV station controls an unridden aircraft,
-        // so it does not create a competing pilot input stream.
-        return rider != null;
+        // Mission ownership is authoritative while active. Operator presence
+        // is observation-only and must not turn a valid AI mission into an
+        // instant failure; the server command is the control boundary.
+        return false;
     }
 
     public static String controlPathStatus(MCH_EntityAircraft aircraft) {

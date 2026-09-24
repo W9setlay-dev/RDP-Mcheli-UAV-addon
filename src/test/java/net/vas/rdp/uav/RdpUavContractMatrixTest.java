@@ -303,8 +303,10 @@ public class RdpUavContractMatrixTest {
     @Test
     public void operatorEntityLockAdvancesQueuedMissionWithoutChangingIntent() {
         RDPMission mission = mission();
-        mission.applyOperatorEntityLock(UUID.randomUUID(), 1);
+        UUID target = UUID.randomUUID();
+        mission.applyOperatorEntityLock(target, 1);
         assertEquals(MissionState.TARGET_LOCKED, mission.getState());
+        assertEquals(target, mission.getTargetId());
         assertEquals(MissionType.RECONNAISSANCE, mission.getMissionType());
         assertFalse(mission.isAttack());
         assertEquals("TARGET_LOCKED", mission.getState().name());
