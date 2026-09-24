@@ -66,6 +66,13 @@
   McHeliCE 1.5.1.  The configured one-way speed is consequently a bounded
   policy value retained for future native support; dispatch never writes
   aircraft motion or simulates speed outside WingMan.
+- The bundled `libs/mcheli-ce-1.5.1.jar` was independently inspected with
+  `javap`. It exposes public `MCH_EntityAircraft.setRotYaw(float)`,
+  `setRotPitch(float)`, `setRotRoll(float)`, `setThrottle(double)`, and
+  `setCurrentThrottle(double)`. This confirms method availability only; it
+  does not prove that applying an addon `FlightCommand` produces the expected
+  flight trajectory. The addon therefore does not expose a synthetic
+  per-tick command writer; route execution remains behind WingMan.
 
 - exact structure-model destruction (for example specific parasite nests) is not yet a first-class mission type
 - dynamic military or bandit role semantics are not yet implemented as a validated runtime feature
@@ -74,6 +81,16 @@
 ## Test method decision
 
 The project uses dependency-free Java tests to validate mission-state transitions, target selection, persistence, and queue logic. Real root-tier McHeli behavior still requires a live 1.12.2 Forge client/server runtime.
+
+## Runtime smoke boundary
+
+On 2026-09-24, `.\gradlew.bat runServer --no-daemon` reached the dedicated
+server `Done` state with McHeliCE, WingMan, RDP Core, and the addon coremod
+loaded. The run also reproduced an RDP Core world-data error:
+`RDPWorldSavedData.<init>(String)` is missing during world load/save. The
+server remained alive, but this is a runtime integration blocker for claiming
+persistent mission execution. No aircraft was spawned and no flight,
+payload, impact, or damage result was observed.
 
 ## Guided weapon boundary
 

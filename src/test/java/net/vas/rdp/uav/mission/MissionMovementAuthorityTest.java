@@ -25,6 +25,43 @@ public class MissionMovementAuthorityTest {
         assertTrue(MissionMovementAuthority.operatorFlightInputAllowed(null));
     }
 
+    @Test
+    public void missionControlLeaseRejectsDuplicateAircraftClaim() {
+        RDPMission first = mission();
+        RDPMission second = mission();
+        UUID aircraftId = UUID.randomUUID();
+
+        assertTrue(MissionMovementAuthority.claimControl(first, aircraftId, 10L));
+        assertFalse(MissionMovementAuthority.claimControl(second, aircraftId, 11L));
+        assertTrue(MissionMovementAuthority.canIssueNativeControl(first, aircraftId, 11L));
+        assertFalse(MissionMovementAuthority.canIssueNativeControl(second, aircraftId, 11L));
+
+        MissionMovementAuthority.releaseControl(aircraftId);
+        assertTrue(MissionMovementAuthority.claimControl(second, aircraftId, 12L));
+    }
+
+    @Test
+    public void staleLeaseExpiresAndAllowsFreshClaim() {
+        RDPMission mission = mission();
+        UUID aircraftId = UUID.randomUUID();
+
+        assertTrue(MissionMovementAuthority.claimControl(mission, aircraftId, 100L));
+        assertTrue(MissionMovementAuthority.claimControl(mission, aircraftId, 103L));
+        assertTrue(MissionMovementAuthority.canIssueNativeControl(mission, aircraftId, 101L));
+        assertTrue(MissionMovementAuthority.canIssueNativeControl(mission, aircraftId, 103L));
+        MissionMovementAuthority.releaseControl(aircraftId);
+    }
+
+    @Test
+    public void terminalMissionCannotClaimNativeControl() {
+        RDPMission mission = mission();
+        UUID aircraftId = UUID.randomUUID();
+        mission.fail("TEST_FAILURE", 1L);
+
+        assertFalse(MissionMovementAuthority.claimControl(mission, aircraftId, 1L));
+        assertFalse(MissionMovementAuthority.canIssueNativeControl(mission, aircraftId, 1L));
+    }
+
     private static RDPMission mission() {
         return new RDPMission(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
                 "switchblade", MissionType.RECONNAISSANCE,

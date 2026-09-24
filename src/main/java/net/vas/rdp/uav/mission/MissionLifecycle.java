@@ -236,7 +236,14 @@ public final class MissionLifecycle {
 
             // WingMan must fly the real aircraft to the observation point
             // before the mission reports acquisition or arms an attack.
-            if (!flight.dispatch(aircraft, target.x, guidanceY, target.z,
+            if (!MissionMovementAuthority.claimControl(mission, aircraft.getUniqueID(), tick)) {
+                RdpUavDebug.event("MissionRuntime", "ROUTE_DISPATCH",
+                        "mission", mission.getMissionId(), "aircraft", aircraft.getUniqueID(),
+                        "tick", tick, "accepted", false, "reason", "CONTROL_LEASE_REJECTED",
+                        "target", formatTarget(target));
+                defer(world, mission, "CONTROL_LEASE_REJECTED",
+                        MissionState.EXECUTION_STALLED, tick);
+            } else if (!flight.dispatch(aircraft, target.x, guidanceY, target.z,
                     mission.getObservationDistance(), 200, mission.isAttack(), mission.getTargetId())) {
                 RdpUavDebug.event("MissionRuntime", "ROUTE_DISPATCH",
                         "mission", mission.getMissionId(), "aircraft", aircraft.getUniqueID(),
@@ -273,8 +280,11 @@ public final class MissionLifecycle {
         List<RDPMission> missions = RDPMissionWorldData.get(world).getRepository().snapshot();
         boolean dirty = false;
         for (RDPMission mission : missions) {
-            if (mission.isQueued() || terminal(mission.getState())
-                    || mission.getDimension() != world.provider.getDimension()) continue;
+            if (mission.isQueued() || mission.getDimension() != world.provider.getDimension()) continue;
+            if (terminal(mission.getState())) {
+                MissionMovementAuthority.releaseControl(mission.getAircraftId());
+                continue;
+            }
             if (mission.isTimedOut(tick, MISSION_TIMEOUT)) {
                 fail(world, mission, "MISSION_TIMEOUT", tick);
                 dirty = true;
@@ -334,6 +344,7 @@ public final class MissionLifecycle {
                 continue;
             }
             if (mission.isPaused()) {
+                MissionMovementAuthority.releaseControl(mission.getAircraftId());
                 flight.clearGuidance(findAircraft(world, mission.getAircraftId()));
                 continue;
             }
@@ -374,11 +385,28 @@ public final class MissionLifecycle {
                             "target", mission.getTargetId(),
                             "tick", tick,
                             "reason", "EFFECT_NOT_CONFIRMED");
+                    MissionMovementAuthority.releaseControl(mission.getAircraftId());
                     manager.release(mission);
                     dirty = true;
                     continue;
                 }
                 defer(world, mission, "AIRCRAFT_UNAVAILABLE", MissionState.WAITING_FOR_WORLD, tick);
+                dirty = true;
+                continue;
+            }
+            /*
+             * The lease is renewed on every active server tick. This also
+             * repairs a lease lost across a server reload, while still
+             * rejecting takeover when another mission owns the aircraft.
+             */
+            if (!MissionMovementAuthority.claimControl(mission, aircraft.getUniqueID(), tick)) {
+                RdpUavDebug.event("MissionRuntime", "CONTROL_LEASE_REJECTED",
+                        "mission", mission.getMissionId(),
+                        "aircraft", aircraft.getUniqueID(),
+                        "tick", tick,
+                        "state", mission.getState());
+                defer(world, mission, "CONTROL_LEASE_REJECTED",
+                        MissionState.EXECUTION_STALLED, tick);
                 dirty = true;
                 continue;
             }
@@ -667,7 +695,7 @@ public final class MissionLifecycle {
                     return true;
                 }
             }
-            if (target != null && withinMissionExecutionRange(aircraft, target, mission)) {
+            if (withinMissionExecutionRange(aircraft, target, mission)) {
                 if (mission.getState() == MissionState.TARGET_LOCKED) {
                     mission.transitionTo(MissionState.APPROACHING, tick);
                     return true;

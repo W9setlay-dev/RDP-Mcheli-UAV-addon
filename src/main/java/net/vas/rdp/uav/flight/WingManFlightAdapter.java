@@ -13,6 +13,7 @@ import com.norwood.mcheli.weapon.MCH_WeaponParam;
 import net.minecraft.entity.Entity;
 import net.vas.rdp.uav.RdpUavDebug;
 import net.vas.rdp.uav.energy.UavEnergyHandler;
+import net.vas.rdp.uav.mission.MissionMovementAuthority;
 import net.vas.rdp.uav.profile.UavExecutionProfile;
 import net.vas.rdp.uav.profile.UavVehicleProfile;
 import net.vas.rdp.uav.profile.UavVehicleProfiles;
@@ -573,6 +574,7 @@ public final class WingManFlightAdapter {
 
     public void release(MCH_EntityAircraft aircraft) {
         if (aircraft != null) {
+            MissionMovementAuthority.releaseControl(aircraft.getUniqueID());
             aircraft.getEntityData().removeTag(KamikazeConfig.ARMED_KEY);
             aircraft.getEntityData().removeTag(KamikazeConfig.MIN_SPEED_KEY);
             WingmanRegistry.remove(aircraft.getUniqueID());
