@@ -14,6 +14,7 @@ import net.vas.rdp.uav.weapon.GuidedWeaponRegistry;
 import net.vas.rdp.uav.RdpUavDebug;
 import net.vas.rdp.uav.network.RdpUavNetwork;
 import net.vas.rdp.uav.target.TargetClassifier;
+import net.vas.rdp.uav.target.TargetPolicy;
 import net.vas.rdp.uav.mission.MissionDefinition;
 import net.vas.rdp.uav.mission.MissionValidationResult;
 import net.vas.rdp.uav.mission.MissionType;
@@ -34,6 +35,7 @@ public final class GuiMissionControl extends GuiScreen {
     private int filterMode;
     private GuiTextField targetField;
     private GuiTextField filterField;
+    private GuiTextField policyField;
     private GuiTextField swarmIdField;
     private GuiTextField swarmSizeField;
     private String status = "";
@@ -125,7 +127,7 @@ public final class GuiMissionControl extends GuiScreen {
 
     public static void abortSelected() {
         String id = selectedMissionId();
-        if (id != null) RdpUavNetwork.abortMission(id);
+        RdpUavNetwork.abortMission(id == null ? "" : id);
     }
 
     public static void clearSelected() {
@@ -156,6 +158,10 @@ public final class GuiMissionControl extends GuiScreen {
         if (filterField == null) {
             filterField = new GuiTextField(11, fontRenderer, width / 2 + 15, 42, 205, 18);
             filterField.setMaxStringLength(32);
+        }
+        if (policyField == null) {
+            policyField = new GuiTextField(14, fontRenderer, width / 2 - 220, 84, 425, 18);
+            policyField.setMaxStringLength(220);
         }
         if (swarmIdField == null) {
             swarmIdField = new GuiTextField(12, fontRenderer, width / 2 + 15, 63, 205, 18);
@@ -245,6 +251,7 @@ public final class GuiMissionControl extends GuiScreen {
                     "Reassign to crosshair"));
         }
         buttonList.add(new GuiButton(12, right, 64, 220, 20, filterLabel()));
+        buttonList.add(new GuiButton(30, right, 84, 220, 20, "Apply target policy"));
         threatSuggestions = collectThreatSuggestions();
         for (int i = 0; i < threatSuggestions.size() && i < 5; i++) {
             TargetSuggestion suggestion = threatSuggestions.get(i);
@@ -385,6 +392,7 @@ public final class GuiMissionControl extends GuiScreen {
                         .setSwarmEnabled(loaded.isSwarmEnabled())
                         .setSwarmMaximumMembers(loaded.getSwarmMaximumMembers());
                 if (targetField != null) targetField.setText(loaded.getTarget());
+                if (policyField != null) policyField.setText(policyText(loaded.getTargetPolicy()));
                 status = "Saved mission definition loaded.";
             }
             rebuildButtons();
@@ -402,6 +410,9 @@ public final class GuiMissionControl extends GuiScreen {
                 }
             }
             rebuildButtons();
+        }
+        else if (button.id == 30) {
+            applyTargetPolicy();
         }
         else if (button.id == 1) { help = !help; rebuildButtons(); }
         else if (button.id == 2) mc.displayGuiScreen(null);
@@ -514,6 +525,68 @@ public final class GuiMissionControl extends GuiScreen {
         }
     }
 
+    private void applyTargetPolicy() {
+        String value = policyField == null ? "" : policyField.getText().trim();
+        TargetPolicy.Builder policy = TargetPolicy.builder();
+        boolean rejectEmbedded = true;
+        boolean allowVehicles = true;
+        double confidence = 0.0D;
+        try {
+            if (!value.isEmpty()) {
+                for (String clause : value.split(";")) {
+                    String[] pair = clause.split("=", 2);
+                    if (pair.length != 2) throw new IllegalArgumentException("Use key=value clauses");
+                    String key = pair[0].trim().toLowerCase(java.util.Locale.ROOT);
+                    String[] values = splitPolicyValues(pair[1]);
+                    if ("include".equals(key)) policy.include(values);
+                    else if ("require".equals(key)) policy.require(values);
+                    else if ("exclude".equals(key)) policy.exclude(values);
+                    else if ("rejectembedded".equals(key)) rejectEmbedded = Boolean.parseBoolean(pair[1].trim());
+                    else if ("allowvehicles".equals(key)) allowVehicles = Boolean.parseBoolean(pair[1].trim());
+                    else if ("confidence".equals(key)) confidence = Double.parseDouble(pair[1].trim());
+                    else throw new IllegalArgumentException("Unknown policy key: " + key);
+                }
+            }
+            definition.setTargetPolicy(policy.rejectDeeplyEmbedded(rejectEmbedded)
+                    .allowHostileVehicles(allowVehicles)
+                    .withMinimumConfidence(confidence).snapshot());
+            status = "Target policy applied and will be server-validated.";
+        } catch (IllegalArgumentException invalid) {
+            status = "Target policy rejected: " + invalid.getMessage();
+        }
+        rebuildButtons();
+    }
+
+    private static String[] splitPolicyValues(String value) {
+        if (value.trim().isEmpty()) return new String[0];
+        String[] values = value.split(",");
+        if (values.length > 32) throw new IllegalArgumentException("Maximum 32 filters");
+        for (String item : values) {
+            if (!item.trim().matches("[A-Za-z0-9_:.*/-]{1,64}")) {
+                throw new IllegalArgumentException("Invalid filter token");
+            }
+        }
+        return values;
+    }
+
+    private static String policyText(TargetPolicy.Snapshot policy) {
+        return "include=" + joinPolicy(policy.getInclude())
+                + ";require=" + joinPolicy(policy.getRequire())
+                + ";exclude=" + joinPolicy(policy.getExclude())
+                + ";rejectembedded=" + policy.isRejectEmbedded()
+                + ";allowvehicles=" + policy.isAllowVehicleTargets()
+                + ";confidence=" + policy.getMinimumConfidence();
+    }
+
+    private static String joinPolicy(java.util.List<String> values) {
+        StringBuilder result = new StringBuilder();
+        for (String value : values) {
+            if (result.length() > 0) result.append(',');
+            result.append(value);
+        }
+        return result.toString();
+    }
+
     private String targetPriorityLabel() {
         switch (targetPriority) {
             case 0: return "LOW";
@@ -588,6 +661,7 @@ public final class GuiMissionControl extends GuiScreen {
             rebuildButtons();
             return;
         }
+        if (policyField != null && policyField.textboxKeyTyped(typedChar, keyCode)) return;
         if (swarmIdField != null && swarmIdField.textboxKeyTyped(typedChar, keyCode)) return;
         if (swarmSizeField != null && swarmSizeField.textboxKeyTyped(typedChar, keyCode)) return;
         super.keyTyped(typedChar, keyCode);
@@ -597,6 +671,7 @@ public final class GuiMissionControl extends GuiScreen {
         super.mouseClicked(mouseX, mouseY, mouseButton);
         if (targetField != null) targetField.mouseClicked(mouseX, mouseY, mouseButton);
         if (filterField != null) filterField.mouseClicked(mouseX, mouseY, mouseButton);
+        if (policyField != null) policyField.mouseClicked(mouseX, mouseY, mouseButton);
         if (swarmIdField != null) swarmIdField.mouseClicked(mouseX, mouseY, mouseButton);
         if (swarmSizeField != null) swarmSizeField.mouseClicked(mouseX, mouseY, mouseButton);
     }
@@ -629,6 +704,8 @@ public final class GuiMissionControl extends GuiScreen {
             if (targetField != null) targetField.drawTextBox();
             drawString(fontRenderer, "MISSION FILTER", right, 30, 0xB0D8FF);
             if (filterField != null) filterField.drawTextBox();
+            drawString(fontRenderer, "TARGET POLICY (include=...,require=...,exclude=...)", left, 73, 0xB0D8FF);
+            if (policyField != null) policyField.drawTextBox();
             drawString(fontRenderer, "SWARM ID", right, 51, 0xB0D8FF);
             if (swarmIdField != null) swarmIdField.drawTextBox();
             drawString(fontRenderer, "SWARM MAX", left, 51, 0xB0D8FF);
@@ -650,7 +727,7 @@ public final class GuiMissionControl extends GuiScreen {
     }
 
     private void drawMissions(int left, int right) {
-        int panelTop = 90;
+        int panelTop = 108;
         drawRect(left - 4, panelTop, left + 209, height - 113, 0x66000000);
         drawRect(right - 4, panelTop, right + 224, height - 113, 0x66000000);
         drawString(fontRenderer, "SERVER MISSIONS", left, panelTop + 2, 0xB0D8FF);

@@ -50,6 +50,13 @@ public final class TargetAuthority {
         return resolver.find(world, x, y, z, radius, specification, operator);
     }
 
+    public List<TargetResolver.EntityCandidate> find(World world, double x, double y, double z,
+                                                      double radius, TargetSpec specification,
+                                                      EntityPlayer operator,
+                                                      TargetPolicy.Snapshot policy) {
+        return resolver.find(world, x, y, z, radius, specification, operator, policy);
+    }
+
     public void observe(World world, Entity entity, double distance, long tick,
                         ContactLifecycle lifecycle) {
         contacts.observe(world, entity, distance, tick, lifecycle);

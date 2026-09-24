@@ -40,6 +40,40 @@ targets:
 McHeli CE and RDP Core jars are external dependencies. They are intentionally
 not committed to source control.
 
+### Recent mission and control updates
+
+The current mission rework keeps `WingManFlightAdapter` as the native integration
+boundary and enforces server-owned aircraft control. Mission intent is still
+created on the client, but the authoritative ownership check, target UUID lock,
+and route authorization happen on the server before the aircraft is allowed to
+move. This prevents conflicting commands from competing with the active mission,
+keeps a live target identity stable while a lock is committed, and disables
+terminal observation orbits that would otherwise keep aircraft circling instead
+of converging on the intended objective.
+
+`FlightGuidancePlanner` converts observed post-physics state and target velocity
+into a bounded, profile-aware lead waypoint before WingMan receives a route
+update. `TerminalGuidanceMetrics` is an enforcement input: sustained orbiting,
+divergence, overshoot, timeout, or excessive terminal waypoint replacement
+fails the mission with an explicit terminal-guidance reason. The official
+`Warfactory-Official/McHeliCE` source and local 1.5.1 JAR expose the matching
+server-side `setRotYaw`, `setRotPitch`, `setRotRoll`, `setThrottle`, and
+`updateControl` path. `NativeAircraftControlAdapter` now uses those methods
+only during the server `WorldTickEvent.START` phase, after acquiring the
+mission movement lease, with profile-bounded rate limits. It never writes
+position or motion. A crewed aircraft is rejected as
+`OPERATOR_CONTROL_CONFLICT`; an unmapped definition remains
+`UNSUPPORTED_PROFILE`.
+
+Target selection is also mission-scoped. The GUI policy editor accepts bounded
+clauses such as
+`include=minecraft:zombie;require=hostile;exclude=minecraft:player;confidence=0.5;allowvehicles=false`.
+The client applies syntax validation, but the launch packet is validated again
+on the server before the immutable policy snapshot is attached to the mission.
+The snapshot is persisted with mission NBT and is used for both initial
+candidate discovery and reacquisition; a generic registry ID is never treated
+as sufficient MCheli aircraft identity.
+
 ## 2. Project layout
 
 ```text
@@ -112,9 +146,10 @@ and RDP Core publication are not complete yet.
 **`persistence`** stores mission records in `WorldSavedData`. Saved data is
 per world and must be treated as authoritative server state.
 
-**`flight`** is the only intended WingMan integration boundary. New McHeli or
-WingMan calls should be isolated here rather than spread through mission
-classes.
+**`flight`** is the only intended McHeli/WingMan integration boundary. New
+native calls should be isolated here rather than spread through mission
+classes. `NativeControlMath` is pure command shaping; the adapter is the only
+class that invokes McHeliCE control setters.
 
 **`network`** contains packet definitions and server/client handlers.
 Packets are transport only; authorization and state validation belong on the
@@ -309,7 +344,7 @@ When the player is piloting a UAV, the client keys provide quick task
 controls. `U` opens Mission Control, `R` creates a registry-ID recon task from
 the GUI field, `K` creates an autonomous registry-ID attack task from the GUI
 field, `P` creates a camera-point task, `F` refreshes missions, `A` authorizes
-the selected attack, and `X` aborts the selected mission. These keys are
+the selected attack, and `N` aborts the selected mission. This key is
 configurable in Minecraft's Controls menu under `RDP UAV`; every action
 remains server-validated. The server-side command remains available as
 `/rdpuav mission gui`.
@@ -607,7 +642,9 @@ The keyboard path is deliberately split between intent and execution:
 * `H` is a direct payload-fire request, but the server still validates operator
   control, aircraft support, destructive weapon metadata, and ammunition.
 * `L` and `J` lock and clear exact targets without substituting nearby entities.
-* `X` aborts only the requesting player's own non-terminal mission.
+* `N` aborts only the requesting player's own non-terminal mission. The client
+  sends the request once per press; the server releases WingMan and the mission
+  movement lease before manual control can resume.
 * `U` and `F` are read-only dashboard/data operations.
 
 For each key, verify both the client action and the corresponding server
@@ -699,7 +736,8 @@ adapter method exists.
 | Target search/lock progression | Server tick lifecycle performs loaded-entity acquisition and UUID-based reacquisition; unloaded-chunk search is not implemented |
 | Autonomous attack missions | Server tick arms WingMan attack mode after a validated target lock; live firing/damage is unverified |
 | Manual attack authorization | Server-side checks and WingMan attack-node arming remain available as an override |
-| Aircraft yaw/pitch/roll movement | Performed by McHeli WingMan handlers; not independently implemented or live-tested by this addon |
+| Aircraft yaw/pitch/roll movement | Performed by McHeliCE native server control through the adapter and bounded setters; McHeliCE remains the physics executor |
+| Profile-aware moving-target guidance | Implemented as bounded source-level waypoint planning from observed state and target velocity; aircraft response remains runtime-unverified |
 | Switchblade/Shahed pre-dive fallback | Adapter adds a computed 35-degree waypoint; it is not proof of collision, weapon release, damage, or self-destruct success |
 | Native McHeli attack-angle/nose-dive support | Not exposed by the inspected WingMan 1.5.1 API |
 | Target-loss recovery and mission resumption | Target loss now fails recon missions or requests WingMan RTB for active attacks; full mission resumption is not implemented |

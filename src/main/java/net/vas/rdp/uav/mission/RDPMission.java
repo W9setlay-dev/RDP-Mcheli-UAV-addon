@@ -5,6 +5,7 @@ import net.vas.rdp.uav.target.TargetPriority;
 import net.vas.rdp.uav.target.TargetSelectionMode;
 import net.vas.rdp.uav.target.TargetSpec;
 import net.vas.rdp.uav.target.TargetLock;
+import net.vas.rdp.uav.target.TargetPolicy;
 
 import java.util.UUID;
 
@@ -45,6 +46,7 @@ public final class RDPMission {
     private ControlOwner controlOwner = ControlOwner.MISSION_AI;
     public static final int MAX_RECOVERY_ATTEMPTS = 5;
     private String lastTransitionReason;
+    private TargetPolicy.Snapshot targetPolicy = TargetPolicy.builder().snapshot();
 
     public RDPMission(UUID missionId, UUID ownerId, UUID aircraftId, String aircraftType,
                       MissionType missionType, TargetSpec targetSpec, boolean attack,
@@ -138,6 +140,11 @@ public final class RDPMission {
     public boolean isPaused() { return paused; }
     public void setPaused(boolean paused) { this.paused = paused; }
     public String getGuidedWeapon() { return guidedWeapon; }
+    public TargetPolicy.Snapshot getTargetPolicy() { return targetPolicy; }
+    public void setTargetPolicy(TargetPolicy.Snapshot value) {
+        if (value == null) throw new IllegalArgumentException("Target policy is required");
+        targetPolicy = value;
+    }
     public void setGuidedWeapon(String guidedWeapon) {
         this.guidedWeapon = guidedWeapon == null || guidedWeapon.trim().isEmpty()
                 ? null : guidedWeapon.trim();

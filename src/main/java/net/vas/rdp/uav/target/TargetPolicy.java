@@ -1,5 +1,6 @@
 package net.vas.rdp.uav.target;
 
+import com.norwood.mcheli.aircraft.MCH_EntityAircraft;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityList;
 import net.minecraft.entity.player.EntityPlayer;
@@ -97,8 +98,10 @@ public final class TargetPolicy {
         if (entity instanceof EntityPlayer
                 && operator != null && operator.isOnSameTeam(entity)) return false;
         String id = EntityList.getKey(entity) == null ? "" : Objects.requireNonNull(EntityList.getKey(entity)).toString();
+        boolean actualVehicleHostile = entity instanceof MCH_EntityAircraft
+                && TargetClassifier.isHostileVehicle(entity);
         return TargetClassifier.isHostileCandidate(id)
-                || (allowHostileVehicles && TargetClassifier.isHostileVehicle(id));
+                || (allowHostileVehicles && (TargetClassifier.isHostileVehicle(id) || actualVehicleHostile));
     }
 
     public static final class Builder {
@@ -161,8 +164,10 @@ public final class TargetPolicy {
             if (!exclude.isEmpty() && containsAny(id, exclude)) {
                 return Decision.reject(ResultCode.EXCLUDED, "EXCLUDED");
             }
+            boolean actualVehicleHostile = entity instanceof MCH_EntityAircraft
+                    && TargetClassifier.isHostileVehicle(entity);
             boolean hostile = TargetClassifier.isHostileCandidate(id)
-                    || (allowVehicleTargets && TargetClassifier.isHostileVehicle(id));
+                    || (allowVehicleTargets && (TargetClassifier.isHostileVehicle(id) || actualVehicleHostile));
             if (!hostile) return Decision.reject(ResultCode.NOT_HOSTILE, "NOT_HOSTILE");
             if (minimumConfidence > 0D && TargetClassifier.threatScore(id) < minimumConfidence) {
                 return Decision.reject(ResultCode.LOW_CONFIDENCE, "LOW_CONFIDENCE");

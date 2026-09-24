@@ -55,7 +55,7 @@ public class NetworkClientServerContractTest {
                 new RdpUavNetwork.CreateMission.LaunchMissionDefinition(definition),
                 new RdpUavNetwork.CreateMission.LaunchMissionDefinition());
         assertEquals("minecraft:zombie", getLaunchTarget(received));
-        assertTrue(getLaunchUnsupported(received));
+        assertFalse(getLaunchUnsupported(received));
     }
 
     private static String getLaunchTarget(RdpUavNetwork.CreateMission.LaunchMissionDefinition message) {

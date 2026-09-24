@@ -29,7 +29,7 @@ public final class MissionMovementAuthority {
     }
 
     public static boolean claimControl(RDPMission mission, UUID aircraftId, long tick) {
-        if (mission == null || aircraftId == null || !nativeWingManRequired(mission)
+        if (aircraftId == null || !nativeWingManRequired(mission)
                 || tick < 0L) return false;
         long expiryTick = tick + CONTROL_LEASE_TICKS;
         AircraftControlLease active = ACTIVE_LEASES.get(aircraftId);
@@ -43,7 +43,7 @@ public final class MissionMovementAuthority {
     }
 
     public static boolean canIssueNativeControl(RDPMission mission, UUID aircraftId, long tick) {
-        if (mission == null || aircraftId == null || !nativeWingManRequired(mission)
+        if (aircraftId == null || !nativeWingManRequired(mission)
                 || tick < 0L) return false;
         AircraftControlLease active = ACTIVE_LEASES.get(aircraftId);
         return active != null

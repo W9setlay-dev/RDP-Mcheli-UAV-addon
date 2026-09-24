@@ -1,6 +1,7 @@
 package net.vas.rdp.uav.persistence;
 
 import net.minecraft.nbt.NBTTagCompound;
+import net.minecraft.nbt.NBTTagList;
 import net.vas.rdp.uav.mission.MissionState;
 import net.vas.rdp.uav.mission.MissionType;
 import net.vas.rdp.uav.mission.RDPMission;
@@ -24,6 +25,14 @@ public final class MissionNbtCodec {
         tag.setString("ownerId", mission.getOwnerId().toString());
         tag.setString("aircraftId", mission.getAircraftId().toString());
         tag.setString("aircraftType", mission.getAircraftType());
+        tag.setString("policyDomain", mission.getTargetPolicy().getDomain());
+        tag.setInteger("policyVersion", mission.getTargetPolicy().getVersion());
+        writeList(tag, "policyInclude", mission.getTargetPolicy().getInclude());
+        writeList(tag, "policyRequire", mission.getTargetPolicy().getRequire());
+        writeList(tag, "policyExclude", mission.getTargetPolicy().getExclude());
+        tag.setBoolean("policyRejectEmbedded", mission.getTargetPolicy().isRejectEmbedded());
+        tag.setBoolean("policyAllowVehicles", mission.getTargetPolicy().isAllowVehicleTargets());
+        tag.setDouble("policyMinimumConfidence", mission.getTargetPolicy().getMinimumConfidence());
         tag.setString("missionType", mission.getMissionType().name());
         tag.setString("targetMode", mission.getTargetSelectionMode().name());
         tag.setString("targetId", mission.getTargetSpec().getRegistryId() == null
@@ -99,6 +108,24 @@ public final class MissionNbtCodec {
                 tag.getLong("lastUpdateTick"), failureReason.isEmpty() ? null : failureReason,
                 report.isEmpty() ? null : report);
         mission.setDimension(tag.getInteger("dimension"));
+        if (tag.hasKey("policyDomain") && !"ENTITY".equals(tag.getString("policyDomain"))) {
+            throw new IllegalArgumentException("Unsupported target policy domain");
+        }
+        net.vas.rdp.uav.target.TargetPolicy.Builder policy =
+                net.vas.rdp.uav.target.TargetPolicy.builder();
+        addList(policy, tag, "policyInclude", 0);
+        addList(policy, tag, "policyRequire", 1);
+        addList(policy, tag, "policyExclude", 2);
+        if (tag.hasKey("policyRejectEmbedded")) {
+            policy.rejectDeeplyEmbedded(tag.getBoolean("policyRejectEmbedded"));
+        }
+        if (tag.hasKey("policyAllowVehicles")) {
+            policy.allowHostileVehicles(tag.getBoolean("policyAllowVehicles"));
+        }
+        if (tag.hasKey("policyMinimumConfidence")) {
+            policy.withMinimumConfidence(tag.getDouble("policyMinimumConfidence"));
+        }
+        mission.setTargetPolicy(policy.snapshot());
         if (tag.hasKey("lastTransitionReason")) {
             mission.restoreTransitionReason(tag.getString("lastTransitionReason"));
         }
@@ -131,6 +158,28 @@ public final class MissionNbtCodec {
         }
         return mission;
     }
+
+    private static void writeList(NBTTagCompound tag, String key, java.util.List<String> values) {
+        NBTTagList list = new NBTTagList();
+        for (String value : values) {
+            NBTTagCompound item = new NBTTagCompound();
+            item.setString("value", value);
+            list.appendTag(item);
+        }
+        tag.setTag(key, list);
+    }
+
+    private static void addList(net.vas.rdp.uav.target.TargetPolicy.Builder policy,
+                                    NBTTagCompound tag, String key, int kind) {
+            NBTTagList list = tag.getTagList(key, 10);
+            String[] values = new String[list.tagCount()];
+            for (int i = 0; i < list.tagCount(); i++) {
+                values[i] = list.getCompoundTagAt(i).getString("value");
+            }
+            if (kind == 0) policy.include(values);
+            else if (kind == 1) policy.require(values);
+            else policy.exclude(values);
+        }
 
     private static String requiredString(NBTTagCompound tag, String key) {
         String value = tag.getString(key);

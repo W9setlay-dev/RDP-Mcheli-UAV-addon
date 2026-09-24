@@ -23,10 +23,19 @@ public final class SquareStrikePlan {
     private final double passSpacing;
     private final double attackRadius;
     private final int strikePasses;
+    private final double targetY;
 
     public SquareStrikePlan(double centerX, double altitude, double centerZ,
                             double width, double length, double headingDegrees,
                             double passSpacing, double attackRadius, int strikePasses) {
+        this(centerX, altitude, centerZ, width, length, headingDegrees,
+                passSpacing, attackRadius, strikePasses, altitude);
+    }
+
+    public SquareStrikePlan(double centerX, double altitude, double centerZ,
+                            double width, double length, double headingDegrees,
+                            double passSpacing, double attackRadius, int strikePasses,
+                            double targetY) {
         if (finite(centerX) || finite(altitude) || finite(centerZ)
                 || finite(width) || finite(length) || finite(headingDegrees)
                 || finite(passSpacing) || finite(attackRadius)
@@ -46,12 +55,13 @@ public final class SquareStrikePlan {
         this.passSpacing = passSpacing;
         this.attackRadius = attackRadius;
         this.strikePasses = strikePasses;
+        this.targetY = targetY;
         this.area = new SquareArea(centerX, centerZ, width, length);
     }
 
     public List<MissionNode> createNodes() {
         List<MissionNode> nodes = new ArrayList<>();
-        int rows = (int) Math.ceil(length / passSpacing);
+        int rows = Math.max(strikePasses, (int) Math.ceil(length / passSpacing));
         double heading = Math.toRadians(headingDegrees);
         double alongX = Math.cos(heading);
         double alongZ = Math.sin(heading);
@@ -71,6 +81,16 @@ public final class SquareStrikePlan {
             nodes.add(MissionNode.flyTo(pointX(secondAlong, across, alongX, acrossX),
                     altitude, pointZ(secondAlong, across, alongZ, acrossZ)));
             nodes.add(MissionNode.attack(attackRadius));
+        }
+        if (altitude > targetY + 1.0D) {
+            TerminalApproachPlanner.Plan terminal = TerminalApproachPlanner.plan(
+                    centerX + Math.cos(heading) * width * 0.5D, altitude,
+                    centerZ + Math.sin(heading) * width * 0.5D,
+                    centerX, targetY, centerZ, headingDegrees);
+            nodes.add(MissionNode.flyTo(terminal.getApproachX(),
+                    terminal.getApproachY(), terminal.getApproachZ()));
+            nodes.add(MissionNode.flyTo(terminal.getTargetX(),
+                    terminal.getTargetY(), terminal.getTargetZ()));
         }
         return Collections.unmodifiableList(nodes);
     }

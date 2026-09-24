@@ -9,6 +9,7 @@ public final class SquareStrikeConfig {
     public static double headingDegrees = 0.0D;
     public static double passSpacingFactor = 0.25D;
     public static double minimumAltitude = 8.0D;
+    public static double terminalAltitudeOffset = 32.0D;
 
     private SquareStrikeConfig() { }
 
@@ -23,6 +24,8 @@ public final class SquareStrikeConfig {
                 0.05F, 1.0F, "Pass spacing as a fraction of square size.");
         minimumAltitude = config.getFloat("minimumAltitude", "squareStrike", 8.0F,
                 0.0F, 4096.0F, "Minimum generated strike altitude.");
+        terminalAltitudeOffset = config.getFloat("terminalAltitudeOffset", "squareStrike", 32.0F,
+                1.0F, 512.0F, "Altitude above the target used for finite terminal approaches.");
         if (config.hasChanged()) config.save();
     }
 }

@@ -59,6 +59,13 @@ Place the verified runtime jars at `libs/mcheli-ce-1.5.1.jar` and
 `RDP_CORE_JAR` to the installed instance jar paths. The jars are intentionally
 not copied into source control.
 
+Recent mission updates keep UAV control server-authoritative and separate from
+client-side intent. The server validates aircraft ownership before accepting
+flight commands, the native WingMan route remains the movement authority for
+active missions, and terminal observation orbits are intentionally disabled so
+missions converge on the intended target instead of drifting into a non-
+productive patrol loop.
+
 The addon includes a tactical mission-control GUI and player-owned UAV mission
 commands. While piloting a McHeli UAV, authorize it with
 `/rdpuav authorize`, then create a manual-target reconnaissance mission with

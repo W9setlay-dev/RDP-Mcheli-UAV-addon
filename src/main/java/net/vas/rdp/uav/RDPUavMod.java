@@ -96,9 +96,14 @@ public final class RDPUavMod {
     private static final class ServerTickHandler {
         @SubscribeEvent
         public void onWorldTick(TickEvent.WorldTickEvent event) {
-            if (event.phase != TickEvent.Phase.END || event.world.isRemote) {
+            if (event.world.isRemote) {
                 return;
             }
+            if (event.phase == TickEvent.Phase.START) {
+                ORCHESTRATOR.applyNativeControls(event.world);
+                return;
+            }
+            if (event.phase != TickEvent.Phase.END) return;
             ORCHESTRATOR.tick(new MissionContext(event.world));
             net.vas.rdp.uav.weapon.MissileGuidanceController.tick(event.world);
             if (event.world.getTotalWorldTime() % net.vas.rdp.uav.swarm.SwarmConfig.updateIntervalTicks == 0L) {

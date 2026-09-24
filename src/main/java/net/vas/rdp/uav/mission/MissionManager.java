@@ -97,6 +97,14 @@ public final class MissionManager {
         return assignments.missionFor(aircraftId);
     }
 
+    public RDPMission activeMission(World world, UUID aircraftId) {
+        if (world == null || aircraftId == null) return null;
+        UUID missionId = assignments.missionFor(aircraftId);
+        return missionId == null
+                ? null
+                : RDPMissionWorldData.get(world).getRepository().find(missionId);
+    }
+
     public RDPMission pollQueuedMission() {
         return queue.poll();
     }

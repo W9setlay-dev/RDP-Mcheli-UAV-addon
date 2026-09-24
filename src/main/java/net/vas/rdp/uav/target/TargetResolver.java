@@ -45,14 +45,29 @@ public final class TargetResolver {
      */
     public List<EntityCandidate> find(World world, double x, double y, double z, double radius,
                                       TargetSpec specification, EntityPlayer operator) {
+        return find(world, x, y, z, radius, specification, operator,
+                TargetPolicy.builder().snapshot());
+    }
+
+    public List<EntityCandidate> find(World world, double x, double y, double z, double radius,
+                                      TargetSpec specification, EntityPlayer operator,
+                                      TargetPolicy.Snapshot policy) {
         if (world == null || specification == null || radius <= 0) {
             throw new IllegalArgumentException("World, target specification, and radius are required");
         }
+        if (policy == null) throw new IllegalArgumentException("Target policy is required");
         List<EntityCandidate> result = new ArrayList<>();
         double maxDistance = radius * radius;
         AxisAlignedBB searchBox = new AxisAlignedBB(
                 x - radius, y - radius, z - radius,
                 x + radius, y + radius, z + radius);
+        TargetPolicy.Builder policyBuilder = TargetPolicy.builder()
+                .include(policy.getInclude().toArray(new String[0]))
+                .require(policy.getRequire().toArray(new String[0]))
+                .exclude(policy.getExclude().toArray(new String[0]))
+                .rejectDeeplyEmbedded(policy.isRejectEmbedded())
+                .allowHostileVehicles(policy.isAllowVehicleTargets())
+                .withMinimumConfidence(policy.getMinimumConfidence());
         for (Entity entity : world.getEntitiesWithinAABB(Entity.class, searchBox)) {
             if (entity == null || entity.isDead || entity.dimension != world.provider.getDimension()) continue;
             if (TargetPolicy.isSafeContact(world, entity)) continue;
@@ -61,13 +76,12 @@ public final class TargetResolver {
             ResourceLocation key = EntityList.getKey(entity);
             if (key == null) continue;
             String id = key.toString();
+            if (!policyBuilder.evaluate(world, entity, operator).isAccepted()) continue;
             boolean matches;
             if (specification.getMode() == TargetSelectionMode.MANUAL) {
                 matches = id.equals(specification.getRegistryId());
             } else if (TargetClassifier.isHostileNamespace(specification.getNamespace())) {
-                TargetPolicy.Decision decision = TargetPolicy.builder()
-                        .evaluate(world, entity, operator);
-                matches = decision.isAccepted();
+                matches = true;
             } else {
                 matches = id.startsWith(specification.getNamespace() + ":");
             }

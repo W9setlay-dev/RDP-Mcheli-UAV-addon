@@ -26,6 +26,10 @@ public final class MissionOrchestrator {
         lifecycle.tick(context.getWorld());
     }
 
+    public void applyNativeControls(World world) {
+        lifecycle.applyNativeControls(world);
+    }
+
     public ContactSnapshot contact(UUID targetId) {
         return lifecycle.contact(targetId);
     }

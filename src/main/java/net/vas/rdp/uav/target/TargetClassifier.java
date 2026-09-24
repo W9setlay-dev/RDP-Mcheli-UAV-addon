@@ -1,5 +1,8 @@
 package net.vas.rdp.uav.target;
 
+import com.norwood.mcheli.aircraft.MCH_EntityAircraft;
+import net.minecraft.entity.Entity;
+
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
@@ -71,7 +74,25 @@ public final class TargetClassifier {
     public static boolean isVehicleId(String registryId) {
         if (registryId == null) return false;
         String id = registryId.trim().toLowerCase(java.util.Locale.ROOT);
-        return id.contains("mcheli");
+        return id.contains("mcheli") || id.contains("mch.") || id.contains("mch_");
+    }
+
+    public static boolean isHostileVehicle(Entity entity) {
+        if (!(entity instanceof MCH_EntityAircraft)) return false;
+        MCH_EntityAircraft aircraft = (MCH_EntityAircraft) entity;
+        String definition = aircraft.getAcInfo() == null ? null : aircraft.getAcInfo().name;
+        if (definition == null || definition.trim().isEmpty()) return false;
+        String normalized = definition.trim().toLowerCase(java.util.Locale.ROOT);
+        return normalized.contains("bandit")
+                || normalized.contains("enemy")
+                || normalized.contains("hostile")
+                || normalized.contains("military")
+                || normalized.contains("raider")
+                || normalized.contains("pirate")
+                || normalized.contains("gunship")
+                || normalized.contains("fighter")
+                || normalized.contains("strike")
+                || normalized.contains("attack");
     }
 
     public static String classify(String registryId) {
@@ -123,9 +144,16 @@ public final class TargetClassifier {
     }
 
     public static boolean isHostileVehicle(String registryId) {
-        if (!isVehicleId(registryId)) return false;
-        String id = registryId.toLowerCase(java.util.Locale.ROOT);
+        if (registryId == null) return false;
+        String id = registryId.trim().toLowerCase(java.util.Locale.ROOT);
+        if (!isVehicleId(id)) return false;
+        if (id.equals("mcheli:mch.e.plane") || id.equals("mcheli:mch.e.heli")
+                || id.equals("mcheli:mch.e.gun") || id.equals("mcheli:mch.e.bomber")) {
+            return false;
+        }
         return id.contains("bandit") || id.contains("military") || id.contains("enemy")
-                || id.contains("hostile") || id.contains("raider") || id.contains("pirate");
+                || id.contains("hostile") || id.contains("raider") || id.contains("pirate")
+                || id.contains("gunship") || id.contains("fighter") || id.contains("strike")
+                || id.contains("attack");
     }
 }

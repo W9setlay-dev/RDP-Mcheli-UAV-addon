@@ -457,10 +457,29 @@ public final class RdpUavNetwork {
             final EntityPlayerMP player = context.getServerHandler().player;
             Objects.requireNonNull(player.getServer()).addScheduledTask(() -> {
                 try {
-                    java.util.UUID id = java.util.UUID.fromString(message.missionId);
+                    java.util.UUID id = message.missionId == null
+                            || message.missionId.trim().isEmpty()
+                            ? null : java.util.UUID.fromString(message.missionId);
                     net.vas.rdp.uav.mission.RDPMission mission =
                             net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
                                     .getRepository().find(id);
+                    if (mission == null) {
+                        MCH_EntityAircraft controlled =
+                                net.vas.rdp.uav.mission.UavControlAccess
+                                        .findControlledAircraft(player);
+                        if (controlled != null) {
+                            for (net.vas.rdp.uav.mission.RDPMission candidate :
+                                    net.vas.rdp.uav.persistence.RDPMissionWorldData
+                                            .get(player.world).getRepository()
+                                            .byOwner(player.getUniqueID())) {
+                                if (controlled.getUniqueID().equals(candidate.getAircraftId())
+                                        && !candidate.isTerminal()) {
+                                    mission = candidate;
+                                    break;
+                                }
+                            }
+                        }
+                    }
                     if (mission == null || !player.getUniqueID().equals(mission.getOwnerId())
                             || mission.isTerminal()) return;
                     MCH_EntityAircraft aircraft = null;
@@ -545,7 +564,7 @@ public final class RdpUavNetwork {
         }
 
         public static final class LaunchMissionDefinition implements IMessage {
-            private int version = 1;
+            private int version = 2;
             private String type = "";
             private String target = "";
             private boolean attack;
@@ -554,6 +573,12 @@ public final class RdpUavNetwork {
             private boolean swarmEnabled;
             private int swarmMaximumMembers = 1;
             private boolean unsupportedConfiguration;
+            private String policyInclude = "";
+            private String policyRequire = "";
+            private String policyExclude = "";
+            private boolean policyRejectEmbedded = true;
+            private boolean policyAllowVehicles = true;
+            private double policyMinimumConfidence;
 
             public LaunchMissionDefinition() { }
 
@@ -565,7 +590,13 @@ public final class RdpUavNetwork {
                 this.weapon = definition.getGuidedWeapon();
                 this.swarmEnabled = definition.isSwarmEnabled();
                 this.swarmMaximumMembers = definition.getSwarmMaximumMembers();
-                this.unsupportedConfiguration = isLaunchSupported(definition);
+                this.unsupportedConfiguration = false;
+                this.policyInclude = joinPolicy(definition.getTargetPolicy().getInclude());
+                this.policyRequire = joinPolicy(definition.getTargetPolicy().getRequire());
+                this.policyExclude = joinPolicy(definition.getTargetPolicy().getExclude());
+                this.policyRejectEmbedded = definition.getTargetPolicy().isRejectEmbedded();
+                this.policyAllowVehicles = definition.getTargetPolicy().isAllowVehicleTargets();
+                this.policyMinimumConfidence = definition.getTargetPolicy().getMinimumConfidence();
             }
 
             public void fromBytes(ByteBuf buffer) {
@@ -578,6 +609,12 @@ public final class RdpUavNetwork {
                 swarmEnabled = buffer.readBoolean();
                 swarmMaximumMembers = buffer.readUnsignedByte();
                 unsupportedConfiguration = buffer.readBoolean();
+                policyInclude = readString(buffer);
+                policyRequire = readString(buffer);
+                policyExclude = readString(buffer);
+                policyRejectEmbedded = buffer.readBoolean();
+                policyAllowVehicles = buffer.readBoolean();
+                policyMinimumConfidence = buffer.readDouble();
             }
 
             public void toBytes(ByteBuf buffer) {
@@ -590,6 +627,22 @@ public final class RdpUavNetwork {
                 buffer.writeBoolean(swarmEnabled);
                 buffer.writeByte(Math.max(1, Math.min(64, swarmMaximumMembers)));
                 buffer.writeBoolean(unsupportedConfiguration);
+                writeString(buffer, policyInclude);
+                writeString(buffer, policyRequire);
+                writeString(buffer, policyExclude);
+                buffer.writeBoolean(policyRejectEmbedded);
+                buffer.writeBoolean(policyAllowVehicles);
+                buffer.writeDouble(policyMinimumConfidence);
+            }
+
+            private static String joinPolicy(java.util.List<String> values) {
+                StringBuilder result = new StringBuilder();
+                for (String value : values) {
+                    if (value == null || value.indexOf('|') >= 0) continue;
+                    if (result.length() > 0) result.append('|');
+                    result.append(value);
+                }
+                return result.toString();
             }
         }
 
@@ -1540,7 +1593,7 @@ public final class RdpUavNetwork {
         public IMessage onMessage(final CreateMission.LaunchMissionDefinition message, MessageContext context) {
             final EntityPlayerMP player = context.getServerHandler().player;
             Objects.requireNonNull(player.getServer()).addScheduledTask(() -> {
-                if (message.version != 1 || message.unsupportedConfiguration
+                if (message.version != 2 || message.unsupportedConfiguration
                         || message.target == null
                         || !message.target.matches(
                         "(?i)(mod=[A-Za-z0-9_.-]+|[A-Za-z0-9_.-]+:[A-Za-z0-9_./-]+)")) {
@@ -1574,6 +1627,27 @@ public final class RdpUavNetwork {
                         + priorityName(message.priority);
                 Objects.requireNonNull(player.getServer()).getCommandManager()
                         .executeCommand(player, command);
+                java.util.List<net.vas.rdp.uav.mission.RDPMission> created =
+                        net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
+                                .getRepository().byOwner(player.getUniqueID());
+                for (int i = created.size() - 1; i >= 0; i--) {
+                    net.vas.rdp.uav.mission.RDPMission mission = created.get(i);
+                    if (mission.getAircraftId().equals(aircraft.getUniqueID())
+                            && !mission.isTerminal()) {
+                        net.vas.rdp.uav.target.TargetPolicy.Builder policy =
+                                net.vas.rdp.uav.target.TargetPolicy.builder()
+                                .include(splitPolicy(message.policyInclude))
+                                .require(splitPolicy(message.policyRequire))
+                                .exclude(splitPolicy(message.policyExclude))
+                                .rejectDeeplyEmbedded(message.policyRejectEmbedded)
+                                .allowHostileVehicles(message.policyAllowVehicles)
+                                .withMinimumConfidence(message.policyMinimumConfidence);
+                        mission.setTargetPolicy(policy.snapshot());
+                        net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
+                                .markDirty();
+                        break;
+                    }
+                }
                 if (message.attack && !message.weapon.trim().isEmpty()) {
                     java.util.List<net.vas.rdp.uav.mission.RDPMission> missions =
                             net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
@@ -1596,6 +1670,18 @@ public final class RdpUavNetwork {
 
         private static void reject(EntityPlayerMP player, String message) {
             player.sendMessage(new net.minecraft.util.text.TextComponentString(message));
+        }
+
+        private static String[] splitPolicy(String value) {
+            if (value == null || value.trim().isEmpty()) return new String[0];
+            String[] values = value.split("\\|", -1);
+            if (values.length > 32) throw new IllegalArgumentException("Too many policy filters");
+            for (String item : values) {
+                if (item.length() > 64 || !item.matches("[A-Za-z0-9_:.*/-]+")) {
+                    throw new IllegalArgumentException("Invalid policy filter");
+                }
+            }
+            return values;
         }
 
         private static String priorityName(int value) {

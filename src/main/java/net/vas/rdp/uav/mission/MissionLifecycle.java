@@ -72,6 +72,19 @@ public final class MissionLifecycle {
         updateActive(world);
     }
 
+    public void applyNativeControls(World world) {
+        if (world == null || world.isRemote) return;
+        long tick = world.getTotalWorldTime();
+        for (Entity entity : world.loadedEntityList) {
+            if (!(entity instanceof MCH_EntityAircraft)) continue;
+            MCH_EntityAircraft aircraft = (MCH_EntityAircraft) entity;
+            RDPMission mission = manager.activeMission(world, aircraft.getUniqueID());
+            if (mission != null) {
+                flight.applyNativeControl(world, manager, aircraft, mission, tick);
+            }
+        }
+    }
+
     private void restoreQueue(World world) {
         synchronized (restoredWorlds) {
             if (restoredWorlds.containsKey(world)) return;
@@ -394,6 +407,11 @@ public final class MissionLifecycle {
                 dirty = true;
                 continue;
             }
+            if (aircraft.getRiddenByEntity() != null) {
+                fail(world, mission, "OPERATOR_CONTROL_CONFLICT", tick);
+                dirty = true;
+                continue;
+            }
             /*
              * The lease is renewed on every active server tick. This also
              * repairs a lease lost across a server reload, while still
@@ -410,6 +428,7 @@ public final class MissionLifecycle {
                 dirty = true;
                 continue;
             }
+            flight.observeAircraftState(aircraft, mission, tick);
             if (mission.getState() == MissionState.WAITING_FOR_FUEL
                     && flight.isFuelInsufficientForMission(aircraft)) {
                 dirty = true;
@@ -527,6 +546,12 @@ public final class MissionLifecycle {
                             terminalRouteAltitude(aircraft, target), tick,
                             mission.getMissionId(), mission.getPhase().name(),
                             mission.getControlOwner().name());
+                    String terminalFailure = flight.terminalGuidanceFailureReason(aircraft);
+                    if (terminalFailure != null && !mission.isKamikazePayloadLaunched()) {
+                        fail(world, mission, terminalFailure, tick);
+                        dirty = true;
+                        continue;
+                    }
                 }
                 boolean noseImpact = KamikazeImpactDetector.hasNoseImpact(aircraft);
                 boolean speedReached = flight.isKamikazeSpeedReached(aircraft);
@@ -605,6 +630,29 @@ public final class MissionLifecycle {
         return Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
 
+    private boolean routeAlreadyDispatched(MCH_EntityAircraft aircraft, Target target, RDPMission mission) {
+        if (aircraft == null || target == null || mission == null) return false;
+        WingmanEntry entry = flight.getEntry(aircraft);
+        if (entry == null || entry.mission == null) return false;
+        if (entry.autoState == com.norwood.mcheli.wingman.mission.AutonomousState.RTB
+                || entry.autoState == com.norwood.mcheli.wingman.mission.AutonomousState.LANDING
+                || entry.autoState == com.norwood.mcheli.wingman.mission.AutonomousState.PARKED) {
+            return false;
+        }
+        if (entry.autoTargetX == 0.0D && entry.autoTargetY == 0.0D && entry.autoTargetZ == 0.0D
+                && target.x == 0.0D && target.y == 0.0D && target.z == 0.0D) {
+            return true;
+        }
+        double dx = entry.autoTargetX - target.x;
+        double dy = entry.autoTargetY - target.y;
+        double dz = entry.autoTargetZ - target.z;
+        double distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        boolean singleNode = entry.mission.size() <= 1;
+        boolean routeComplete = entry.missionIndex >= Math.max(0, entry.mission.size() - 1)
+                && (flight.hasReachedRoutePoint(aircraft) || singleNode);
+        return distance <= 2.0D && (singleNode || routeComplete);
+    }
+
     private boolean updateMission(World world, RDPMission mission, MCH_EntityAircraft aircraft,
                                   Target target, long tick) {
         if (mission.isTerminal()) return false;
@@ -617,6 +665,16 @@ public final class MissionLifecycle {
             return true;
         }
         if (mission.getState() == MissionState.REPLAN && target != null) {
+            if (mission.getRecoveryAttempts() >= RDPMission.MAX_RECOVERY_ATTEMPTS) {
+                fail(world, mission, "REPLAN_LIMIT_EXCEEDED", tick);
+                return true;
+            }
+            if (routeAlreadyDispatched(aircraft, target, mission)) {
+                if (mission.getTargetSelectionMode() == TargetSelectionMode.POINT) {
+                    mission.transitionTo(MissionState.TARGET_LOCKED, tick);
+                }
+                return false;
+            }
             flight.release(aircraft);
             double routeY = terminalRouteAltitude(aircraft, target);
             if (!flight.dispatch(aircraft, target.x, routeY, target.z,
@@ -821,7 +879,9 @@ public final class MissionLifecycle {
                         net.vas.rdp.uav.flight.SquareStrikePlan squarePlan =
                                 new net.vas.rdp.uav.flight.SquareStrikePlan(
                                         mission.getTargetSpec().getX(),
-                                        target.y,
+                                        target.y + Math.max(
+                                                net.vas.rdp.uav.flight.SquareStrikeConfig.minimumAltitude,
+                                                net.vas.rdp.uav.flight.SquareStrikeConfig.terminalAltitudeOffset),
                                         mission.getTargetSpec().getZ(),
                                         mission.getSquareWidth(),
                                         mission.getSquareDepth(),
@@ -832,7 +892,8 @@ public final class MissionLifecycle {
                                         profile(aircraft).getAttackEnvelope(),
                                         Math.max(1, (int) Math.ceil(mission.getSquareDepth()
                                                 / Math.max(1.0D, mission.getSquareDepth()
-                                                * net.vas.rdp.uav.flight.SquareStrikeConfig.passSpacingFactor))));
+                                                * net.vas.rdp.uav.flight.SquareStrikeConfig.passSpacingFactor))),
+                                        target.y);
                         if (!flight.armSquareStrike(aircraft, squarePlan,
                                 mission.getTargetId())) {
                             fail(world, mission, "ONE_WAY_SQUARE_TERMINAL_PAYLOAD_REQUIRED", tick);
@@ -1046,6 +1107,16 @@ public final class MissionLifecycle {
         if (current == null && mission.getTargetSelectionMode() == TargetSelectionMode.MANUAL) {
             current = targets.findLoadedByRegistryId(world, mission.getTargetSpec().getRegistryId());
         }
+        if (current != null && !net.vas.rdp.uav.target.TargetPolicy.builder()
+                .include(mission.getTargetPolicy().getInclude().toArray(new String[0]))
+                .require(mission.getTargetPolicy().getRequire().toArray(new String[0]))
+                .exclude(mission.getTargetPolicy().getExclude().toArray(new String[0]))
+                .rejectDeeplyEmbedded(mission.getTargetPolicy().isRejectEmbedded())
+                .allowHostileVehicles(mission.getTargetPolicy().isAllowVehicleTargets())
+                .withMinimumConfidence(mission.getTargetPolicy().getMinimumConfidence())
+                .evaluate(world, current, null).isAccepted()) {
+            return null;
+        }
         if (current != null && (mission.getTargetSelectionMode() == TargetSelectionMode.MANUAL
                 || aircraft.getDistanceSq(current) <=
                 profile(aircraft).getDetectionRange() * profile(aircraft).getDetectionRange())) {
@@ -1058,7 +1129,7 @@ public final class MissionLifecycle {
         List<TargetResolver.EntityCandidate> candidates = targets.find(world, aircraft.posX,
                 aircraft.posY, aircraft.posZ,
                 profile(aircraft).getDetectionRange(),
-                mission.getTargetSpec());
+                mission.getTargetSpec(), null, mission.getTargetPolicy());
         if (candidates.isEmpty()) return null;
         Entity selected = candidates.get(0).getEntity();
         targets.observe(world, selected,

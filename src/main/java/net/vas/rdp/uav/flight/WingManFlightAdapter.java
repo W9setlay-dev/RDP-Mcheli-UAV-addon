@@ -31,6 +31,7 @@ import java.util.HashMap;
  * The only RDP-facing boundary for WingMan control.
  */
 public final class WingManFlightAdapter {
+    private final AircraftStateEstimator aircraftStates = new AircraftStateEstimator();
     private final Set<UUID> nativeAttackCompletions = new HashSet<>();
     private final Map<UUID, ContinuousTargetTracker> targetTrackers = new HashMap<>();
     private final Map<UUID, FpvFlightStateMachine> fpvStates = new HashMap<>();
@@ -41,12 +42,35 @@ public final class WingManFlightAdapter {
     private final Map<UUID, TerminalGuidanceMetrics> terminalMetrics = new HashMap<>();
     private final Map<UUID, TerminalGuidanceMetrics.Classification> terminalLastClassification
             = new HashMap<>();
-    private static final double KAMIKAZE_ATTACK_ANGLE_DEGREES = 35.0D;
-    private static final double MIN_DIVE_RUN_METERS = 32.0D;
-    private static final double MAX_DIVE_RUN_METERS = 160.0D;
     public boolean dispatch(MCH_EntityAircraft aircraft, double x, double y, double z,
                             double orbitRadius, int orbitTicks) {
         return dispatch(aircraft, x, y, z, orbitRadius, orbitTicks, false, null);
+    }
+
+    public AircraftState observeAircraftState(MCH_EntityAircraft aircraft,
+                                               net.vas.rdp.uav.mission.RDPMission mission,
+                                               long tick) {
+        if (aircraft == null) return null;
+        return aircraftStates.observe(aircraft, getEntry(aircraft), mission, tick);
+    }
+
+    /**
+     * Applies the verified McHeliCE native control path for one mission tick.
+     * WingMan still owns the high-level route; this method supplies bounded
+     * attitude/throttle inputs before McHeliCE advances its physics.
+     */
+    public boolean applyNativeControl(net.minecraft.world.World world,
+                                      net.vas.rdp.uav.mission.MissionManager missions,
+                                      MCH_EntityAircraft aircraft,
+                                      net.vas.rdp.uav.mission.RDPMission mission,
+                                      long tick) {
+        if (world == null || missions == null || aircraft == null || mission == null
+                || mission.isTerminal()) return false;
+        WingmanEntry entry = getEntry(aircraft);
+        if (entry == null || !entry.isAutonomous()) return false;
+        FlightCommand command = isFpv(aircraft) ? fpvFlightCommand(aircraft) : null;
+        return NativeAircraftControlAdapter.apply(world, missions, aircraft, mission,
+                entry.autoTargetX, entry.autoTargetY, entry.autoTargetZ, command, tick);
     }
 
     private static boolean usesHelicopterFlightModel(MCH_EntityAircraft aircraft) {
@@ -69,7 +93,7 @@ public final class WingManFlightAdapter {
     @SuppressWarnings("unused")
     public boolean dispatch(MCH_EntityAircraft aircraft, double x, double y, double z,
                             double orbitRadius, int orbitTicks, boolean attack, UUID targetId) {
-        if (supportsAutonomousRoute(aircraft)) {
+        if (nativeRouteUnsupported(aircraft)) {
             RdpUavDebug.debug("WingMan",
                     "dispatch rejected: aircraft={} definition={} isUav={} profile={}",
                     aircraft == null ? null : aircraft.getUniqueID(),
@@ -146,7 +170,7 @@ public final class WingManFlightAdapter {
      */
     public boolean refreshObservationRoute(MCH_EntityAircraft aircraft, double x, double y, double z,
                                            double orbitRadius, boolean orbit, UUID targetId) {
-        if (supportsAutonomousRoute(aircraft)) return false;
+        if (nativeRouteUnsupported(aircraft)) return false;
         WingmanEntry entry = WingmanRegistry.get(aircraft.getUniqueID());
         if (entry == null || entry.mission == null || entry.autoState == AutonomousState.RTB
                 || entry.autoState == AutonomousState.LANDING
@@ -194,7 +218,7 @@ public final class WingManFlightAdapter {
      */
     public boolean refreshBoundedDetour(MCH_EntityAircraft aircraft, double x, double y, double z,
                                         double detourDistance, UUID targetId) {
-        if (supportsAutonomousRoute(aircraft)) return false;
+        if (nativeRouteUnsupported(aircraft)) return false;
         WingmanEntry entry = WingmanRegistry.get(aircraft.getUniqueID());
         if (entry == null || entry.mission == null
                 || entry.autoState == AutonomousState.RTB
@@ -224,7 +248,10 @@ public final class WingManFlightAdapter {
 
     public boolean hasReachedRoutePoint(MCH_EntityAircraft aircraft) {
         WingmanEntry entry = getEntry(aircraft);
-        return entry != null && entry.mission != null && entry.missionIndex > 0
+        if (entry == null || entry.mission == null) return false;
+        int routeSize = entry.mission.size();
+        if (routeSize <= 1) return true;
+        return entry.missionIndex >= routeSize - 1
                 && (entry.autoState == AutonomousState.LOITER
                 || entry.autoState == AutonomousState.ENROUTE
                 || entry.autoState == AutonomousState.ON_STATION
@@ -324,7 +351,7 @@ public final class WingManFlightAdapter {
 
     public boolean armAttack(MCH_EntityAircraft aircraft, double x, double y, double z,
                              double attackRadius, UUID targetId, String weaponPriority) {
-        if (supportsAutonomousRoute(aircraft)) return false;
+        if (nativeRouteUnsupported(aircraft)) return false;
         WingmanEntry entry = WingmanRegistry.get(aircraft.getUniqueID());
         if (entry == null || entry.mission == null) return false;
         entry.attackMode = WingmanEntry.ATK_AUTO;
@@ -368,7 +395,7 @@ public final class WingManFlightAdapter {
     @SuppressWarnings("unused")
     public boolean armSquareStrike(MCH_EntityAircraft aircraft, SquareStrikePlan plan,
                                    UUID targetId) {
-        if (plan == null || supportsAutonomousRoute(aircraft)) return false;
+        if (plan == null || nativeRouteUnsupported(aircraft)) return false;
         WingmanEntry entry = WingmanRegistry.get(aircraft.getUniqueID());
         if (entry == null || entry.mission == null) return false;
         if (!hasAttackAmmunition(aircraft) && !hasSelfDestructWeaponWithAmmo(aircraft)) return false;
@@ -480,11 +507,11 @@ public final class WingManFlightAdapter {
     }
 
     public boolean supportsKamikaze(MCH_EntityAircraft aircraft) {
-        if (supportsAutonomousRoute(aircraft)) return true;
+        if (nativeRouteUnsupported(aircraft)) return true;
         return !hasSelfDestructWeapon(aircraft);
     }
 
-    private boolean supportsAutonomousRoute(MCH_EntityAircraft aircraft) {
+    private boolean nativeRouteUnsupported(MCH_EntityAircraft aircraft) {
         if (aircraft == null) return true;
         if (aircraft.isUAV()) return false;
         return aircraft.getAcInfo() == null
@@ -547,29 +574,17 @@ public final class WingManFlightAdapter {
 
     private void appendDiveApproach(WingmanEntry entry, MCH_EntityAircraft aircraft,
                                     double x, double y, double z) {
-        double dx = aircraft.posX - x;
-        double dz = aircraft.posZ - z;
-        double horizontalDistance = Math.sqrt(dx * dx + dz * dz);
-        if (horizontalDistance < 0.001D) {
-            dx = 0.0D;
-            dz = 1.0D;
-            horizontalDistance = 1.0D;
-        }
-
-        double altitudeDifference = Math.max(0.0D, aircraft.posY - y);
-        double angleRadians = Math.toRadians(KAMIKAZE_ATTACK_ANGLE_DEGREES);
-        double diveRun = altitudeDifference / Math.tan(angleRadians);
-        diveRun = Math.max(MIN_DIVE_RUN_METERS, Math.min(MAX_DIVE_RUN_METERS, diveRun));
-
-        double approachX = x + (dx / horizontalDistance) * diveRun;
-        double approachZ = z + (dz / horizontalDistance) * diveRun;
-        double approachY = y + Math.tan(angleRadians) * diveRun;
-        entry.mission.add(MissionNode.flyTo(approachX, approachY, approachZ));
+        TerminalApproachPlanner.Plan approach = TerminalApproachPlanner.plan(
+                aircraft.posX, aircraft.posY, aircraft.posZ, x, y, z,
+                aircraft.rotationYaw);
+        entry.mission.add(MissionNode.flyTo(approach.getApproachX(),
+                approach.getApproachY(), approach.getApproachZ()));
         // A single approach waypoint is not enough to guarantee that native
         // WingMan enters the target-facing terminal leg. Keep the existing
         // payload/detonation owner, but finish the route at the objective so
         // the aircraft's native nose points through the target before impact.
-        entry.mission.add(MissionNode.flyTo(x, y, z));
+        entry.mission.add(MissionNode.flyTo(approach.getTargetX(),
+                approach.getTargetY(), approach.getTargetZ()));
     }
 
     public void release(MCH_EntityAircraft aircraft) {
@@ -578,6 +593,7 @@ public final class WingManFlightAdapter {
             aircraft.getEntityData().removeTag(KamikazeConfig.ARMED_KEY);
             aircraft.getEntityData().removeTag(KamikazeConfig.MIN_SPEED_KEY);
             WingmanRegistry.remove(aircraft.getUniqueID());
+            aircraftStates.remove(aircraft.getUniqueID());
             targetTrackers.remove(aircraft.getUniqueID());
             fpvStates.remove(aircraft.getUniqueID());
             fpvCommands.remove(aircraft.getUniqueID());
@@ -599,6 +615,22 @@ public final class WingManFlightAdapter {
                                            double guidanceY, long tick) {
         if (aircraft == null || target == null) return;
         UUID aircraftId = aircraft.getUniqueID();
+        AircraftState observed = aircraftStates.get(aircraftId);
+        if (observed == null) {
+            observed = aircraftStates.observe(aircraft, getEntry(aircraft), null, tick);
+        }
+        UavVehicleProfile vehicleProfile = profileFor(aircraft);
+        double targetRadius = targetRadius(target);
+        FlightGuidancePlanner.Plan plan = FlightGuidancePlanner.plan(observed,
+                target.posX, guidanceY, target.posZ,
+                target.motionX, target.motionY, target.motionZ,
+                targetRadius, vehicleProfile, false);
+        if (!plan.isFeasible()) {
+            RdpUavDebug.event("TerminalGuidance", "GUIDANCE_REJECTED",
+                    "aircraft", aircraftId, "target", target.getUniqueID(),
+                    "tick", tick, "reason", plan.getReason());
+            return;
+        }
         ContinuousTargetTracker tracker = targetTrackers.get(aircraftId);
         if (tracker == null) {
             tracker = new ContinuousTargetTracker(trackingParameters(aircraft));
@@ -608,8 +640,11 @@ public final class WingManFlightAdapter {
                 aircraft.posX, aircraft.posY, aircraft.posZ,
                 target.posX, guidanceY, target.posZ,
                 target.motionX, target.motionY, target.motionZ);
-        updateTargetGuidance(aircraft, solution.getX(), solution.getY(),
-                solution.getZ(), target.getUniqueID());
+        updateTargetGuidance(aircraft,
+                blendGuidance(plan.getX(), solution.getX()),
+                clamp(plan.getY(), vehicleProfile.getMinimumExecutionAltitude(),
+                        vehicleProfile.getMaximumExecutionAltitude()),
+                blendGuidance(plan.getZ(), solution.getZ()), target.getUniqueID());
     }
 
     /**
@@ -621,8 +656,23 @@ public final class WingManFlightAdapter {
                                        Entity target,
                                        double guidanceY, long tick,
                                        UUID missionId, String phase, String controlOwner) {
-        if (aircraft == null || target == null || supportsAutonomousRoute(aircraft)) return;
+        if (aircraft == null || target == null || nativeRouteUnsupported(aircraft)) return;
         UUID aircraftId = aircraft.getUniqueID();
+        AircraftState observed = aircraftStates.get(aircraftId);
+        if (observed == null) {
+            observed = aircraftStates.observe(aircraft, getEntry(aircraft), null, tick);
+        }
+        FlightGuidancePlanner.Plan plan = FlightGuidancePlanner.plan(observed,
+                target.posX, guidanceY, target.posZ,
+                target.motionX, target.motionY, target.motionZ,
+                targetRadius(target), profileFor(aircraft), true);
+        if (!plan.isFeasible()) {
+            RdpUavDebug.event("TerminalGuidance", "GUIDANCE_REJECTED",
+                    "mission", missionId, "aircraft", aircraftId,
+                    "target", target.getUniqueID(), "tick", tick,
+                    "reason", plan.getReason());
+            return;
+        }
         ContinuousTargetTracker tracker = targetTrackers.get(aircraftId);
         if (tracker == null) {
             tracker = new ContinuousTargetTracker(terminalTrackingParameters(aircraft));
@@ -638,7 +688,10 @@ public final class WingManFlightAdapter {
         if (entry == null || entry.autoState == AutonomousState.RTB
                 || entry.autoState == AutonomousState.LANDING
                 || entry.autoState == AutonomousState.PARKED) return;
-        double safeY = normalizeHelicopterTargetY(aircraft, solution.getY());
+        double plannedX = blendGuidance(plan.getX(), solution.getX());
+        double plannedZ = blendGuidance(plan.getZ(), solution.getZ());
+        double safeY = normalizeHelicopterTargetY(aircraft,
+                blendGuidance(plan.getY(), solution.getY()));
         TerminalGuidanceMetrics metrics = terminalMetrics.get(aircraftId);
         if (metrics == null || !target.getUniqueID().equals(metrics.getTargetId())) {
             metrics = new TerminalGuidanceMetrics(target.getUniqueID(), tick);
@@ -667,7 +720,7 @@ public final class WingManFlightAdapter {
         MissionNode current = entry.currentNode();
         if (current == null) {
             entry.mission = new ArrayList<>();
-            entry.mission.add(MissionNode.flyTo(solution.getX(), safeY, solution.getZ()));
+            entry.mission.add(MissionNode.flyTo(plan.getX(), safeY, plan.getZ()));
             entry.missionIndex = 0;
             activeIndex = 0;
         } else if (current.type != MissionNode.Type.FLY_TO) {
@@ -677,9 +730,9 @@ public final class WingManFlightAdapter {
                     "node", current.type, "missionIndex", entry.missionIndex);
             return;
         } else {
-            double waypointDx = solution.getX() - current.x;
+            double waypointDx = plannedX - current.x;
             double waypointDy = safeY - current.y;
-            double waypointDz = solution.getZ() - current.z;
+            double waypointDz = plannedZ - current.z;
             if (waypointDx * waypointDx + waypointDy * waypointDy + waypointDz * waypointDz
                     < 4.0D) {
                 return;
@@ -687,12 +740,12 @@ public final class WingManFlightAdapter {
             // MissionNode is immutable, but replacing only the active node
             // preserves WingMan's route suffix, mission index, and timer.
             entry.mission.set(activeIndex, MissionNode.flyTo(
-                    solution.getX(), safeY, solution.getZ()));
+                    plannedX, safeY, plannedZ));
         }
         entry.currentAutoTarget = target.getUniqueID();
-        entry.autoTargetX = solution.getX();
+        entry.autoTargetX = plannedX;
         entry.autoTargetY = safeY;
-        entry.autoTargetZ = solution.getZ();
+        entry.autoTargetZ = plannedZ;
         int replacements = terminalWaypointReplacements.containsKey(aircraftId)
                 ? terminalWaypointReplacements.get(aircraftId) + 1 : 1;
         terminalWaypointReplacements.put(aircraftId, replacements);
@@ -714,6 +767,21 @@ public final class WingManFlightAdapter {
     public void markTerminalTimeout(UUID aircraftId) {
         TerminalGuidanceMetrics metrics = terminalMetrics.get(aircraftId);
         if (metrics != null) metrics.timeout();
+    }
+
+    public String terminalGuidanceFailureReason(MCH_EntityAircraft aircraft) {
+        if (aircraft == null) return null;
+        TerminalGuidanceMetrics metrics = terminalMetrics.get(aircraft.getUniqueID());
+        if (metrics == null) return null;
+        TerminalGuidanceMetrics.Classification classification = metrics.getClassification();
+        if (classification == TerminalGuidanceMetrics.Classification.ORBITING
+                || classification == TerminalGuidanceMetrics.Classification.DIVERGING
+                || classification == TerminalGuidanceMetrics.Classification.OVERSHOT
+                || classification == TerminalGuidanceMetrics.Classification.TIMEOUT
+                || terminalWaypointReplacements.getOrDefault(aircraft.getUniqueID(), 0) > 64) {
+            return "TERMINAL_GUIDANCE_" + classification.name();
+        }
+        return null;
     }
 
     private void emitTerminalDiagnostics(MCH_EntityAircraft aircraft, Entity target,
@@ -783,6 +851,27 @@ public final class WingManFlightAdapter {
 
         return new ContinuousTargetTracker.Parameters(3.0D, 0.45D,
                 0.35D, 0.75D, 48.0D, 2);
+    }
+
+    private UavVehicleProfile profileFor(MCH_EntityAircraft aircraft) {
+        return UavVehicleProfiles.forAircraft(aircraft == null || aircraft.getAcInfo() == null
+                ? null : aircraft.getAcInfo().name);
+    }
+
+    private static double targetRadius(Entity target) {
+        if (target == null || target.getEntityBoundingBox() == null) return 1.0D;
+        net.minecraft.util.math.AxisAlignedBB bounds = target.getEntityBoundingBox();
+        double width = Math.max(bounds.maxX - bounds.minX, bounds.maxZ - bounds.minZ);
+        return Math.max(1.0D, width * 0.5D);
+    }
+
+    private static double blendGuidance(double planned, double smoothed) {
+        if (!Double.isFinite(smoothed)) return planned;
+        return planned * 0.75D + smoothed * 0.25D;
+    }
+
+    private static double clamp(double value, double minimum, double maximum) {
+        return Math.max(minimum, Math.min(maximum, value));
     }
 
     private boolean isFpv(MCH_EntityAircraft aircraft) {

@@ -13,7 +13,6 @@ import org.lwjgl.input.Keyboard;
 
 @SideOnly(Side.CLIENT)
 public final class RdpUavClientKeys {
-    private static long lastAssignmentTap;
     private static final KeyBinding OPEN_MISSION_CONTROL = new KeyBinding(
             "key.rdpuav.mission_control", Keyboard.KEY_Q, "key.categories.rdpuav");
     private static final KeyBinding POINT_TASK = new KeyBinding(
@@ -90,6 +89,9 @@ public final class RdpUavClientKeys {
         if (AI_TARGET_LOCK.isPressed()) lockAiTarget(minecraft);
         if (SIGHT_STABILIZATION.isPressed()) stabilizeSight(minecraft);
         if (CLEAR_TARGET_LOCK.isPressed()) RdpUavNetwork.clearAiTargetLock();
+        if (ABORT_SELECTED.isPressed()) {
+            GuiMissionControl.abortSelected();
+        }
         MCH_EntityAircraft aircraft = net.vas.rdp.uav.mission.UavControlAccess
                 .findControlledAircraft(minecraft.player);
         if (aircraft == null) return;
@@ -102,15 +104,6 @@ public final class RdpUavClientKeys {
         if (AUTO_ATTACK_TASK.isPressed()) GuiMissionControl.createAutoAttackFromField();
         if (REFRESH_MISSIONS.isPressed()) GuiMissionControl.requestRefresh();
         if (AUTHORIZE_SELECTED.isPressed()) GuiMissionControl.authorizeSelected();
-        if (ABORT_SELECTED.isPressed()) {
-            long now = System.currentTimeMillis();
-            if (now - lastAssignmentTap <= net.vas.rdp.uav.flight.KamikazeConfig.doubleTapWindowMillis) {
-                GuiMissionControl.abortSelected();
-                lastAssignmentTap = 0L;
-            } else {
-                lastAssignmentTap = now;
-            }
-        }
         if (KAMIKAZE_SELECTED.isPressed()) GuiMissionControl.armKamikazeSelected();
         if (FIRE_SELF_DESTRUCT.isPressed()) RdpUavNetwork.fireSelfDestruct();
         if (NEXT_CONTACT.isPressed()) RdpUavNetwork.cycleContact(true);
