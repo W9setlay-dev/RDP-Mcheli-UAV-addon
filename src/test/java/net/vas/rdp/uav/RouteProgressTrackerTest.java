@@ -44,4 +44,59 @@ public class RouteProgressTrackerTest {
         assertTrue(snapshot.isStalled());
         assertEquals(100L, snapshot.getLastMeaningfulProgressTick());
     }
+
+    @Test
+    public void missingTargetDistanceDoesNotCountAsZeroProgress() {
+        RouteProgressTracker.Snapshot snapshot = RouteProgressTracker.evaluate(
+                200L,
+                0.5D,
+                0.5D,
+                Double.NaN,
+                Double.NaN,
+                7.0D,
+                7.0D,
+                50L,
+                0.5D,
+                200L);
+
+        assertFalse(snapshot.isMeaningfulProgress());
+        assertFalse(snapshot.isStalled());
+        assertEquals(50L, snapshot.getLastMeaningfulProgressTick());
+    }
+
+    @Test
+    public void partiallyMissingTargetDistanceDoesNotCountAsProgress() {
+        RouteProgressTracker.Snapshot snapshot = RouteProgressTracker.evaluate(
+                200L,
+                0.5D,
+                0.5D,
+                20.0D,
+                Double.NaN,
+                7.0D,
+                7.0D,
+                50L,
+                0.5D,
+                200L);
+
+        assertFalse(snapshot.isMeaningfulProgress());
+        assertEquals(50L, snapshot.getLastMeaningfulProgressTick());
+    }
+
+    @Test
+    public void partiallyMissingWaypointDistanceDoesNotCountAsProgress() {
+        RouteProgressTracker.Snapshot snapshot = RouteProgressTracker.evaluate(
+                200L,
+                0.5D,
+                0.5D,
+                20.0D,
+                20.0D,
+                Double.NaN,
+                1.0D,
+                50L,
+                0.5D,
+                200L);
+
+        assertFalse(snapshot.isMeaningfulProgress());
+        assertEquals(50L, snapshot.getLastMeaningfulProgressTick());
+    }
 }

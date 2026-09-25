@@ -45,28 +45,36 @@ public final class RouteProgressTracker {
         if (tick < 0L || progressThreshold < 0.0D || stallWindowTicks < 1L) {
             throw new IllegalArgumentException("Invalid progress tracking inputs");
         }
-        if (!Double.isFinite(previousRouteProgress) || !Double.isFinite(currentRouteProgress)
-                || !Double.isFinite(previousDistanceToTarget)
-                || !Double.isFinite(currentDistanceToTarget)
-                || !Double.isFinite(previousDistanceToWaypoint)
-                || !Double.isFinite(currentDistanceToWaypoint)) {
-            throw new IllegalArgumentException("Progress values must be finite");
-        }
+        double previousTargetDistance = previousDistanceToTarget;
+        double currentTargetDistance = currentDistanceToTarget;
+        double previousWaypointDistance = previousDistanceToWaypoint;
+        double currentWaypointDistance = currentDistanceToWaypoint;
+        double previousProgress = Double.isFinite(previousRouteProgress)
+                ? previousRouteProgress : 0.0D;
+        double currentProgress = Double.isFinite(currentRouteProgress)
+                ? currentRouteProgress : previousProgress;
 
-        double targetDelta = previousDistanceToTarget - currentDistanceToTarget;
-        double waypointDelta = previousDistanceToWaypoint - currentDistanceToWaypoint;
-        double routeDelta = currentRouteProgress - previousRouteProgress;
+        double targetDelta = measurableDelta(previousTargetDistance, currentTargetDistance);
+        double waypointDelta = measurableDelta(previousWaypointDistance, currentWaypointDistance);
+        double routeDelta = currentProgress - previousProgress;
         boolean meaningfulProgress = routeDelta > 0.0D
                 || targetDelta > progressThreshold
                 || waypointDelta > progressThreshold;
         long nextProgressTick = meaningfulProgress ? tick : previousMeaningfulProgressTick;
         boolean stalled = tick - nextProgressTick >= stallWindowTicks;
 
-        double retainedRouteProgress = Math.max(previousRouteProgress, currentRouteProgress);
+        double retainedRouteProgress = Math.max(previousProgress, currentProgress);
         String reason = meaningfulProgress
                 ? "ROUTE_PROGRESS"
                 : (stalled ? "NO_PROGRESS_TIMEOUT" : "ROUTE_STABLE");
         return new Snapshot(retainedRouteProgress, nextProgressTick,
                 meaningfulProgress, stalled, reason);
+    }
+
+    private static double measurableDelta(double previousDistance, double currentDistance) {
+        if (!Double.isFinite(previousDistance) || !Double.isFinite(currentDistance)) {
+            return 0.0D;
+        }
+        return previousDistance - currentDistance;
     }
 }

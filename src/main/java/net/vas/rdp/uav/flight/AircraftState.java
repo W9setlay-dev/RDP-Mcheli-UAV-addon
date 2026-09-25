@@ -63,10 +63,12 @@ public final class AircraftState {
                           String units, double confidence, String validityReason) {
         if (aircraftId == null || sampleTick < 0L || finite(x, y, z, previousX, previousY,
                 previousZ, velocityX, velocityY, velocityZ, motionX, motionY, motionZ,
-                sampleIntervalTicks, throttle, distanceToWaypoint, distanceToTarget,
-                distanceToIntercept, routeProgress)
+                sampleIntervalTicks, throttle, routeProgress)
                 || (!Double.isFinite(groundTrackYaw) && !Double.isNaN(groundTrackYaw))
-                || routeNode < -1 || lastMeaningfulProgressTick < 0L) {
+                || routeNode < -1 || lastMeaningfulProgressTick < 0L
+                || (!Double.isFinite(distanceToWaypoint) && !Double.isNaN(distanceToWaypoint))
+                || (!Double.isFinite(distanceToTarget) && !Double.isNaN(distanceToTarget))
+                || (!Double.isFinite(distanceToIntercept) && !Double.isNaN(distanceToIntercept))) {
             throw new IllegalArgumentException("Invalid aircraft state");
         }
         this.aircraftId = aircraftId;

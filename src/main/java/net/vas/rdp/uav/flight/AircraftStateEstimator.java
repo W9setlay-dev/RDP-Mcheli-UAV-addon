@@ -32,7 +32,7 @@ public final class AircraftStateEstimator {
         UUID missionId = mission == null ? null : mission.getMissionId();
         boolean leaseValid = MissionMovementAuthority.canIssueNativeControl(mission, id, tick);
         TargetLock lock = mission == null ? null : mission.getTargetLock();
-        double targetDistance = lock == null ? 0.0D : distance(aircraft.posX, aircraft.posY,
+        double targetDistance = lock == null ? Double.NaN : distance(aircraft.posX, aircraft.posY,
                 aircraft.posZ, lock.getX(), lock.getY(), lock.getZ());
         double waypointDistance = distanceToNode(aircraft, entry);
         double routeProgress = routeNode < 0 ? (previous == null ? 0.0D : previous.getRouteProgress())
@@ -79,7 +79,7 @@ public final class AircraftStateEstimator {
     }
 
     private static double distanceToNode(MCH_EntityAircraft aircraft, WingmanEntry entry) {
-        if (entry == null || entry.currentNode() == null) return 0.0D;
+        if (entry == null || entry.currentNode() == null) return Double.NaN;
         double dx = entry.currentNode().x - aircraft.posX;
         double dy = entry.currentNode().y - aircraft.posY;
         double dz = entry.currentNode().z - aircraft.posZ;

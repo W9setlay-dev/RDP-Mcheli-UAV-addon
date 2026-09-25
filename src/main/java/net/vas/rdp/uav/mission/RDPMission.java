@@ -366,18 +366,27 @@ public final class RDPMission {
                               double currentDistanceToTarget,
                               double previousDistanceToWaypoint,
                               double currentDistanceToWaypoint) {
-        if (tick < lastUpdateTick || !Double.isFinite(previousRouteProgress)
-                || !Double.isFinite(currentRouteProgress)
-                || !Double.isFinite(previousDistanceToTarget)
-                || !Double.isFinite(currentDistanceToTarget)
-                || !Double.isFinite(previousDistanceToWaypoint)
-                || !Double.isFinite(currentDistanceToWaypoint)) {
+        recordProgress(tick, previousRouteProgress, currentRouteProgress,
+                previousDistanceToTarget, currentDistanceToTarget,
+                previousDistanceToWaypoint, currentDistanceToWaypoint, true);
+    }
+
+    public void recordProgress(long tick, double previousRouteProgress,
+                              double currentRouteProgress,
+                              double previousDistanceToTarget,
+                              double currentDistanceToTarget,
+                              double previousDistanceToWaypoint,
+                              double currentDistanceToWaypoint,
+                              boolean progressExpected) {
+        if (tick < lastUpdateTick) {
             throw new IllegalArgumentException("Invalid route progress update");
         }
+        double previousRoute = Double.isFinite(previousRouteProgress) ? previousRouteProgress : 0.0D;
+        double currentRoute = Double.isFinite(currentRouteProgress) ? currentRouteProgress : previousRoute;
         RouteProgressTracker.Snapshot snapshot = RouteProgressTracker.evaluate(
                 tick,
-                previousRouteProgress,
-                currentRouteProgress,
+                previousRoute,
+                currentRoute,
                 previousDistanceToTarget,
                 currentDistanceToTarget,
                 previousDistanceToWaypoint,
@@ -386,11 +395,13 @@ public final class RDPMission {
                 0.5D,
                 200L);
         this.routeProgress = snapshot.getRouteProgress();
-        this.lastMeaningfulProgressTick = snapshot.getLastMeaningfulProgressTick();
+        this.lastMeaningfulProgressTick = progressExpected
+                ? snapshot.getLastMeaningfulProgressTick() : tick;
         MissionProgressPolicy.Decision progressDecision = MissionProgressPolicy.evaluate(
                 state,
                 targetId != null,
                 snapshot.isMeaningfulProgress(),
+                progressExpected,
                 tick,
                 this.lastMeaningfulProgressTick,
                 200L);

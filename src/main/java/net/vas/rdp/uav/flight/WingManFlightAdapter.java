@@ -57,9 +57,13 @@ public final class WingManFlightAdapter {
     }
 
     /**
-     * Applies the verified McHeliCE native control path for one mission tick.
-     * WingMan still owns the high-level route; this method supplies bounded
-     * attitude/throttle inputs before McHeliCE advances its physics.
+     * Records the observed state for one mission tick.
+     *
+     * <p>WingMan owns both the route and the native flight update for an
+     * autonomous entry. RDP must not also write absolute attitude/throttle
+     * values in the same tick: doing so creates two competing movement
+     * authorities. The command planners remain available for telemetry and
+     * future native integrations whose ownership is explicitly transferred.</p>
      */
     public void applyNativeControl(World world,
                                    MissionManager missions,
@@ -70,9 +74,7 @@ public final class WingManFlightAdapter {
                 || mission.isTerminal()) return;
         WingmanEntry entry = getEntry(aircraft);
         if (entry == null || !entry.isAutonomous()) return;
-        FlightCommand command = isFpv(aircraft) ? fpvFlightCommand(aircraft) : null;
-        NativeAircraftControlAdapter.apply(world, missions, aircraft, mission,
-                entry.autoTargetX, entry.autoTargetY, entry.autoTargetZ, command, tick);
+        aircraftStates.observe(aircraft, entry, mission, tick);
     }
 
     private static boolean usesHelicopterFlightModel(MCH_EntityAircraft aircraft) {

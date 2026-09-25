@@ -32,8 +32,19 @@ public final class MissionProgressPolicy {
                                    boolean meaningfulProgress, long tick,
                                    long lastMeaningfulProgressTick,
                                    long stallWindowTicks) {
+        return evaluate(state, hasTarget, meaningfulProgress, true, tick,
+                lastMeaningfulProgressTick, stallWindowTicks);
+    }
+
+    public static Decision evaluate(MissionState state, boolean hasTarget,
+                                   boolean meaningfulProgress, boolean progressExpected,
+                                   long tick, long lastMeaningfulProgressTick,
+                                   long stallWindowTicks) {
         if (state == null || tick < 0L || stallWindowTicks < 1L) {
             throw new IllegalArgumentException("Invalid progress policy inputs");
+        }
+        if (!progressExpected) {
+            return new Decision(Action.HOLD, "PROGRESS_NOT_EXPECTED");
         }
         if (meaningfulProgress) {
             return new Decision(Action.CONTINUE, "MEANINGFUL_PROGRESS");

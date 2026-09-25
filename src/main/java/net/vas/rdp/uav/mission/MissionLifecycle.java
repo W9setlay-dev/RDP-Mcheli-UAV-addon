@@ -8,9 +8,13 @@ import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.entity.EntityList;
 import net.minecraft.util.math.RayTraceResult;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.AxisAlignedBB;
+import net.minecraft.util.ResourceLocation;
 import net.minecraft.world.World;
 import net.vas.rdp.uav.flight.WingManFlightAdapter;
 import net.vas.rdp.uav.persistence.RDPMissionWorldData;
+import net.vas.rdp.uav.target.TargetLock;
 import net.vas.rdp.uav.scan.RDPScanReport;
 import net.vas.rdp.uav.scan.RDPScanReportRepository;
 import net.vas.rdp.uav.profile.UavVehicleProfile;
@@ -21,11 +25,15 @@ import net.vas.rdp.uav.target.ContactLifecycle;
 import net.vas.rdp.uav.target.ContactSnapshot;
 import net.vas.rdp.uav.target.TargetAuthority;
 import net.vas.rdp.uav.target.TargetResolver;
+import net.vas.rdp.uav.target.TargetClassifier;
 import net.vas.rdp.uav.flight.KamikazeImpactDetector;
 import net.vas.rdp.uav.flight.KamikazePilotOverride;
 import net.vas.rdp.uav.weapon.GuidedStrikeObjective;
 import net.vas.rdp.uav.weapon.GuidedWeaponAdapter;
 import net.vas.rdp.uav.weapon.GuidedWeaponDecision;
+import net.vas.rdp.uav.world.ChunkState;
+import net.vas.rdp.uav.world.MinecraftWorldPerceptionAdapter;
+import net.vas.rdp.uav.world.WorldPerceptionAdapter;
 
 import java.util.Map;
 import java.util.HashMap;
@@ -53,6 +61,7 @@ public final class MissionLifecycle {
     private final WingManFlightAdapter flight = new WingManFlightAdapter();
     private final GuidedWeaponAdapter guidedWeapons = new GuidedWeaponAdapter(flight);
     private final TargetAuthority targets = new TargetAuthority();
+    private final WorldPerceptionAdapter perception = new MinecraftWorldPerceptionAdapter();
     /** Operator cursor is deliberately separate from RDPMission.targetId (the mission lock). */
     private final Map<UUID, UUID> operatorContacts = new HashMap<>();
     private final Map<World, Boolean> restoredWorlds = new WeakHashMap<>();
@@ -621,10 +630,19 @@ public final class MissionLifecycle {
     }
 
     private double targetDistance(MCH_EntityAircraft aircraft, Target target) {
+        if (target == null) return Double.NaN;
         if (target.entity != null) return target.entity.getDistance(aircraft);
         double dx = aircraft.posX - target.x;
         double dy = aircraft.posY - target.y;
         double dz = aircraft.posZ - target.z;
+        return Math.sqrt(dx * dx + dy * dy + dz * dz);
+    }
+
+    private double targetDistanceForLock(MCH_EntityAircraft aircraft, TargetLock lock) {
+        if (aircraft == null || lock == null) return Double.NaN;
+        double dx = aircraft.posX - lock.getX();
+        double dy = aircraft.posY - lock.getY();
+        double dz = aircraft.posZ - lock.getZ();
         return Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
 
@@ -777,6 +795,24 @@ public final class MissionLifecycle {
             }
             return true;
         }
+
+        WingmanEntry routeEntry = flight.getEntry(aircraft);
+        double currentRouteProgress = routeEntry == null || routeEntry.mission == null
+                ? mission.getRouteProgress() : Math.max(0.0D, routeEntry.missionIndex);
+        double currentDistanceToTarget = target == null ? Double.NaN : targetDistance(aircraft, target);
+        double currentDistanceToWaypoint = routeEntry == null || routeEntry.currentNode() == null
+                ? Double.NaN : Math.sqrt(
+                        Math.pow(aircraft.posX - routeEntry.currentNode().x, 2.0D)
+                                + Math.pow(aircraft.posY - routeEntry.currentNode().y, 2.0D)
+                                + Math.pow(aircraft.posZ - routeEntry.currentNode().z, 2.0D));
+        mission.recordProgress(tick,
+                mission.getRouteProgress(),
+                currentRouteProgress,
+                mission.getTargetLock() == null ? Double.NaN : targetDistanceForLock(aircraft, mission.getTargetLock()),
+                currentDistanceToTarget,
+                Double.NaN,
+                currentDistanceToWaypoint,
+                progressExpected(mission.getState()));
 
         switch (mission.getState()) {
         case SEARCHING:
@@ -1226,16 +1262,24 @@ public final class MissionLifecycle {
 
         double altitudeDelta = Math.abs(dy);
         double observationDistance = mission.getObservationDistance();
+        if (!routeCorridorLoaded(world, aircraft.posX, aircraft.posY, aircraft.posZ,
+                target.x, target.y, target.z, world.getTotalWorldTime())) {
+            RdpUavDebug.debug("Lifecycle",
+                    "terminal approach held because route corridor is not loaded: mission={} aircraft={}",
+                    mission.getMissionId(), aircraft.getUniqueID());
+            return MissionSafety.RouteDecision.HOLD_AND_REEVALUATE;
+        }
         Vec3d start = new Vec3d(aircraft.posX, aircraft.posY + aircraft.getEyeHeight(), aircraft.posZ);
         Vec3d end = new Vec3d(target.x, target.y + 1.0D, target.z);
         RayTraceResult hit = world.rayTraceBlocks(start, end, false, true, false);
         boolean corridorBlocked = hit != null && hit.typeOfHit == RayTraceResult.Type.BLOCK;
         boolean lineOfSightBlocked = corridorBlocked;
+        boolean hostileExposure = corridorHasHostileExposure(world, aircraft, target, start, end);
         boolean fuelReady = !flight.isFuelInsufficientForMission(aircraft);
         boolean returnViable = true;
         TerminalCommitPolicy.Decision terminal = TerminalCommitPolicy.evaluate(
                 distance, altitudeDelta, corridorBlocked, lineOfSightBlocked,
-                false, fuelReady, returnViable, observationDistance,
+                hostileExposure, fuelReady, returnViable, observationDistance,
                 Math.max(8.0D, observationDistance * 0.5D));
 
         if (terminal.getState() == TerminalCommitPolicy.DecisionState.HOLD
@@ -1247,6 +1291,57 @@ public final class MissionLifecycle {
             if (route != null) return route;
         }
         return MissionSafety.decideRoute(distance, altitudeDelta, corridorBlocked, observationDistance);
+    }
+
+    private static boolean corridorHasHostileExposure(World world,
+                                                       MCH_EntityAircraft aircraft,
+                                                       Target target,
+                                                       Vec3d start,
+                                                       Vec3d end) {
+        if (world == null || aircraft == null || target == null || start == null || end == null) {
+            return true;
+        }
+        AxisAlignedBB corridor = new AxisAlignedBB(start, end).grow(4.0D);
+        for (Entity entity : world.getEntitiesWithinAABB(Entity.class, corridor)) {
+            if (entity == null || entity.isDead || entity == aircraft
+                    || target.entity == entity) continue;
+            ResourceLocation key = EntityList.getKey(entity);
+            if (TargetClassifier.isHostileCandidate(key == null ? "" : key.toString())
+                    || TargetClassifier.isHostileVehicle(entity)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean routeCorridorLoaded(World world,
+                                        double startX, double startY, double startZ,
+                                        double endX, double endY, double endZ,
+                                        long tick) {
+        if (world == null || tick < 0L) return false;
+        double dx = endX - startX;
+        double dy = endY - startY;
+        double dz = endZ - startZ;
+        double distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (!Double.isFinite(distance)) return false;
+        int samples = Math.max(1, (int) Math.ceil(distance / 8.0D));
+        for (int i = 0; i <= samples; i++) {
+            double fraction = (double) i / (double) samples;
+            BlockPos sample = new BlockPos(
+                    (int) Math.floor(startX + dx * fraction),
+                    (int) Math.floor(startY + dy * fraction),
+                    (int) Math.floor(startZ + dz * fraction));
+            if (perception.observeChunk(world, sample.getX() >> 4, sample.getZ() >> 4, tick)
+                    .getState() != ChunkState.LOADED) return false;
+        }
+        return true;
+    }
+
+    private static boolean progressExpected(MissionState state) {
+        return state != MissionState.ORBITING
+                && state != MissionState.SCANNING
+                && state != MissionState.DEEP_SCANNING
+                && state != MissionState.HOLDING;
     }
 
     private void refreshRoute(MCH_EntityAircraft aircraft, Target target, RDPMission mission,

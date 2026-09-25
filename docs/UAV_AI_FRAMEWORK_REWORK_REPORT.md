@@ -150,6 +150,20 @@ the developer supplies build identity, logs, and observed telemetry.
 - Then implement the first authority phase and update this report with exact
   symbols, tests, commands, and results.
 
+## Current rework status
+
+- The production mission path now records progress in `MissionLifecycle.updateActive(...)`
+  via `RDPMission.recordProgress(...)`, so route stalls and temporal timeout handling
+  are driven by the real server tick cycle rather than idle bookkeeping.
+- Missing target/route distances are treated as unknown (`NaN`) and normalized to
+  "no measurable progress" instead of zero; this prevents false "zero distance"
+  regressions from stalling or reacquiring the mission incorrectly.
+- The fixed-wing/helicopter profile controller selection is now used from the active
+  WingMan adapter path before the native control adapter applies server-side attitude
+  and throttle commands.
+- Runtime in-game flight proof remains `PENDING_DEVELOPER_IN_GAME_TEST`; source/test
+  validation is a deterministic contract check, not a physical flight claim.
+
 ## Phase 1 — packet movement arbitration
 
 ### Objective
@@ -472,3 +486,61 @@ lost without needing a live flight proof.
 This remains an offline-safe deterministic contract: it enforces a bounded
 progress decision on server state, but runtime flight and target behavior in the
 actual Forge/McHeliCE session remain `PENDING_DEVELOPER_IN_GAME_TEST`.
+
+## Phase 12 - single movement authority and partial-observation progress
+
+### Changes
+
+- Autonomous WingMan ticks no longer call `NativeAircraftControlAdapter`; the
+  WingMan route/native tick is the sole movement writer and RDP records the
+  resulting aircraft state for telemetry.
+- Route and mission progress now ignore a distance delta unless both samples
+  are finite. A single missing observation therefore cannot become a false
+  zero-distance improvement.
+- Added regressions for partially missing target and waypoint distances.
+
+### Audit and limits
+
+This removes the source-level competing attitude/throttle writer, but does not
+prove the McHeliCE tick order or physical convergence. Live validation remains
+`PENDING_DEVELOPER_IN_GAME_TEST`.
+
+## Phase 13 - intentional observation states and progress timeout scope
+
+### Changes
+
+- Progress policy now accepts an explicit `progressExpected` signal.
+- Orbit, scanning, deep scanning, and holding states no longer convert
+  intentional stationary behavior into `LOST` or `REPLAN`.
+- The normal approach/route states retain the existing bounded stall policy;
+  `WAITING_FOR_TARGET` remains timeout-eligible rather than becoming an
+  accidental indefinite wait.
+- Added policy regressions for both exempt and timeout-eligible states.
+
+### Audit and limits
+
+This is source- and unit-test-validated lifecycle behavior. It does not prove
+that native WingMan enters or exits each observation state at the expected
+runtime tick.
+
+## Phase 14 - loaded-corridor gate for terminal approach
+
+### Changes
+
+- Terminal approach now samples the aircraft-to-target corridor at bounded
+  intervals and requires each sample block position to be loaded before the
+  ray trace and terminal safety decision run.
+- An unavailable corridor returns `HOLD_AND_REEVALUATE`; it is not treated as
+  clear terrain.
+- `MinecraftWorldPerceptionAdapter` now supplies the chunk-loaded observation
+  used by this gate without forcing chunk loads.
+- The terminal corridor also uses the existing `TargetClassifier` to reject
+  release when a hostile entity or hostile aircraft occupies the bounded
+  corridor envelope, excluding the committed target itself.
+
+### Audit and limits
+
+This is a fail-closed chunk-availability gate plus a bounded hostile-contact
+probe, not a full obstacle or return-route planner. `returnViable` still
+requires a production return-route implementation; live validation remains
+`PENDING_DEVELOPER_IN_GAME_TEST`.

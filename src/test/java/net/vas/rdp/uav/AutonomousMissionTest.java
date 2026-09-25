@@ -155,6 +155,23 @@ public class AutonomousMissionTest {
     }
 
     @Test
+    public void routeProgressAcceptsUnknownDistancesWithoutMistakingThemForZero() {
+        RDPMission mission = mission(new AiTaskRequest(UUID.randomUUID(), UUID.randomUUID(),
+                MissionType.RECONNAISSANCE, TargetSpec.point(0.0D, 8.0D, 0.0D, TargetPriority.NORMAL),
+                TargetPriority.NORMAL, false, AutonomyLevel.AUTONOMOUS), UUID.randomUUID());
+        mission.transitionTo(MissionState.DISPATCHED, 1L);
+        mission.transitionTo(MissionState.TAKEOFF, 2L);
+        mission.transitionTo(MissionState.CRUISE, 3L);
+        mission.transitionTo(MissionState.SEARCHING, 4L);
+        mission.transitionTo(MissionState.TARGET_ACQUIRED, 5L);
+        mission.transitionTo(MissionState.TARGET_LOCKED, 6L);
+
+        mission.recordProgress(10L, 0.0D, 0.25D, Double.NaN, Double.NaN, Double.NaN, Double.NaN);
+        assertEquals(0.25D, mission.getRouteProgress(), 0.0D);
+        assertFalse(mission.isProgressStalled(30L, 200L));
+    }
+
+    @Test
     public void wingmanFlightPlanAlternatesFlyAndAttackPasses() {
         SquareStrikePlan plan = new SquareStrikePlan(
                 100.0D, 140.0D, -50.0D, 60.0D, 90.0D, 0.0D,
