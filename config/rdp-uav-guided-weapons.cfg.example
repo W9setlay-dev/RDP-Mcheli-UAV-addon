@@ -42,8 +42,9 @@ minimumAltitude=0
 maximumAltitude=4096
 noOrbit=true
 
-# TV/wire guidance is intentionally unsupported for autonomous AI until the
-# concrete McHeli weapon definition proves an AI laser/control handoff.
+# TV/wire guidance is intentionally unsupported for autonomous AI. The local
+# 1.5.1 class reads targetPosX/Y/Z, but its own laser path also refreshes those
+# fields; stable addon ownership and tick ordering remain unverified.
 # COORDINATE_BALLISTIC preserves the weapon's native gravity and collision;
 # the addon only validates the release corridor and submits the target point.
 

@@ -543,13 +543,17 @@ the live target coordinates/UUID, adds a strike mission type, and appends an
 attack node. The server still requires explicit operator authorization before
 this path is used.
 
-WingMan remains authoritative for aircraft movement and rotation. Do not
-teleport the aircraft or force entity `rotationYaw`/`rotationPitch` from the
-addon. The installed McHeli CE API does not expose safe yaw/pitch setters on
-`MissionNode`; direct rotation hacks would fight WingMan's flight controller.
-If realistic turning needs improvement, extend the adapter only through
-verified WingMan/McHeli control APIs and test turn-rate, approach angle,
-overshoot recovery, and target loss in the real instance.
+WingMan owns mission route sequencing; the leased RDP flight computer owns the
+final movement setpoints while an RDP mission is active. It reads observed
+position, velocity, heading, ground track, and vertical speed, then rate-limits
+yaw, pitch, roll, and throttle setpoints through the verified MCheliCE
+`MCH_EntityAircraft` API before the normal aircraft physics update. A narrow
+coremod guard suppresses the matching WingMan movement helpers, and the packet
+hook suppresses manual flight-axis input while the AI lease owns movement.
+Neither path writes entity position or motion. This is a source-level closed
+loop, not proof that a particular aircraft profile flies well: climb, turn,
+approach, overshoot, recovery, and target-loss behavior need live calibration.
+Unknown profiles fail closed instead of receiving an uncalibrated controller.
 
 The adapter exposes recovery/terminal observations used by the server
 mission lifecycle, but it does not provide authoritative takeoff arrival,

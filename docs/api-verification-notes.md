@@ -63,16 +63,18 @@
 - No stable native camera/seat projection API was present in the verified jar.
   The client HUD remains marker-only when projection is unavailable.
 - `MissionNode` has no speed field and `WingmanEntry` has no speed setter in
-  McHeliCE 1.5.1.  The configured one-way speed is consequently a bounded
-  policy value retained for future native support; dispatch never writes
-  aircraft motion or simulates speed outside WingMan.
+  McHeliCE 1.5.1. The addon flight computer derives a throttle setpoint from
+  the configured profile and observed velocity; these profile envelopes are
+  provisional and require per-aircraft live calibration.
 - The bundled `libs/mcheli-ce-1.5.1.jar` was independently inspected with
   `javap`. It exposes public `MCH_EntityAircraft.setRotYaw(float)`,
   `setRotPitch(float)`, `setRotRoll(float)`, `setThrottle(double)`, and
-  `setCurrentThrottle(double)`. This confirms method availability only; it
-  does not prove that applying an addon `FlightCommand` produces the expected
-  flight trajectory. The addon therefore does not expose a synthetic
-  per-tick command writer; route execution remains behind WingMan.
+  `setCurrentThrottle(double)`, and `updateControl()`. Source integration uses
+  bounded, rate-limited setpoints through these methods before MCheliCE's normal
+  entity physics tick. `RdpUavTransformer` suppresses the matching WingMan
+  movement helpers under the RDP control lease. Bytecode signatures and
+  regression tests establish method wiring and ownership guards; they do not
+  establish the aircraft's observed trajectory or per-profile performance.
 
 - exact structure-model destruction (for example specific parasite nests) is not yet a first-class mission type
 - dynamic military or bandit role semantics are not yet implemented as a validated runtime feature
@@ -99,8 +101,10 @@ weapon-set definition and `MCH_WeaponInfo.type`. The verified native mapping is
 `aamissile`/`atmissile` entity seekers and `asmissile` coordinate/ballistic.
 `atmissile` is entity-only until a native square-coordinate contract is
 verified. `tvmissile` is intentionally unsupported by the default AI
-capability matrix: its wire/laser control path is not evidence of an
-autonomous coordinate handoff. `GuidedWeaponAdapter` validates ammunition,
+capability matrix. The local 1.5.1 bytecode reads its `targetPosX/Y/Z` fields,
+but also has a native laser-control update path that can refresh those values;
+field reads and addon writes alone do not establish stable ownership or tick
+ordering. `GuidedWeaponAdapter` validates ammunition,
 objective form, speed policy, and server safety before dispatch. Entity seekers
 resolve the locked UUID in the loaded server world, assign it through the
 native guidance system, and invoke `MCH_WeaponSet.use(...)`; a missing lock is

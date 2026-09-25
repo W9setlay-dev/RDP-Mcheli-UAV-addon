@@ -3,6 +3,7 @@ package net.vas.rdp.uav.mission;
 import com.norwood.mcheli.aircraft.MCH_EntityAircraft;
 import net.minecraft.entity.Entity;
 import net.vas.rdp.uav.RDPUavMod;
+import net.vas.rdp.uav.flight.NativeAircraftControlAdapter;
 
 import java.util.Map;
 import java.util.UUID;
@@ -107,5 +108,37 @@ public final class MissionMovementAuthority {
         aircraft.moveLeft = false;
         aircraft.moveRight = false;
         return true;
+    }
+
+    /**
+     * Guard injected into native WingMan movement writers. It acquires the
+     * addon lease before WingMan can write, closing the first-tick race; the
+     * addon controller renews the same lease and applies setpoints later in
+     * the world-tick callback.
+     */
+    public static boolean suppressWingManMovement(Entity entity) {
+        if (!(entity instanceof MCH_EntityAircraft) || entity.world == null
+                || entity.world.isRemote || RDPUavMod.missions() == null) {
+            return false;
+        }
+        MCH_EntityAircraft aircraft = (MCH_EntityAircraft) entity;
+        RDPMission mission = RDPUavMod.missions().activeMission(
+                aircraft.world, aircraft.getUniqueID());
+        long tick = aircraft.world.getTotalWorldTime();
+        if (mission == null || mission.isTerminal()
+                || !nativeWingManRequired(mission)
+                || !NativeAircraftControlAdapter.canControlAircraft(aircraft)) {
+            return false;
+        }
+        if (mission.getState() == MissionState.LANDING
+                || mission.getState() == MissionState.PARKING) {
+            // MCheliCE's landing/parking order contains direct native
+            // movement updates outside the generic FLY_TO helpers. Return
+            // final recovery control to that route handler as one unit.
+            releaseControl(aircraft.getUniqueID());
+            return false;
+        }
+        return claimControl(mission, aircraft.getUniqueID(), tick)
+                && canIssueNativeControl(mission, aircraft.getUniqueID(), tick);
     }
 }

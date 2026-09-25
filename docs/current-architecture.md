@@ -71,22 +71,37 @@ McHeliCE / WingMan / Minecraft world
 
 ## Flight and execution architecture
 
-- `WingManFlightAdapter` is the verified handoff boundary to WingMan.
-- `UavVehicleProfile` selects mission capability independently of the native
-  McHeli airframe type. One-way FPV vehicles use the explicit
-  `HELICOPTER_ONE_WAY_FPV` profile; reusable UAVs retain altitude-hold and
-  observation behavior.
-- `FpvFlightStateMachine` keeps FPV movement policy explicit:
-  `MOVING_TO_TARGET`, `HOVER`, and `TERMINAL_APPROACH`. `HOVER` is a bounded
-  native loiter at the current position, not an unconditional altitude
-  controller. Target identity remains attached while the aircraft waits for
-  reacquisition.
-- `FlightCommand` is the single FPV movement output. HOVER emits zero
-  forward/lateral/vertical command values and owns the native hold route;
-  target pursuit is rejected while HOVER owns the tick. Terminal approach is
-  monotonic and cannot be overwritten by a later pursuit update. An attack
-  intent still starts in `AI_APPROACH`; `TERMINAL_APPROACH` is selected only
-  when the mission explicitly arms the one-way terminal/kamikaze path.
+- `WingManFlightAdapter` submits and updates WingMan route nodes. WingMan's
+  `WingmanEntry.autoTargetX/Y/Z` is the effective current route setpoint; the
+  addon uses that value for route following and keeps an active `FLY_TO` node
+  synchronized with filtered moving-target guidance.
+- `AircraftStateEstimator` records position, MCheli motion, derived horizontal
+  and vertical speed, heading, ground track, route distance, mission owner,
+  lease state, and sample age. Units are Minecraft blocks per tick and degrees.
+- `AirframeController` selects a fixed-wing or helicopter control law from the
+  configured `UavVehicleProfile`. The controller compares route course and
+  altitude with measured ground track, speed, vertical rate, and orientation,
+  and emits bounded yaw/pitch/roll/throttle setpoints.
+- `NativeAircraftControlAdapter` is the single addon movement writer. On
+  server `WorldTick START`, after WingMan's tick callbacks and before entity
+  physics, it rate-limits the setpoints and calls the verified MCheliCE
+  aircraft setters and `updateControl()`. It never writes entity position or
+  motion. MCheliCE still integrates velocity, position, and collisions.
+- `MissionMovementAuthority` grants a short per-aircraft lease. The coremod
+  guard acquires it before WingMan movement helper writes; while it is active,
+  those helper writes are suppressed. The packet hook rejects operator flight
+  axes while leaving camera, weapon, and station actions on their native path.
+  Unsupported profiles and terminal mission states do not take the helper
+  guard, so they are not silently frozen by this control path.
+- The fixed-wing and helicopter speed, turn, bank, climb, descent, and throttle
+  envelopes are provisional source defaults. They are not measured aircraft
+  specifications and must be calibrated from live telemetry per definition.
+- `FpvFlightStateMachine` retains `MOVING_TO_TARGET`, `HOVER`, and
+  `TERMINAL_APPROACH` mission policy. FPV hover holds the current WingMan route
+  target with the same helicopter feedback controller; pursuit cannot replace
+  hover until reacquisition exits that state. Terminal approach is monotonic.
+  There is no detached `FlightCommand` value that appears to control movement
+  without a production consumer.
 - `GuidedWeaponAdapter` is the separate verified McHeli guided-weapon boundary;
   it accepts only registry-authorized ENTITY/SQUARE objectives and delegates
   target coordinates/UUIDs to native WingMan fields.  A configured guided
@@ -125,7 +140,9 @@ McHeliCE / WingMan / Minecraft world
 | `RDPUavMod` | Forge lifecycle registration | Registers commands, network, tick handlers |
 | `MissionManager` | assignment, validation, queue | Source-level mission authority |
 | `MissionLifecycle` | dispatch and mission processing | High-value mission execution boundary |
-| `WingManFlightAdapter` | native WingMan handoff | Real controller boundary |
+| `WingManFlightAdapter` | WingMan route boundary | Supplies route setpoints to the RDP flight computer |
+| `AirframeController` | fixed-wing/helicopter feedback law | Produces bounded desired attitude/throttle |
+| `NativeAircraftControlAdapter` | final movement write | Rate-limited MCheliCE setters under the mission lease |
 | `TargetSelector` | candidate ranking | deterministic priority-first logic |
 | `TargetResolver` | entity lookup | radius-based search in loaded world |
 | `TargetClassifier` | hostile namespace recognition | heuristic by registry ID |
@@ -141,9 +158,11 @@ introduced.
 Square-strike missions now persist their configured width/depth in
 `RDPMission` and `MissionNbtCodec`. Terminal geometry uses the existing
 `SquareArea` containment policy for square missions rather than requiring the
-aircraft to equal the immutable center coordinate. The existing WingMan route
-boundary remains responsible for movement; live native route and collision
-behavior still requires Forge/McHeliCE validation.
+aircraft to equal the immutable center coordinate. WingMan advances route nodes
+and publishes active setpoints; the leased RDP airframe controller supplies
+bounded attitude/throttle commands while McHeliCE integrates motion and
+collision. Live route and collision behavior still requires Forge/McHeliCE
+validation.
 
 Blocked approach decisions now install one finite perpendicular detour followed
 by the target point through `WingManFlightAdapter.refreshBoundedDetour`.
@@ -156,75 +175,59 @@ decisions and returns control to the normal target route after the detour.
 - The real-world mission logic remains source-level and needs runtime validation in a live Forge instance.
 - The architecture is modular enough to support additional hostile-world mission types, but the relevant behavior is not yet implemented as an end-to-end mission doctrine.
 
-## 20 — Movement Output
+## 20 — Movement output
+
+`NativeFlightControlCommand` carries bounded desired yaw, pitch, roll, throttle,
+desired ground track, course error, and vertical-speed target. `AirframeController`
+derives the command from observed state and the effective WingMan route target.
+`NativeAircraftControlAdapter` limits per-tick changes and applies the command
+under the mission lease through MCheliCE aircraft setters.
 
 ```text
-FlightCommand
-├── forward
-├── lateral
-├── vertical
-├── yaw
-├── pitch
-├── speed
-├── mode
-└── terminal/avoidance state
+MISSION / TARGET / ROUTE
+          ↓
+WingMan autoTargetX/Y/Z
+          ↓
+AircraftStateEstimator (position, velocity, attitude, track)
+          ↓
+fixed-wing or helicopter feedback controller
+          ↓
+exclusive movement lease + rate limit
+          ↓
+MCH_EntityAircraft setters → normal MCheliCE physics and collision update
 ```
 
-Supported FPV modes are:
+The state machine remains responsible for FPV policy (`MOVING_TO_TARGET`,
+`HOVER`, `TERMINAL_APPROACH`); it does not emit a second movement command.
+The controller uses direct attitude/throttle setpoints because that is the
+verified autonomous API available in the target MCheliCE build. This is a
+closed-loop autopilot using native physics, not an emulation of raw player
+camera events; live equivalence to a piloted aircraft is not proven.
 
-```text
-PLAYER_CONTROLLED
-AI_APPROACH
-HOVER
-REPOSITION
-TERMINAL_APPROACH
-TERMINAL_STATE
-```
-
-The control loop is:
-
-```text
-TARGET LOCK
-     ↓
-TARGET STATE RESOLVER
-     ↓
-FPV FLIGHT DECISION
-  /       |        \
-APPROACH HOVER  TERMINAL
-   ↓       ↓         ↓
-forward + stabilize direct
-vertical  position  approach
-correction
-     \       |       /
-      └──────┴──────┘
-             ↓
-   ONE FINAL FLIGHT COMMAND
-             ↓
-          McHeliCE
-```
-
-The adapter delegates that final command to McHeliCE/WingMan's native
-`flyTo` and `loiter` route primitives. No maximum-engine hold is treated as
-normal FPV behavior, and HOVER and target-pursuit never write movement in the
-same controller update.
+WingMan's `flyTo` and `loiter` nodes define the route and mission progression.
+The RDP profile controller supplies final movement setpoints. HOVER and
+target-pursuit never select different movement targets in the same controller
+update, and helicopter collective throttle is feedback-controlled rather than
+held permanently at maximum. Runtime hover stability has not been demonstrated.
 
 ## 21 — Terminal Approach and Nose-Dive Review
 
 The existing nose-dive path is **RETAINED BUT MOVED UNDER FLIGHT AUTHORITY**.
 `MissionLifecycle` selects the kamikaze terminal mission state, while
-`WingManFlightAdapter.armKamikaze()` appends the bounded native approach
-waypoints through the same WingMan mission route used by other movement.
+`WingManFlightAdapter.armKamikaze()` appends the bounded approach waypoints to
+the WingMan route. The RDP flight computer follows those waypoints through its
+fixed-wing or helicopter control law.
 `KamikazeImpactDetector` only observes nose geometry and speed; it does not
 write position, motion, altitude, or camera orientation. Payload firing remains
 an execution action after the terminal geometry and impact policy are
 satisfied.
 
-This is not a second dive controller: no class outside
-`WingManFlightAdapter` writes aircraft motion, and reusable profiles cannot
-enter this path unless destructive authorization and the existing mission
-checks allow it. The current source cannot prove live McHeli climb/descent
-behavior, so terminal speed, native pitch response, and collision timing still
-require in-game validation.
+The route planner and flight controller are separate: WingMan advances the
+route, while the RDP controller writes bounded attitude/throttle setpoints;
+neither writes entity motion. Reusable profiles cannot enter this path unless
+destructive authorization and mission checks allow it. The current source
+cannot prove live McHeli climb/descent behavior, so terminal speed, pitch
+response, impact, and collision timing still require in-game validation.
 ### Target-policy decisions
 
 Target eligibility remains separate from target locking and flight execution. The
@@ -243,7 +246,8 @@ remains the persisted membership aggregate, while `SwarmAgent`,
 explicit capability and role contracts. Role assignment is server-side and
 rejects unsupported executor, tracker, or support roles before changing member
 state. Assignments do not move aircraft or implement weapon guidance; mission
-and WingMan remain the movement and execution authorities.
+policy and the leased per-aircraft flight computer own those decisions, while
+WingMan provides route sequencing.
 
 Formation slots and search sectors are computed by `FormationController` and
 `SearchCoordinator`; they are plans, not movement commands. `SwarmRecoveryManager`

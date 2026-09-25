@@ -27,9 +27,10 @@ public final class GuidedWeaponRegistry {
                 "ENTITY");
         register(config, "asmissile", "asmissile", GuidedNativeBehavior.COORDINATE_BALLISTIC,
                 "SQUARE");
-        // McHeli TV/wire guidance is not an AI coordinate contract. Keep it
-        // explicitly unsupported until a native laser/control handoff is
-        // proven for the active weapon definition.
+        // MCheliCE 1.5.1's TV projectile reads targetPosX/Y/Z in its laser
+        // branch, but its own update also refreshes those fields from native
+        // laser control. Keep addon launch disabled until ownership and tick
+        // ordering are proven end-to-end for the active weapon definition.
         register(config, "tvmissile", "tvmissile", GuidedNativeBehavior.UNSUPPORTED,
                 "");
         for (String category : config.getCategoryNames()) {
@@ -85,8 +86,8 @@ public final class GuidedWeaponRegistry {
         try { behavior = GuidedNativeBehavior.valueOf(behaviorName.trim().toUpperCase(Locale.ROOT)); }
         catch (IllegalArgumentException e) { behavior = GuidedNativeBehavior.UNSUPPORTED; }
         if ("tvmissile".equalsIgnoreCase(type)) {
-            // Older configs advertised coordinate TV guidance without proving
-            // that the concrete McHeli implementation consumes AI updates.
+            // Legacy configs advertised TV coordinate guidance. Field reads
+            // exist in the JAR, but a stable AI handoff is still unverified.
             behavior = GuidedNativeBehavior.UNSUPPORTED;
             objectiveNames = "";
         }

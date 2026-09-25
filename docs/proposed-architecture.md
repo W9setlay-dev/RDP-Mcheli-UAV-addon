@@ -112,10 +112,14 @@ This proposal is compatible with the project’s current architecture because:
 
 - mission state, queueing, and target selection already exist
 - the server remains the authoritative state owner
-- WingMan remains the controller boundary
-- the addon can add threat filters and route state without replacing native flight logic
+- WingMan supplies mission route sequencing and native route state
+- the addon owns final leased flight setpoints through the verified MCheliCE
+  aircraft API while leaving movement integration and collision response to
+  native aircraft physics
 
-The rework should remain deliberately bounded to what can be observed in-game and measured by source-level tests.
+The implemented ownership boundary and remaining calibration work are recorded
+in `docs/ai-flight-control-ownership.md`. A source-level controller does not
+replace the required in-game measurement of each aircraft profile.
 
 ## Design rules
 

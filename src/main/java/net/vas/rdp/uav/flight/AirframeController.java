@@ -6,13 +6,14 @@ import net.vas.rdp.uav.profile.UavVehicleProfile;
 /**
  * Deterministic per-airframe controller contract.
  *
- * <p>The controller emits a single bounded movement decision without writing
- * entity motion or directly taking over native WingMan authority. It is only a
- * policy bridge between observed state and the verified native control boundary.</p>
+ * <p>The controller converts a route setpoint and observed airframe state into
+ * absolute attitude/throttle setpoints. The adapter rate-limits these values
+ * and applies them through MCheliCE's aircraft API.</p>
  */
 public interface AirframeController {
-    FlightCommand update(AircraftState state, double targetX, double targetY,
-                         double targetZ, long currentTick);
+    NativeFlightControlCommand update(AircraftState state, double targetX,
+                                     double targetY, double targetZ,
+                                     long currentTick);
 
     static AirframeController forProfile(UavVehicleProfile profile) {
         if (profile == null) {

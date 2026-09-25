@@ -3,8 +3,8 @@ package net.vas.rdp.uav;
 import net.vas.rdp.uav.flight.AircraftState;
 import net.vas.rdp.uav.flight.AirframeController;
 import net.vas.rdp.uav.flight.FixedWingFlightController;
-import net.vas.rdp.uav.flight.FlightCommand;
 import net.vas.rdp.uav.flight.HelicopterFlightController;
+import net.vas.rdp.uav.flight.NativeFlightControlCommand;
 import net.vas.rdp.uav.mission.ControlOwner;
 import net.vas.rdp.uav.profile.UavExecutionProfile;
 import net.vas.rdp.uav.profile.UavVehicleProfile;
@@ -16,59 +16,111 @@ import static org.junit.Assert.*;
 
 public class AirframeControllerTest {
     @Test
-    public void fixedWingControllerSaturatesAndRespectsAltitudeTolerance() {
+    public void fixedWingUsesTrackCourseAndAltitudeFeedback() {
         UavVehicleProfile profile = new UavVehicleProfile(UavExecutionProfile.ONE_WAY,
                 50.0D, 20.0D, 200.0D, 6.0D, false, "SELF_DESTRUCT");
-        AircraftState state = AircraftState.observe(UUID.randomUUID(), 0, 10L,
-                0.0D, 20.0D, 0.0D,
-                0.0D, 18.0D, 0.0D,
-                0.0F, 0.0F, 0.0F, 0.75D, "ENROUTE",
-                UUID.randomUUID(), ControlOwner.MISSION_AI, true,
-                0, 0.0D, 0.0D, 0.0D, 0.0D, 10L, "KNOWN");
+        AircraftState state = state(10L, 0.0D, 20.0D, 0.0D,
+                0.0D, 0.0D, 0.0D, 0.0F, 0.0F, 0.0F);
 
-        FlightCommand command = AirframeController.forProfile(profile)
-                .update(state, 300.0D, 60.0D, 0.0D, 20L);
+        NativeFlightControlCommand command = AirframeController.forProfile(profile)
+                .update(state, 300.0D, 60.0D, 0.0D, 10L);
 
-        assertEquals(1.0D, command.getForward(), 0.0D);
-        assertTrue(command.getVertical() <= 16.0D);
-        assertTrue(command.getVertical() >= -16.0D);
+        assertTrue(command.isSupported());
+        assertTrue(command.getYaw() < 0.0F);
+        assertTrue(command.getRoll() < 0.0F);
+        assertTrue(command.getPitch() < 0.0F);
+        assertTrue(command.getThrottle() >= profile.getStallSpeed());
+        assertTrue(command.getDesiredVerticalSpeed() > 0.0D);
+        assertTrue(Math.abs(command.getRoll()) <= profile.getMaximumBankDegrees());
     }
 
     @Test
-    public void helicopterControllerSeparatesVerticalAndLateralHandling() {
-        UavVehicleProfile profile = new UavVehicleProfile(UavExecutionProfile.HELICOPTER_ONE_WAY_FPV,
+    public void helicopterSeparatesHorizontalAttitudeAndCollective() {
+        UavVehicleProfile profile = new UavVehicleProfile(
+                UavExecutionProfile.HELICOPTER_ONE_WAY_FPV,
                 8.0D, 4.0D, 32.0D, 6.0D, false, "NONE");
-        AircraftState state = AircraftState.observe(UUID.randomUUID(), 0, 12L,
-                10.0D, 8.0D, 4.0D,
-                8.0D, 6.0D, 2.0D,
-                0.0F, 0.0F, 0.0F, 0.5D, "HOVER",
-                UUID.randomUUID(), ControlOwner.MISSION_AI, true,
-                0, 0.0D, 0.0D, 0.0D, 0.0D, 12L, "KNOWN");
+        AircraftState state = state(12L, 10.0D, 8.0D, 4.0D,
+                0.0D, 0.0D, 0.0D, 0.0F, 0.0F, 0.0F);
 
-        FlightCommand command = new HelicopterFlightController(profile)
-                .update(state, 30.0D, 28.0D, 20.0D, 20L);
+        NativeFlightControlCommand command = new HelicopterFlightController(profile)
+                .update(state, 30.0D, 28.0D, 20.0D, 12L);
 
-        assertTrue(command.getVertical() > 0.0D);
-        assertTrue(Math.abs(command.getLateral()) <= 1.0D);
-        assertEquals(net.vas.rdp.uav.flight.FpvFlightMode.AI_APPROACH, command.getMode());
+        assertTrue(command.isSupported());
+        assertTrue(command.getPitch() < 0.0F);
+        assertTrue(command.getRoll() > 0.0F);
+        assertTrue(command.getThrottle() >= 0.25D && command.getThrottle() <= 0.88D);
+        assertTrue(command.getDesiredVerticalSpeed() > 0.0D);
     }
 
     @Test
-    public void staleStateFailsClosedToHover() {
+    public void staleStateFailsClosedWithoutInventingACommand() {
         UavVehicleProfile profile = new UavVehicleProfile(UavExecutionProfile.ONE_WAY,
                 50.0D, 20.0D, 200.0D, 6.0D, false, "SELF_DESTRUCT");
-        AircraftState state = AircraftState.observe(UUID.randomUUID(), 0, 1L,
-                0.0D, 10.0D, 0.0D,
-                0.0D, 10.0D, 0.0D,
-                0.0F, 0.0F, 0.0F, 0.8D, "ENROUTE",
-                UUID.randomUUID(), ControlOwner.MISSION_AI, true,
-                0, 0.0D, 0.0D, 0.0D, 0.0D, 1L, "KNOWN");
 
-        FlightCommand command = new FixedWingFlightController(profile)
-                .update(state, 20.0D, 10.0D, 10.0D, 100L);
+        NativeFlightControlCommand command = new FixedWingFlightController(profile)
+                .update(state(1L, 0.0D, 10.0D, 0.0D,
+                        0.0D, 0.0D, 0.0D, 0.0F, 0.0F, 0.0F),
+                        20.0D, 10.0D, 10.0D, 4L);
 
-        assertEquals(0.0D, command.getForward(), 0.0D);
-        assertEquals(0.0D, command.getVertical(), 0.0D);
-        assertEquals(net.vas.rdp.uav.flight.FpvFlightMode.HOVER, command.getMode());
+        assertFalse(command.isSupported());
+        assertEquals("STALE_OR_INVALID_AIRCRAFT_STATE", command.getReason());
+    }
+
+    @Test
+    public void terminalFixedWingUsesRouteDiveSlopeAndCanCommandSteeperPitch() {
+        UavVehicleProfile profile = new UavVehicleProfile(UavExecutionProfile.ONE_WAY,
+                50.0D, 20.0D, 200.0D, 6.0D, false, "SELF_DESTRUCT");
+        AircraftState state = state(12L, ControlOwner.TERMINAL_GUIDANCE,
+                0.0D, 100.0D, 0.0D, 0.0F, 0.0F, 0.0F);
+
+        NativeFlightControlCommand command = new FixedWingFlightController(profile)
+                .update(state, 50.0D, 0.0D, 0.0D, 12L);
+
+        assertTrue(command.isSupported());
+        assertTrue("terminal setpoint must follow the approach slope",
+                command.getPitch() > 40.0F);
+        assertTrue(command.getPitch() <= 60.0F);
+    }
+
+    @Test
+    public void finiteExtremeRouteStillProducesBoundedSetpoints() {
+        UavVehicleProfile profile = new UavVehicleProfile(UavExecutionProfile.ONE_WAY,
+                50.0D, 20.0D, 200.0D, 6.0D, false, "SELF_DESTRUCT");
+        NativeFlightControlCommand command = new FixedWingFlightController(profile)
+                .update(state(1L, 0.0D, 50.0D, 0.0D,
+                        0.0D, 0.0D, 0.0D, 179.0F, 0.0F, 0.0F),
+                        Double.MAX_VALUE, 100.0D, Double.MAX_VALUE, 1L);
+
+        assertTrue(command.isSupported());
+        assertTrue(Float.isFinite(command.getYaw()));
+        assertTrue(Float.isFinite(command.getPitch()));
+        assertTrue(Float.isFinite(command.getRoll()));
+        assertTrue(Double.isFinite(command.getThrottle()));
+        assertTrue(command.getThrottle() >= 0.0D && command.getThrottle() <= 1.0D);
+    }
+
+    private static AircraftState state(long tick, double x, double y, double z,
+                                       double motionX, double motionY, double motionZ,
+                                       float yaw, float pitch, float roll) {
+        return state(tick, ControlOwner.MISSION_AI, x, y, z,
+                motionX, motionY, motionZ, yaw, pitch, roll);
+    }
+
+    private static AircraftState state(long tick, ControlOwner owner,
+                                       double x, double y, double z,
+                                       float yaw, float pitch, float roll) {
+        return state(tick, owner, x, y, z, 0.0D, 0.0D, 0.0D, yaw, pitch, roll);
+    }
+
+    private static AircraftState state(long tick, ControlOwner owner,
+                                       double x, double y, double z,
+                                       double motionX, double motionY, double motionZ,
+                                       float yaw, float pitch, float roll) {
+        return AircraftState.observeWithPhysicalMotion(UUID.randomUUID(), 0, tick,
+                x, y, z, x - motionX, y - motionY, z - motionZ,
+                motionX, motionY, motionZ, 1.0D,
+                yaw, pitch, roll, 0.6D,
+                "ENROUTE", UUID.randomUUID(), owner, true,
+                0, 0.0D, 100.0D, 100.0D, 0.0D, tick, "KNOWN");
     }
 }

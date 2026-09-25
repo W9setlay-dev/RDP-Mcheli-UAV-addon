@@ -487,7 +487,11 @@ This remains an offline-safe deterministic contract: it enforces a bounded
 progress decision on server state, but runtime flight and target behavior in the
 actual Forge/McHeliCE session remain `PENDING_DEVELOPER_IN_GAME_TEST`.
 
-## Phase 12 - single movement authority and partial-observation progress
+## Phase 12 - single movement authority and partial-observation progress (historical)
+
+This phase is a historical snapshot and is superseded by Phase 15. Its
+observation-only flight decision was later replaced after the exact MCheliCE
+1.5.1 route/control bytecode was traced.
 
 ### Changes
 
@@ -544,3 +548,50 @@ This is a fail-closed chunk-availability gate plus a bounded hostile-contact
 probe, not a full obstacle or return-route planner. `returnViable` still
 requires a production return-route implementation; live validation remains
 `PENDING_DEVELOPER_IN_GAME_TEST`.
+
+## Phase 15 - leased RDP airframe controllers
+
+### Changes
+
+- Added an active fixed-wing/helicopter feedback path from the current WingMan
+  `autoTargetX/Y/Z` setpoint through `AircraftStateEstimator`, an airframe
+  controller, and `NativeAircraftControlAdapter` to bounded MCheliCE
+  yaw/pitch/roll/throttle setters and `updateControl()`.
+- Set RDP's server WorldTick START listener to lowest priority so the command
+  is applied after WingMan callbacks and before aircraft physics.
+- Confined the RDP control lease to route-flight phases; `LANDING` and
+  `PARKING` hand the final recovery leg back to native MCheliCE handlers because
+  those paths contain direct movement writes outside the guarded FLY_TO helpers.
+- Added transformer guards for the movement helpers found in the local
+  MCheliCE 1.5.1 WingMan tick and autonomous-flight handler classes. A guard
+  acquires the movement lease before the corresponding native write; operator
+  flight-axis packet suppression remains active during mission ownership.
+- Updated active moving-target `FLY_TO` nodes alongside effective route
+  coordinates so WingMan does not restore a stale target setpoint next tick.
+- Corrected route-distance telemetry to use effective `autoTarget` coordinates
+  for non-coordinate nodes, and retained separate helicopter lateral roll
+  authority instead of clamping FPV roll to zero.
+- Terminal fixed-wing pitch now follows the planned route slope up to its
+  bounded nose-down envelope; the adapter still rate-limits attitude changes.
+- Removed the dead FPV `FlightCommand`/`FpvFlightController` path. FPV state
+  selects mission policy, while the production helicopter controller emits
+  and applies the real native setpoints.
+- Reworked current architecture and developer guidance to distinguish route
+  sequencing, RDP control ownership, and MCheliCE physics.
+
+### Audit and limits
+
+The local source/unit/ASM-transformer test suite passed (236 tests, zero failures) and the reobfuscated build completed successfully on 2026-09-25. The artifact SHA-256 is `31A743C937DCD916F671127E5D6F562730A59309C46A0E4AF2D862932D97E9D5`.
+
+That evidence can establish compilation, math,
+setter calls, event wiring, and bytecode guard insertion. It cannot establish
+physical trajectory, profile calibration, takeoff/landing response, obstacle
+avoidance, camera marker alignment, impact, or weapon effects. Current profile
+values are heuristics. The available MCheliCE API uses attitude/throttle
+setters for autonomous control; it does not expose a general player camera-axis
+control object to this addon. The implementation is therefore a physics-based
+closed-loop autopilot, not a proven copy of direct human input.
+
+Remaining release work is enumerated in
+`docs/ai-flight-control-ownership.md` and the developer handoff in
+`docs/runtime-test-matrix.md`.

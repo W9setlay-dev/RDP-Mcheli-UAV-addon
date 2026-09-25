@@ -30,14 +30,13 @@ import java.util.Map;
 import java.util.HashMap;
 
 /**
- * The only RDP-facing boundary for WingMan control.
+ * The boundary between WingMan route sequencing and the RDP flight computer.
  */
 public final class WingManFlightAdapter {
     private final AircraftStateEstimator aircraftStates = new AircraftStateEstimator();
     private final Set<UUID> nativeAttackCompletions = new HashSet<>();
     private final Map<UUID, ContinuousTargetTracker> targetTrackers = new HashMap<>();
     private final Map<UUID, FpvFlightStateMachine> fpvStates = new HashMap<>();
-    private final Map<UUID, FlightCommand> fpvCommands = new HashMap<>();
     private final Map<UUID, Integer> terminalWaypointReplacements = new HashMap<>();
     private final Map<UUID, Double> terminalPreviousDistance = new HashMap<>();
     private final Map<UUID, Long> terminalLastDiagnosticTick = new HashMap<>();
@@ -57,13 +56,10 @@ public final class WingManFlightAdapter {
     }
 
     /**
-     * Records the observed state for one mission tick.
-     *
-     * <p>WingMan owns both the route and the native flight update for an
-     * autonomous entry. RDP must not also write absolute attitude/throttle
-     * values in the same tick: doing so creates two competing movement
-     * authorities. The command planners remain available for telemetry and
-     * future native integrations whose ownership is explicitly transferred.</p>
+     * Runs the addon flight computer after WingMan's world-tick callbacks and
+     * before MCheliCE updates aircraft physics. WingMan supplies the active
+     * route node; the profile controller owns the final attitude/throttle
+     * setpoints for this mission tick.
      */
     public void applyNativeControl(World world,
                                    MissionManager missions,
@@ -71,10 +67,54 @@ public final class WingManFlightAdapter {
                                    RDPMission mission,
                                    long tick) {
         if (world == null || missions == null || aircraft == null || mission == null
-                || mission.isTerminal()) return;
+                || world.isRemote || mission.isTerminal() || aircraft.isDead) return;
+        if (mission.getState() == net.vas.rdp.uav.mission.MissionState.LANDING
+                || mission.getState() == net.vas.rdp.uav.mission.MissionState.PARKING) {
+            return;
+        }
         WingmanEntry entry = getEntry(aircraft);
         if (entry == null || !entry.isAutonomous()) return;
-        aircraftStates.observe(aircraft, entry, mission, tick);
+        UavVehicleProfile profile = aircraft.getAcInfo() == null ? null
+                : UavVehicleProfiles.forAircraft(aircraft.getAcInfo().name);
+        if (profile == null || profile.getExecutionProfile() == UavExecutionProfile.UNKNOWN) {
+            RdpUavDebug.debug("FlightControl", "control rejected aircraft={} reason=UNSUPPORTED_PROFILE",
+                    aircraft.getUniqueID());
+            return;
+        }
+        // WingMan refreshes these effective setpoints while advancing route
+        // nodes. They also carry moving-target updates and remain meaningful
+        // for LOITER/ATTACK nodes, whose node coordinates may be defaults.
+        double targetX = entry.autoTargetX;
+        double targetY = entry.autoTargetY;
+        double targetZ = entry.autoTargetZ;
+        if (!Double.isFinite(targetX) || !Double.isFinite(targetY) || !Double.isFinite(targetZ)) {
+            RdpUavDebug.debug("FlightControl", "control held aircraft={} reason=NO_FINITE_ROUTE_NODE",
+                    aircraft.getUniqueID());
+            return;
+        }
+        AircraftState state = aircraftStates.observe(aircraft, entry, mission, tick);
+        NativeFlightControlCommand command = AirframeController.forProfile(profile)
+                .update(state, targetX, targetY, targetZ, tick);
+        if (!command.isSupported()) {
+            RdpUavDebug.debug("FlightControl", "control held aircraft={} reason={} sampleTick={}",
+                    aircraft.getUniqueID(), command.getReason(), state.getSampleTick());
+            return;
+        }
+        boolean applied = NativeAircraftControlAdapter.apply(world, missions, aircraft,
+                mission, command, tick);
+        if (applied && tick % 20L == 0L) {
+            RdpUavDebug.debug("FlightControl",
+                    "controller=RDP_FLIGHT_COMPUTER controlOwner={} aircraft={} profile={} node={} pos=({},{},{}) "
+                            + "motion=({},{},{}) yaw={} track={} desiredTrack={} courseError={} "
+                            + "pitch={} roll={} throttle={} desiredVerticalSpeed={}",
+                    state.getControlOwner(), aircraft.getUniqueID(),
+                    profile.getExecutionProfile(), state.getRouteNode(),
+                    state.getX(), state.getY(), state.getZ(), state.getMotionX(),
+                    state.getMotionY(), state.getMotionZ(), state.getYaw(),
+                    state.getGroundTrackYaw(), command.getDesiredTrack(),
+                    command.getCourseError(), aircraft.getPitch(), aircraft.getRoll(),
+                    aircraft.getThrottle(), command.getDesiredVerticalSpeed());
+        }
     }
 
     private static boolean usesHelicopterFlightModel(MCH_EntityAircraft aircraft) {
@@ -111,7 +151,6 @@ public final class WingManFlightAdapter {
         }
         UUID aircraftId = aircraft.getUniqueID();
         fpvStates.remove(aircraftId);
-        fpvCommands.remove(aircraftId);
         WingmanEntry existing = WingmanRegistry.get(aircraftId);
         if (existing != null) {
             // A previous RDP mission can leave an inert PARKED/NONE entry
@@ -148,9 +187,6 @@ public final class WingManFlightAdapter {
         entry.autoTargetY = safeY;
         entry.autoTargetZ = z;
         if (isFpv(aircraft)) {
-            fpvCommands.put(aircraftId,
-                    FpvFlightController.compute(aircraft.posX, aircraft.posY, aircraft.posZ,
-                            x, safeY, z, aircraft.rotationYaw, false));
             FpvFlightStateMachine state = new FpvFlightStateMachine();
             state.moveToTarget();
             fpvStates.put(aircraftId, state);
@@ -185,10 +221,6 @@ public final class WingManFlightAdapter {
             if (state == FpvFlightState.HOVER || state == FpvFlightState.TERMINAL_APPROACH) {
                 return false;
             }
-            fpvCommands.put(aircraft.getUniqueID(),
-                    FpvFlightController.compute(aircraft.posX, aircraft.posY, aircraft.posZ,
-                            x, normalizeHelicopterTargetY(aircraft, y), z,
-                            aircraft.rotationYaw, false));
         }
 
         double safeY = normalizeHelicopterTargetY(aircraft, y);
@@ -294,8 +326,6 @@ public final class WingManFlightAdapter {
         if (state.getState() == FpvFlightState.HOVER) return;
         if (state.getState() == FpvFlightState.TERMINAL_APPROACH) return;
         state.hover();
-        fpvCommands.put(aircraft.getUniqueID(),
-                FlightCommand.hover());
         entry.mission = new ArrayList<>();
         entry.mission.add(MissionNode.flyTo(aircraft.posX, aircraft.posY, aircraft.posZ));
         entry.mission.add(MissionNode.loiter(40));
@@ -330,15 +360,7 @@ public final class WingManFlightAdapter {
             leaveFpvHover(aircraft);
             return;
         }
-        double safeY = normalizeHelicopterTargetY(aircraft, y);
-        if (isFpv(aircraft)) {
-            FpvFlightState state = fpvFlightState(aircraft);
-            if (state != FpvFlightState.TERMINAL_APPROACH) {
-                fpvCommands.put(aircraft.getUniqueID(),
-                        FpvFlightController.compute(aircraft.posX, aircraft.posY, aircraft.posZ,
-                                x, safeY, z, aircraft.rotationYaw, false));
-            }
-        }
+        y = normalizeHelicopterTargetY(aircraft, y);
         double dx = x - entry.autoTargetX, dy = y - entry.autoTargetY, dz = z - entry.autoTargetZ;
         double length = Math.sqrt(dx * dx + dy * dy + dz * dz);
         double maxStep = 128.0D;
@@ -348,8 +370,19 @@ public final class WingManFlightAdapter {
             y = entry.autoTargetY + dy * scale;
             z = entry.autoTargetZ + dz * scale;
         }
+        WingmanEntry routeEntry = WingmanRegistry.get(aircraft.getUniqueID());
+        MissionNode activeNode = routeEntry == null ? null : routeEntry.currentNode();
+        if (activeNode != null && activeNode.type == MissionNode.Type.FLY_TO
+                && routeEntry.missionIndex >= 0 && routeEntry.mission != null
+                && routeEntry.missionIndex < routeEntry.mission.size()) {
+            // Keep the route's active node synchronized with the filtered
+            // moving-target setpoint. WingMan refreshes autoTarget from this
+            // node at the start of its next tick.
+            routeEntry.mission.set(routeEntry.missionIndex,
+                    MissionNode.flyTo(x, y, z));
+        }
         entry.currentAutoTarget = targetId;
-        entry.autoTargetX = x; entry.autoTargetY = safeY; entry.autoTargetZ = z;
+        entry.autoTargetX = x; entry.autoTargetY = y; entry.autoTargetZ = z;
     }
 
     public boolean armAttack(MCH_EntityAircraft aircraft, double x, double y, double z,
@@ -418,11 +451,6 @@ public final class WingManFlightAdapter {
                                double attackRadius, UUID targetId) {
         if (supportsKamikaze(aircraft)) return true;
         beginFpvTerminalApproach(aircraft);
-        if (isFpv(aircraft)) {
-            fpvCommands.put(aircraft.getUniqueID(),
-                    FpvFlightController.compute(aircraft.posX, aircraft.posY, aircraft.posZ,
-                            x, y, z, aircraft.rotationYaw, true));
-        }
         int weaponId = selectSelfDestructWeapon(aircraft);
         if (weaponId < 0) return true;
         WingmanEntry entry = WingmanRegistry.get(aircraft.getUniqueID());
@@ -595,7 +623,6 @@ public final class WingManFlightAdapter {
             aircraftStates.remove(aircraft.getUniqueID());
             targetTrackers.remove(aircraft.getUniqueID());
             fpvStates.remove(aircraft.getUniqueID());
-            fpvCommands.remove(aircraft.getUniqueID());
             terminalWaypointReplacements.remove(aircraft.getUniqueID());
             terminalPreviousDistance.remove(aircraft.getUniqueID());
             terminalLastDiagnosticTick.remove(aircraft.getUniqueID());
@@ -648,8 +675,9 @@ public final class WingManFlightAdapter {
 
     /**
      * Replaces the active terminal waypoint with one bounded, moving-target
-     * correction. The native WingMan route remains the movement authority;
-     * terminal guidance never appends an orbit or loiter node.
+     * correction. WingMan retains route sequencing; the RDP flight computer
+     * owns the leased movement setpoints. Terminal guidance never appends an
+     * orbit or loiter node.
      */
     public void updateTerminalGuidance(MCH_EntityAircraft aircraft,
                                        Entity target,
@@ -756,12 +784,7 @@ public final class WingManFlightAdapter {
                 "replacements", replacements);
         emitTerminalDiagnostics(aircraft, target, entry, tick, missionId, phase,
                 controlOwner, replacements, solution);
-        if (isFpv(aircraft)) {
-            beginFpvTerminalApproach(aircraft);
-            fpvCommands.put(aircraftId,
-                    FpvFlightController.compute(aircraft.posX, aircraft.posY, aircraft.posZ,
-                            plannedX, safeY, plannedZ, aircraft.rotationYaw, true));
-        }
+        if (isFpv(aircraft)) beginFpvTerminalApproach(aircraft);
     }
 
     public void markTerminalTimeout(UUID aircraftId) {
@@ -895,11 +918,6 @@ public final class WingManFlightAdapter {
             fpvStates.put(aircraft.getUniqueID(), state);
         }
         state.beginTerminalApproach();
-    }
-
-    @SuppressWarnings("unused")
-    public FlightCommand fpvFlightCommand(MCH_EntityAircraft aircraft) {
-        return aircraft == null ? null : fpvCommands.get(aircraft.getUniqueID());
     }
 
     @SuppressWarnings("unused")

@@ -90,7 +90,7 @@ public class GuidedWeaponTest {
     }
 
     @Test
-    public void atmissileCapabilitySupportsEntityAndAreaObjectives() {
+    public void customEntitySeekerCapabilityCanExplicitlyDeclareAreaObjectives() {
         GuidedWeaponCapability capability = new GuidedWeaponCapability("atmissile", "atmissile",
                 GuidedNativeBehavior.ENTITY_SEEKER,
                 EnumSet.of(GuidedObjectiveType.ENTITY, GuidedObjectiveType.SQUARE),

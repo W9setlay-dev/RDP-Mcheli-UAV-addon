@@ -31,6 +31,8 @@ The architecture and audit notes for this rework are recorded in `docs/`:
 - `docs/phase-f-validation-and-feature-overlap.md`
 - `docs/phase-g-validation-and-marker-rework.md`
 - `docs/ai-lock-movement-validation.md`
+- `docs/ai-flight-control-ownership.md`
+- `docs/UAV_AI_FRAMEWORK_REWORK_REPORT.md`
 - `docs/changelog.md`
 
 This keeps the project grounded in the actual McHeliCE/WingMan mission boundary and makes the hostile-world utility case explicit rather than relying on unsupported AI rhetoric.
@@ -40,10 +42,12 @@ This keeps the project grounded in the actual McHeliCE/WingMan mission boundary 
 For a locked attack mission, the pilot can explicitly press `1` or use the
 `Nose-dive [1]` GUI button. The server validates ownership, pilot seat,
 target lock, and supported Switchblade/Shahed aircraft before arming the
-35-degree WingMan dive approach. WingMan remains responsible for steering and
-available-speed control; the addon does not teleport the aircraft or force a
-fake impact. Ordinary aircraft are rejected, and live collision, damage, and
-self-destruct behavior must be verified in the target instance.
+35-degree terminal approach. WingMan advances route nodes; the leased RDP
+flight computer calculates bounded yaw, pitch, roll, and throttle setpoints
+from observed motion and applies them through MCheliCE's aircraft API. It does
+not teleport the aircraft or invent an impact. Ordinary aircraft are rejected,
+and live collision, damage, and self-destruct behavior still require validation
+in the target instance.
 
 This is the Forge 1.12.2 addon project for player-configured reconnaissance
 and target missions. It targets the exact installed runtime:
@@ -59,12 +63,13 @@ Place the verified runtime jars at `libs/mcheli-ce-1.5.1.jar` and
 `RDP_CORE_JAR` to the installed instance jar paths. The jars are intentionally
 not copied into source control.
 
-Recent mission updates keep UAV control server-authoritative and separate from
-client-side intent. The server validates aircraft ownership before accepting
-flight commands, the native WingMan route remains the movement authority for
-active missions, and terminal observation orbits are intentionally disabled so
-missions converge on the intended target instead of drifting into a non-
-productive patrol loop.
+Mission intent and flight control are server-authoritative. WingMan supplies
+route sequencing and the current route target; the RDP flight computer is the
+single final attitude/throttle writer while its control lease is active. A
+targeted coremod guard suppresses the relevant WingMan movement helpers, and
+the aircraft still moves through MCheliCE entity physics and collision updates.
+This source-level ownership and the controller math are covered by local tests;
+actual turning, climb, and impact behavior remain in-game validation items.
 
 The addon includes a tactical mission-control GUI and player-owned UAV mission
 commands. While piloting a McHeli UAV, authorize it with
@@ -185,21 +190,25 @@ select an allowed entity or square objective, satisfy the server lock/safety
 gates, then authorize launch. The GUI distinguishes target acquisition,
 native seeker handoff, launch confirmation, target loss, and tracking; a
 temporary missing target is reported as `WAITING_FOR_TARGET` rather than a
-generic execution stall. `aamissile` remains a native entity-seeker weapon. `atmissile` supports both
-entity objectives and square/area objectives: for a square, the server selects
-the nearest safe loaded entity inside the bounded strike area and passes that
-entity to McHeli's native AT seeker; it does not pretend that the AT missile
-has coordinate guidance. `asmissile` is native coordinate/ballistic guidance:
+generic execution stall. `aamissile` and `atmissile` remain native entity-seeker
+weapons and accept entity objectives. `asmissile` is native
+coordinate/ballistic guidance:
 the addon validates and submits a point/square objective but does not turn it
 into a UAV-like entity hunter. `tvmissile` is currently unsupported for addon
-AI guidance because its native coordinate/laser handoff is not proven. AI ownership overrides camera input
+AI guidance. The bundled MCheliCE 1.5.1 bytecode consumes its `targetPosX/Y/Z`
+fields in the laser branch, and the addon contains a coordinate writer, but the
+projectile also refreshes those fields from the native laser-control path. That
+does not prove stable ownership or tick ordering for an AI handoff. AI
+ownership overrides camera input
 only while the mission is active; abort/takeover clears the addon assignment
 and returns control to McHeli's native player guidance where supported.
 Obstacle avoidance is best-effort and weapon-family specific. Native seekers
-keep McHeli's own seeker behavior. ASM and TV coordinate paths use a fixed
+keep McHeli's own seeker behavior. The enabled ASM coordinate path uses a fixed
 budget of terrain samples and a small set of temporary lateral/climb/descent
 native target offsets when the direct corridor is blocked; the offset expires
-and the original objective is reacquired. Unloaded terrain is treated
+and the original objective is reacquired. TV contains a similar experimental
+writer but is disabled until its native laser ownership path is validated.
+Unloaded terrain is treated
 conservatively and a `NATIVE_AVOIDANCE_UNAVAILABLE` result is reported when
 no safe candidate exists. This is not a guarantee against every geometry or
 turn-rate limitation. No projectile teleportation or arbitrary velocity
@@ -238,7 +247,10 @@ treated as proof of a completed pass, weapon release, impact, or damage; a
 server mission command and live runtime verification are still required before
 this capability can be considered production-ready.
 
-Entity-seeker missions may optionally attach a server-owned
+The default `T` point-task key sends a camera-ray block point to the server (up
+to 256 blocks away); it does not select an entity. Entity lock is a separate
+action that sends the exact crosshair UUID for server validation. Entity-seeker
+missions may optionally attach a server-owned
 priority filter. Rules accept exact registry IDs or namespace patterns such as
 `srparasites:*`; while the projectile is alive, a newly loaded valid contact
 with a higher rule priority can replace the current UUID objective. Manual
@@ -393,8 +405,11 @@ existing `MissionManager`. `AiTaskRequest` represents operator intent,
 priority, and distance, and `AiTaskingService` separates recommendation,
 operator approval, and autonomous execution. Approved or autonomous plans
 are submitted through `MissionManager.create`; the AI does not mutate
-mission state, ownership, weapons, or flight physics directly. The existing
-`MissionLifecycle` and `WingManFlightAdapter` remain the execution authority.
+mission state, ownership, weapons, or flight physics directly. `MissionLifecycle`
+owns server-authoritative mission progression, WingMan sequences route nodes,
+and the leased RDP `AirframeController` supplies bounded attitude and throttle
+setpoints while MCheliCE integrates the aircraft physics. Each layer has one
+job; source wiring does not prove the resulting trajectory in a live world.
 
 This layer is source/API validated. It does not by itself prove that a live
 operator GUI request reaches an in-game UAV, nor does it certify autonomous
@@ -409,16 +424,20 @@ and observation tick. `SensorFusion` selects the strongest observation while
 explicitly lowering confidence and exposing an explanation when sources
 disagree. `AiDecision` now also carries a bounded confidence value and a
 `FlightIntent`; the existing five-argument constructor remains compatible with
-callers that have no sensor evidence. These are decision inputs only: WingMan
-and `MissionLifecycle` remain the authority for physical execution and mission
-state transitions.
+callers that have no sensor evidence. These are decision inputs only.
+`MissionLifecycle` owns mission state transitions, WingMan sequences route
+nodes, and the leased RDP flight computer supplies movement setpoints for
+MCheliCE's normal physics update.
 
 ## Guided weapon boundary
 
 Copy `config/rdp-uav-guided-weapons.cfg.example` to the instance config
-directory to authorize McHeli weapon definition/type pairs. `aamissile` and `atmissile` are entity-seeker weapons; `asmissile` and
+directory to authorize McHeli weapon definition/type pairs. `aamissile` and
+`atmissile` are entity-seeker weapons; `asmissile` is coordinate/ballistic.
 `tvmissile` is explicitly unsupported for addon AI guidance, even if an older
-configuration advertises coordinate/TV/laser objectives. During an authorized
+configuration advertises coordinate/TV/laser objectives. Its native coordinate
+fields are consumed, but the projectile's own laser path can rewrite them, so
+the server handoff remains unverified. During an authorized
 active mission, only capabilities with a proven native handoff are accepted.
 Abort removes the AI ownership and returns to native player guidance where
 McHeli supports it. `asmissile` pursuit uses bounded server-side 3D obstacle
@@ -549,8 +568,9 @@ does.
 Swarms are server-authoritative persisted aggregates over existing aircraft and
 missions. A swarm owns membership, roles, formation metadata, leadership policy,
 and degraded/partial status; `MissionManager` still owns aircraft assignment,
-target claims, mission queues, and lifecycle, while WingMan remains the only
-flight controller. Members are keyed by the authoritative aircraft UUID, so
+target claims, mission queues, and lifecycle. WingMan advances each member's
+route, while the per-aircraft RDP flight computer owns the leased movement
+setpoints. Members are keyed by the authoritative aircraft UUID, so
 mixed `ONE_WAY`, `REUSABLE_UAV`, and long-range profiles can coexist without
 McHeliCE type or display-name checks.
 

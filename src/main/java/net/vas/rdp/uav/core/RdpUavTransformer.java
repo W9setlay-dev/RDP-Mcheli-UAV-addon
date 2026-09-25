@@ -11,6 +11,10 @@ public final class RdpUavTransformer implements net.minecraft.launchwrapper.ICla
     private static final String UAV_STATION_TARGET = "com.norwood.mcheli.uav.MCH_EntityUavStation";
     private static final String CONTROL_PACKET_TARGET =
             "com.norwood.mcheli.networking.packet.control.PacketPlayerControlBase";
+    private static final String WINGMAN_TICK_TARGET =
+            "com.norwood.mcheli.wingman.handler.WingmanTickHandler";
+    private static final String AUTONOMOUS_FLIGHT_TARGET =
+            "com.norwood.mcheli.wingman.handler.AutonomousFlightHandler";
     private static final String RDP_CORE_PREFIX = "net.vas.rdpcore.";
 
     @Override
@@ -20,8 +24,15 @@ public final class RdpUavTransformer implements net.minecraft.launchwrapper.ICla
                 || UAV_STATION_TARGET.equals(name);
         boolean isControlPacket = CONTROL_PACKET_TARGET.equals(transformedName)
                 || CONTROL_PACKET_TARGET.equals(name);
-        if (compatibleClass != basicClass || (!isUavStation && !isControlPacket)) {
-            if (!isUavStation && !isControlPacket) return compatibleClass;
+        boolean isWingmanTick = WINGMAN_TICK_TARGET.equals(transformedName)
+                || WINGMAN_TICK_TARGET.equals(name);
+        boolean isAutonomousFlight = AUTONOMOUS_FLIGHT_TARGET.equals(transformedName)
+                || AUTONOMOUS_FLIGHT_TARGET.equals(name);
+        if (compatibleClass != basicClass || (!isUavStation && !isControlPacket
+                && !isWingmanTick && !isAutonomousFlight)) {
+            if (!isUavStation && !isControlPacket && !isWingmanTick && !isAutonomousFlight) {
+                return compatibleClass;
+            }
             basicClass = compatibleClass;
         }
         ClassReader reader = new ClassReader(basicClass);
@@ -54,6 +65,30 @@ public final class RdpUavTransformer implements net.minecraft.launchwrapper.ICla
                         }
                     };
                 }
+                boolean movementWriter = (isWingmanTick && isWingmanMovementWriter(methodName))
+                        || (isAutonomousFlight && isAutonomousMovementWriter(methodName));
+                if (movementWriter) {
+                    if (!descriptor.endsWith(")V")) {
+                        throw new IllegalStateException("Expected a void WingMan movement helper: "
+                                + methodName + descriptor);
+                    }
+                    return new MethodVisitor(Opcodes.ASM5, delegate) {
+                        @Override
+                        public void visitCode() {
+                            super.visitCode();
+                            super.visitVarInsn(Opcodes.ALOAD, 1);
+                            super.visitMethodInsn(Opcodes.INVOKESTATIC,
+                                    "net/vas/rdp/uav/mission/MissionMovementAuthority",
+                                    "suppressWingManMovement",
+                                    "(Lnet/minecraft/entity/Entity;)Z",
+                                    false);
+                            Label allowed = new Label();
+                            super.visitJumpInsn(Opcodes.IFEQ, allowed);
+                            super.visitInsn(Opcodes.RETURN);
+                            super.visitLabel(allowed);
+                        }
+                    };
+                }
                 if (!isUavStation || (!"func_70097_a".equals(methodName)
                         && !"attackEntityFrom".equals(methodName))) return delegate;
                 return new MethodVisitor(Opcodes.ASM5, delegate) {
@@ -78,6 +113,25 @@ public final class RdpUavTransformer implements net.minecraft.launchwrapper.ICla
             }
         }, 0);
         return writer.toByteArray();
+    }
+
+    private static boolean isWingmanMovementWriter(String methodName) {
+        return "setRotYaw".equals(methodName)
+                || "setRotPitch".equals(methodName)
+                || "setRotRoll".equals(methodName)
+                || "applyThrottle".equals(methodName)
+                || "maintainEngine".equals(methodName)
+                || "maintainEngineAdaptive".equals(methodName)
+                || "applySlotBoost".equals(methodName)
+                || "holdStop".equals(methodName)
+                || "taxiPushPosition".equals(methodName);
+    }
+
+    private static boolean isAutonomousMovementWriter(String methodName) {
+        return "forceYaw".equals(methodName)
+                || "forcePitch".equals(methodName)
+                || "forceRoll".equals(methodName)
+                || "setThrottle".equals(methodName);
     }
 
     public static String repeat(String value, int count) {

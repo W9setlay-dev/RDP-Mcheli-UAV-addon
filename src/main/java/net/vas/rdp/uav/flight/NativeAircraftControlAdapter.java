@@ -5,164 +5,87 @@ import net.minecraft.world.World;
 import net.vas.rdp.uav.mission.MissionManager;
 import net.vas.rdp.uav.mission.MissionMovementAuthority;
 import net.vas.rdp.uav.mission.RDPMission;
-import net.vas.rdp.uav.profile.UavExecutionProfile;
 import net.vas.rdp.uav.profile.UavVehicleProfile;
 import net.vas.rdp.uav.profile.UavVehicleProfiles;
 
 /**
- * Server-side native McHeliCE control boundary.
+ * The single addon-owned MCheliCE movement boundary.
  *
- * <p>McHeliCE owns the flight physics. This adapter only supplies bounded
- * attitude and throttle inputs through the public native setters during the
- * server tick; it never writes position or motion.</p>
+ * <p>Only the attitude/throttle setpoints are written here. MCheliCE's entity
+ * update integrates those controls into velocity and position and performs its
+ * normal collision handling.</p>
  */
 public final class NativeAircraftControlAdapter {
+    private static final float MAX_PITCH_STEP_DEGREES = 1.6F;
+    private static final float MAX_ROLL_STEP_DEGREES = 2.4F;
+    private static final double MAX_THROTTLE_STEP = 0.035D;
+
     private NativeAircraftControlAdapter() { }
 
-    /**
-     * Applies one authoritative server command. McHeliCE's setters are
-     * absolute, so every value is rate-limited against the observed attitude.
-     */
-    public static void apply(World world, MissionManager missions,
-                             MCH_EntityAircraft aircraft, RDPMission mission,
-                             double targetX, double targetY, double targetZ,
-                             FlightCommand fpvCommand, long tick) {
+    public static boolean apply(World world, MissionManager missions,
+                                MCH_EntityAircraft aircraft, RDPMission mission,
+                                NativeFlightControlCommand command, long tick) {
         if (world == null || world.isRemote || missions == null || aircraft == null
-                || mission == null || aircraft.isDead
+                || mission == null || command == null || !command.isSupported()
+                || aircraft.isDead || aircraft.world != world
+                || missions.activeMission(world, aircraft.getUniqueID()) != mission
                 || !MissionMovementAuthority.claimControl(mission,
                 aircraft.getUniqueID(), tick)
                 || !MissionMovementAuthority.canIssueNativeControl(mission,
                 aircraft.getUniqueID(), tick)
                 || !canControlAircraft(aircraft)) {
-            return;
+            return false;
         }
-        ControlCommand command = commandFor(aircraft, targetX, targetY, targetZ, fpvCommand);
-        if (!command.isSupported()) return;
 
-        aircraft.setRotYaw(command.getYaw());
-        aircraft.setRotPitch(command.getPitch());
-        aircraft.setRotRoll(command.getRoll());
-        aircraft.setThrottle(command.getThrottle());
+        UavVehicleProfile profile = profileFor(aircraft);
+        if (profile == null) return false;
+        float maxYawStep = (float) NativeControlMath.clamp(
+                Math.toDegrees(Math.max(0.01D, aircraft.getCurrentThrottle())
+                        / Math.max(8.0D, profile.getTurnRadius())),
+                profile.isHelicopterProfile() ? 1.5D : 0.8D,
+                profile.isHelicopterProfile() ? 4.0D : 3.5D);
+
+        float yaw = NativeControlMath.approachAngle(
+                aircraft.getYaw(), command.getYaw(), maxYawStep);
+        boolean terminal = mission.getControlOwner()
+                == net.vas.rdp.uav.mission.ControlOwner.TERMINAL_GUIDANCE;
+        float pitchLimit = terminal
+                ? (profile.isHelicopterProfile() ? 45.0F : 60.0F)
+                : (profile.isHelicopterProfile() ? 24.0F : 22.0F);
+        float rollLimit = NativeControlMath.maximumRollDegrees(profile);
+        float pitchTarget = NativeControlMath.clamp(command.getPitch(), -pitchLimit, pitchLimit);
+        float rollTarget = NativeControlMath.clamp(command.getRoll(), -rollLimit, rollLimit);
+        float pitch = NativeControlMath.approach(aircraft.getPitch(), pitchTarget,
+                MAX_PITCH_STEP_DEGREES);
+        float roll = NativeControlMath.approach(aircraft.getRoll(), rollTarget,
+                MAX_ROLL_STEP_DEGREES);
+        double throttle = NativeControlMath.approach(aircraft.getThrottle(),
+                command.getThrottle(), MAX_THROTTLE_STEP);
+        throttle = NativeControlMath.clamp(throttle, 0.0D, 1.0D);
+
+        aircraft.setRotYaw(yaw);
+        aircraft.setRotPitch(pitch);
+        aircraft.setRotRoll(roll);
+        aircraft.setThrottle(throttle);
         aircraft.updateControl();
+        return true;
     }
 
     public static boolean canControlAircraft(MCH_EntityAircraft aircraft) {
-        return aircraft != null && !aircraft.isDead && isKnownProfile(aircraft)
-                && !operatorControlConflict(aircraft);
-    }
-
-    private static boolean operatorControlConflict(MCH_EntityAircraft aircraft) {
-        // Mission ownership is authoritative while active. Operator presence
-        // is observation-only and must not turn a valid AI mission into an
-        // instant failure; the server command is the control boundary.
-        return false;
+        UavVehicleProfile profile = profileFor(aircraft);
+        return aircraft != null && !aircraft.isDead && profile != null;
     }
 
     public static String controlPathStatus(MCH_EntityAircraft aircraft) {
         if (aircraft == null) return "NO_AIRCRAFT";
-        if (!isKnownProfile(aircraft)) return "UNSUPPORTED_PROFILE";
-        if (operatorControlConflict(aircraft)) return "OPERATOR_CONTROL_CONFLICT";
-        return "SERVER_NATIVE_CONTROL_SUPPORTED";
+        return profileFor(aircraft) == null
+                ? "UNSUPPORTED_PROFILE" : "RDP_NATIVE_PHYSICS_CONTROL";
     }
 
-    public static boolean isKnownProfile(MCH_EntityAircraft aircraft) {
-        if (aircraft == null) return false;
-        String definition = aircraft.getAcInfo() == null ? "" : aircraft.getAcInfo().name;
-        UavVehicleProfile profile = UavVehicleProfiles.forAircraft(definition);
-        return profile != null && profile.getExecutionProfile() != UavExecutionProfile.UNKNOWN;
-    }
-
-    static ControlCommand commandFor(MCH_EntityAircraft aircraft,
-                                     double targetX, double targetY, double targetZ,
-                                     FlightCommand fpvCommand) {
-        if (aircraft == null || !finite(targetX, targetY, targetZ)) {
-            return ControlCommand.unsupported("INVALID_TARGET");
-        }
-        String definition = aircraft.getAcInfo() == null ? "" : aircraft.getAcInfo().name;
-        UavVehicleProfile profile = UavVehicleProfiles.forAircraft(definition);
-        if (profile == null || profile.getExecutionProfile() == UavExecutionProfile.UNKNOWN) {
-            return ControlCommand.unsupported("UNSUPPORTED_PROFILE");
-        }
-
-        double dx = targetX - aircraft.posX;
-        double dy = targetY - aircraft.posY;
-        double dz = targetZ - aircraft.posZ;
-        double[] guided = applyFpvGuidance(dx, dy, dz, fpvCommand);
-        dx = guided[0];
-        dy = guided[1];
-        dz = guided[2];
-        NativeControlMath.Command shaped = NativeControlMath.compute(
-                aircraft.getYaw(), aircraft.getPitch(), aircraft.getRoll(),
-                aircraft.getCurrentThrottle(), dx, dy, dz,
-                profile.isHelicopterProfile(),
-                fpvCommand == null ? Double.NaN : fpvCommand.getForward(),
-                Math.sqrt(aircraft.motionX * aircraft.motionX
-                        + aircraft.motionY * aircraft.motionY
-                        + aircraft.motionZ * aircraft.motionZ),
-                profile.getCruiseSpeed(), profile.getStallSpeed(),
-                profile.getMaximumClimbRate(), profile.getMaximumDescentRate(),
-                profile.getMaximumBankDegrees());
-        return ControlCommand.supported(shaped.getYaw(), shaped.getPitch(),
-                shaped.getRoll(), shaped.getThrottle());
-    }
-
-    public static double[] applyFpvGuidance(double dx, double dy, double dz, FlightCommand fpvCommand) {
-        if (fpvCommand == null) {
-            return new double[] { dx, dy, dz };
-        }
-        double forwardBias = clamp(Math.abs(fpvCommand.getForward()), 0.0D, 1.0D) * 4.0D;
-        double lateralBias = clamp(fpvCommand.getLateral(), -1.0D, 1.0D) * 2.0D;
-        double verticalBias = clamp(fpvCommand.getVertical(), -16.0D, 16.0D);
-        double forwardDirection = Math.signum(fpvCommand.getForward());
-        if (Double.isNaN(forwardDirection)) {
-            forwardDirection = 0.0D;
-        }
-        return new double[] {
-                dx + lateralBias,
-                dy + verticalBias,
-                dz + (forwardDirection * forwardBias)
-        };
-    }
-
-    private static boolean finite(double... values) {
-        for (double value : values) if (!Double.isFinite(value)) return false;
-        return true;
-    }
-
-    private static double clamp(double value, double minimum, double maximum) {
-        return Math.max(minimum, Math.min(maximum, value));
-    }
-
-    public static final class ControlCommand {
-        private final float yaw;
-        private final float pitch;
-        private final float roll;
-        private final double throttle;
-        private final String reason;
-
-        private ControlCommand(float yaw, float pitch, float roll,
-                               double throttle, String reason) {
-            this.yaw = yaw;
-            this.pitch = pitch;
-            this.roll = roll;
-            this.throttle = throttle;
-            this.reason = reason;
-        }
-
-        private static ControlCommand supported(float yaw, float pitch,
-                                                float roll, double throttle) {
-            return new ControlCommand(yaw, pitch, roll, throttle, "OK");
-        }
-
-        private static ControlCommand unsupported(String reason) {
-            return new ControlCommand(0.0F, 0.0F, 0.0F, 0.0D, reason);
-        }
-
-        public boolean isSupported() { return "OK".equals(reason); }
-        public String getReason() { return reason; }
-        public float getYaw() { return yaw; }
-        public float getPitch() { return pitch; }
-        public float getRoll() { return roll; }
-        public double getThrottle() { return throttle; }
+    private static UavVehicleProfile profileFor(MCH_EntityAircraft aircraft) {
+        if (aircraft == null || aircraft.getAcInfo() == null) return null;
+        UavVehicleProfile profile = UavVehicleProfiles.forAircraft(aircraft.getAcInfo().name);
+        return profile == null || profile.getExecutionProfile()
+                == net.vas.rdp.uav.profile.UavExecutionProfile.UNKNOWN ? null : profile;
     }
 }

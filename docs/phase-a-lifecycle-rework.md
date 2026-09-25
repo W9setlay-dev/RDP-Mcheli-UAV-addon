@@ -1,4 +1,8 @@
-# Phase A: authoritative mission lifecycle rework
+# Phase A: authoritative mission lifecycle rework (historical snapshot)
+
+This phase document records the initial architecture. Its statement that
+WingMan owns aircraft movement was superseded by Phase 15 and the current
+leased RDP airframe-controller path; WingMan now sequences route nodes.
 
 ## Scope
 

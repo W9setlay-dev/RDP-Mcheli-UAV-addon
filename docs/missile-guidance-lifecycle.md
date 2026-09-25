@@ -197,7 +197,8 @@ projectiles, verifies the shooter, and creates an assignment.
 
 It then calls `chooseAimPoint(...)`.
 
-For TV and AS coordinate projectiles:
+For coordinate projectiles, `MissileGuidanceController` contains code paths
+for TV and AS:
 
 1. Existing avoidance plans are reused while valid.
 2. The direct route is checked.
@@ -218,8 +219,14 @@ MCH_EntityASMissile.targetPosY
 MCH_EntityASMissile.targetPosZ
 ```
 
-These writes are the only steering input owned by this addon. McHeli reads
-them in its own projectile update code.
+For AS missiles, these writes are the active native steering handoff. The
+default registry forcibly marks `tvmissile` as `UNSUPPORTED`, so the TV writer
+is dormant for ordinary AI missions even though the class and code path exist.
+The local MCheliCE 1.5.1 bytecode confirms that the TV laser branch reads its
+target fields, but its native laser-control update can also refresh those
+fields. Field presence and reads do not prove stable addon ownership or tick
+ordering. Do not enable TV in the registry until that end-to-end handoff is
+validated.
 
 If no safe detour exists, `chooseAimPoint(...)` now emits
 `native_guidance_fallback` and returns the requested point. It must not return
@@ -231,7 +238,8 @@ write and cause a TV missile to continue on its launch vector.
 McHeli owns the actual projectile tick. In McHeli CE 1.5.1:
 
 * `MCH_EntityTvMissile.onUpdateMotion()` chooses wire or laser guidance and
-  eventually consumes the native target point.
+  eventually consumes the native target point. The addon TV path remains
+  disabled in `GuidedWeaponRegistry` pending ownership/update-order validation.
 * `MCH_EntityTvMissile.onLaserGuide()` checks the target `BlockPos` and steers
   when the native target resolves to a movement-blocking block.
 * `MCH_EntityASMissile` consumes its target fields using its native ballistic

@@ -16,8 +16,8 @@
 | native route refresh semantics | `.\gradlew.bat test --no-daemon` | PASS | Route rebuild code compiles and is covered by lifecycle source validation; live turning/orbit remains unverified |
 | captured native WingMan route execution | CRM `latest.log` 2026-09-23 | OBSERVED | Server log records accepted `FLY_TO` routes and `FLY_TO reached`; no current process was running during this validation, and trajectory convergence remains unproven |
 | captured kamikaze effect confirmation | CRM `latest.log` 2026-09-23 | NOT OBSERVED | Log contained a detonation-labeled path but zero `IMPACT_OBSERVED`/`EFFECT_CONFIRMED` events; it was treated as false success and the source path was corrected |
-| single-press exact lock / separate clear action | `.\gradlew.bat test --no-daemon` | PASS | Client now sends exact crosshair UUID on `L`; `J` and dashboard clear request recovery; live packet behavior remains unverified |
-| production artifact build | `.\gradlew.bat build --no-daemon` | PASS | Reobfuscated addon JAR built successfully; current SHA-256 `D3B0D52D5BE4FFFE63C8D8E5615DAA2149DA73B667FFB795656E671F0B0A1024` |
+| single-press exact lock / separate clear action | `.\gradlew.bat test --no-daemon` | PASS | Current default lock is key `3` and clear is key `5`; client sends the exact crosshair UUID; live packet behavior remains unverified |
+| production artifact build before leased-controller rework | `.\gradlew.bat build --no-daemon` | HISTORICAL | Reobfuscated addon JAR built successfully; earlier artifact SHA-256 `D3B0D52D5BE4FFFE63C8D8E5615DAA2149DA73B667FFB795656E671F0B0A1024`; superseded by the current build below |
 | live instance log inspection | `minecraft/logs/debug.log` through 2026-09-25 | ACTIONED | Crosshair locks were rejected as `TARGET_FILTERED` for `mcheli:mch.e.plane`; another request targeted the controlled aircraft itself and was rejected as `PROFILE_UNSUPPORTED` |
 | exact operator vehicle lock | server UUID validation | PASS (source) | Explicit crosshair locks now allow loaded McHeli aircraft when `allowHostileVehicles=true`, while automatic discovery keeps the hostile classifier |
 | instant kamikaze payload | AI/manual detonation path | PASS (source) | Detonation now uses the configured McHeli explosion at the authoritative target point for both plane and helicopter paths; physical block/entity damage remains `LIVE_VALIDATION_REQUIRED` |
@@ -31,12 +31,17 @@
 | Forge dedicated-server startup smoke | `.\gradlew.bat runServer --no-daemon` | PARTIAL | Reached `Done` with McHeliCE, WingMan, RDP Core, and addon coremod loaded; reproduced `RDPWorldSavedData.<init>(String)` failure during world load/save |
 | native aircraft method presence | `javap -classpath libs/mcheli-ce-1.5.1.jar -public com.norwood.mcheli.aircraft.MCH_EntityAircraft` | PASS | Verified public rotation and throttle methods; method presence is not physical-flight evidence |
 | official McHeliCE control-path comparison | `Warfactory-Official/McHeliCE@cbaff7f30e549ff75e485388c24c74a4316c2228` plus local 1.5.1 JAR | PASS | Official WingMan server handlers use bounded `setRotYaw`, `setRotPitch`, `setRotRoll`, `setThrottle`, and `updateControl`; local signatures match |
-| native server control shaping | `.\gradlew.bat test --tests net.vas.rdp.uav.NativeControlMathTest --no-daemon` | PASS | Yaw/pitch/roll rate limits, yaw wrap, helicopter collective behavior, FPV throttle input, and finite bounded commands are deterministic |
+| native server control shaping | `.\gradlew.bat test --tests net.vas.rdp.uav.NativeControlMathTest --no-daemon` | PASS | Yaw/pitch/roll rate limits, yaw wrap, helicopter collective behavior, and finite bounded commands are deterministic |
 | native server control ownership | source contract and `.\gradlew.bat test --no-daemon` | PASS | Mission lease is required; operator presence never fails an active mission. AI remains the authoritative native-control writer while the operator is observation-only |
 | native physical flight response | controlled Forge/McHeliCE runtime | LIVE_VALIDATION_REQUIRED | The source-compatible server path is implemented, but visible turning, climb, bank, stall, collision, and recovery still require runtime observation |
 | observed aircraft state estimator | `.\gradlew.bat test --tests net.vas.rdp.uav.AircraftStateTest --no-daemon` | PASS | Captures finite position history, velocity, horizontal/vertical speed, mission owner, lease validity, route node, and target distance without issuing controls |
 | terminal approach geometry | `.\gradlew.bat test --tests net.vas.rdp.uav.TerminalApproachPlannerTest --no-daemon` | PASS | Selects bounded 20/30/40/50/60 degree terminal angles, finite dive runs, and bounded climb behavior when the UAV starts below the target |
 | square-strike route geometry | `.\gradlew.bat test --no-daemon` | PASS | Boustrophedon passes use configured heading/spacing and append a finite terminal approach leg before the one-way payload gate |
+| RDP leased airframe-controller path | source tests and bytecode-transformer tests | PASS (SOURCE) | Fixed-wing and helicopter controllers consume active route setpoints; the lease applies rate-limited MCheliCE attitude/throttle setters and injected guards suppress competing WingMan movement writes |
+| current reobfuscated addon build | `.\gradlew.bat build --no-daemon` | PASS | Current artifact SHA-256 `31A743C937DCD916F671127E5D6F562730A59309C46A0E4AF2D862932D97E9D5`; size 558,953 bytes |
+| current full unit suite | `.\gradlew.bat test --no-daemon` | PASS | 236 tests, zero failures, zero errors, zero skipped |
+| active RDP instance addon JAR | installed instance file inspection | NOT DEPLOYED | Installed artifact remains the older 541,876-byte JAR (SHA-256 `C4002E5C15689C291A3F478F846F1F874C6FEF500073ECE63FA86428D5C6532E`); source build was not copied into the instance |
+| active RDP instance McHeliCE JAR | SHA-256 comparison with local dependency | MATCH | Both files are 82,128,715 bytes with SHA-256 `740B4DF7C6AE8FF66C2E54ADD422AF4F4495EEEF45DDF5815AF7FDF7FF49015B` |
 
 ## Developer live handoff
 
@@ -45,7 +50,7 @@
 Build:
 
 - Addon JAR: `D:\Forge Modding\rdp-uav-addon\build\libs\rdp-uav-addon-0.1.0.jar`
-- SHA-256: `D3B0D52D5BE4FFFE63C8D8E5615DAA2149DA73B667FFB795656E671F0B0A1024`
+- SHA-256: `31A743C937DCD916F671127E5D6F562730A59309C46A0E4AF2D862932D97E9D5`
 - Expected McHeliCE: `1.5.1`, matching `libs\mcheli-ce-1.5.1.jar`
 - Restart: required after replacing the addon JAR
 
@@ -60,7 +65,7 @@ Setup:
 
 Action:
 
-1. Replace only the installed addon JAR with the artifact above and restart.
+1. Install the artifact above in a disposable copy of the RDP instance and restart. The checked-in source and build artifact have not been deployed to the active instance.
 2. Create a point reconnaissance mission for the configured reusable UAV.
 3. Confirm the server accepts the mission and observe the WingMan route.
 4. Lock the exact target entity through the authoritative lock action.
@@ -97,6 +102,22 @@ source/instrumentation validated. Actual client key delivery, McHeli aircraft
 acceptance, guided launch, and payload effects remain
 `LIVE_VALIDATION_REQUIRED`.
 
+### Developer Live Test: `T` point task
+
+`T` is a point-strike command, not entity lock. With an authorized controlled
+aircraft, the server ray traces the operator's current camera look vector out
+to 256 blocks and creates a point mission at the hit block. An unobstructed ray
+or missing controlled aircraft does not create an entity target. Use key `3`
+or the GUI Entity lock button to request a specific entity UUID.
+
+1. Aim at a loaded block within the aircraft profile's allowed range and press
+   `T` once.
+2. Confirm the server reports the created point mission and its exact point.
+3. Aim into open sky and press `T`; the server should report no camera point.
+4. Verify a nearby entity is not selected by either point-task attempt.
+
+Key delivery and camera alignment still require the developer's live client.
+
 Expected telemetry:
 
 - `MISSION_DISPATCH_ATTEMPT`
@@ -108,8 +129,7 @@ Expected telemetry:
 
 Pass:
 
-- WingMan remains the high-level route executor and McHeliCE remains the
-  physics executor.
+- WingMan advances route nodes; the RDP controller owns leased attitude/throttle setpoints, and McHeliCE integrates the resulting physics.
 - Native control writes only bounded yaw, pitch, roll, and throttle through the
   verified McHeliCE API; no direct position or motion mutation is expected.
 - Lease ownership is exclusive and released on pause, abort, failure, or loss.
@@ -193,13 +213,12 @@ same registry type.
 | Profile | Native route | Guidance/terminal behavior | Payload/recovery |
 | --- | --- | --- | --- |
 | `ONE_WAY` | WingMan route plus bounded native yaw/pitch/roll/throttle | Moving-target lead, finite multi-angle terminal leg, no terminal loiter | Self-destruct only after speed, nose/radius, geometry, and weapon checks |
-| `HELICOPTER_ONE_WAY_FPV` | Same native path with helicopter attitude limits and FPV throttle command | Bounded hover/standoff and climb/descent target normalization | Terminal payload remains finite; visual hover and camera behavior require live validation |
+| `HELICOPTER_ONE_WAY_FPV` | Leased helicopter attitude/collective feedback controller; FPV state selects mission policy without a separate unconsumed command object | Bounded hover/standoff and climb/descent target normalization | Terminal payload remains finite; visual hover and camera behavior require live validation |
 | `REUSABLE_UAV` | Native route with profile altitude envelope | Target lead and standoff observation; no forced terminal dive | Guided/standoff attack then return/recovery path |
 | `LONG_RANGE_REUSABLE_UAV` | Same reusable path with extended lock/detection envelope | Bounded prediction and no unbounded target-coordinate jumps | Guided attack/recovery; long-range chunk loading and physical range remain live checks |
 
 The source path keeps target identity and target position separate from aircraft
-motion: target coordinates feed a calculated waypoint/terminal plan, while
-McHeliCE remains the sole physics executor. A nose-facing target with lateral
+motion: target coordinates feed a calculated waypoint/terminal plan; the leased RDP controller applies bounded attitude/throttle setpoints, and McHeliCE integrates aircraft physics. A nose-facing target with lateral
 flight is therefore treated as a convergence failure/terminal diagnostic rather
 than accepted as mission success. Visible confirmation that an aircraft does
 not orbit or spiral while converging is `LIVE_VALIDATION_REQUIRED`.

@@ -930,10 +930,18 @@ public final class RdpUavNetwork {
                             net.vas.rdp.uav.weapon.GuidedWeaponRegistry.find(
                                     weapon.getName(), weapon.getInfo().type);
                     if (capability == null) continue;
-                    weaponNames.add(weapon.getName());
                     weaponRows.add(weapon.getName() + "/" + weapon.getInfo().type
-                            + " " + capability.getBehavior() + " ammo="
+                            + " " + capability.getBehavior() + " objectives="
+                            + capability.getObjectives() + " ammo="
                             + (weapon.getAmmo() + weapon.getAmmoReserve()));
+                    if (capability.getBehavior()
+                            != net.vas.rdp.uav.weapon.GuidedNativeBehavior.UNSUPPORTED
+                            && (weapon.getAmmo() > 0 || weapon.getAmmoReserve() > 0)) {
+                        // Only an executable, loaded capability belongs in the
+                        // operator's weapon selector. Unsupported definitions
+                        // remain visible in weaponRows with their reason/type.
+                        weaponNames.add(weapon.getName());
+                    }
                 }
                 for (net.vas.rdp.uav.weapon.MissileGuidanceController.WeaponTelemetry telemetry :
                         net.vas.rdp.uav.weapon.MissileGuidanceController.telemetry(

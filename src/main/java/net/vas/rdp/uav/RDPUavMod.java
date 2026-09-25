@@ -7,6 +7,7 @@ import net.minecraftforge.fml.common.event.FMLInitializationEvent;
 import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
 import net.minecraftforge.fml.common.event.FMLServerStartingEvent;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
+import net.minecraftforge.fml.common.eventhandler.EventPriority;
 import net.minecraftforge.fml.common.gameevent.TickEvent;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraft.entity.player.EntityPlayerMP;
@@ -94,7 +95,7 @@ public final class RDPUavMod {
     }
 
     private static final class ServerTickHandler {
-        @SubscribeEvent
+        @SubscribeEvent(priority = EventPriority.LOWEST)
         public void onWorldTick(TickEvent.WorldTickEvent event) {
             if (event.world.isRemote) {
                 return;

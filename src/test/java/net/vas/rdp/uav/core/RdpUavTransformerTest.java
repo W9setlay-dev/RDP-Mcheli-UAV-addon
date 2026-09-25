@@ -101,6 +101,70 @@ public class RdpUavTransformerTest {
                 hasAuthorityCall[0]);
     }
 
+    @Test
+    public void transformedWingmanMovementWritersRespectAddonControlLease() throws IOException {
+        assertMovementGuard("com/norwood/mcheli/wingman/handler/WingmanTickHandler.class",
+                "com.norwood.mcheli.wingman.handler.WingmanTickHandler", "setRotYaw");
+        assertMovementGuard("com/norwood/mcheli/wingman/handler/WingmanTickHandler.class",
+                "com.norwood.mcheli.wingman.handler.WingmanTickHandler", "setRotPitch");
+        assertMovementGuard("com/norwood/mcheli/wingman/handler/WingmanTickHandler.class",
+                "com.norwood.mcheli.wingman.handler.WingmanTickHandler", "setRotRoll");
+        assertMovementGuard("com/norwood/mcheli/wingman/handler/WingmanTickHandler.class",
+                "com.norwood.mcheli.wingman.handler.WingmanTickHandler", "applyThrottle");
+        assertMovementGuard("com/norwood/mcheli/wingman/handler/WingmanTickHandler.class",
+                "com.norwood.mcheli.wingman.handler.WingmanTickHandler", "maintainEngine");
+        assertMovementGuard("com/norwood/mcheli/wingman/handler/WingmanTickHandler.class",
+                "com.norwood.mcheli.wingman.handler.WingmanTickHandler", "maintainEngineAdaptive");
+        assertMovementGuard("com/norwood/mcheli/wingman/handler/WingmanTickHandler.class",
+                "com.norwood.mcheli.wingman.handler.WingmanTickHandler", "applySlotBoost");
+        assertMovementGuard("com/norwood/mcheli/wingman/handler/WingmanTickHandler.class",
+                "com.norwood.mcheli.wingman.handler.WingmanTickHandler", "holdStop");
+        assertMovementGuard("com/norwood/mcheli/wingman/handler/WingmanTickHandler.class",
+                "com.norwood.mcheli.wingman.handler.WingmanTickHandler", "taxiPushPosition");
+        assertMovementGuard("com/norwood/mcheli/wingman/handler/AutonomousFlightHandler.class",
+                "com.norwood.mcheli.wingman.handler.AutonomousFlightHandler", "forcePitch");
+        assertMovementGuard("com/norwood/mcheli/wingman/handler/AutonomousFlightHandler.class",
+                "com.norwood.mcheli.wingman.handler.AutonomousFlightHandler", "forceYaw");
+        assertMovementGuard("com/norwood/mcheli/wingman/handler/AutonomousFlightHandler.class",
+                "com.norwood.mcheli.wingman.handler.AutonomousFlightHandler", "forceRoll");
+        assertMovementGuard("com/norwood/mcheli/wingman/handler/AutonomousFlightHandler.class",
+                "com.norwood.mcheli.wingman.handler.AutonomousFlightHandler", "setThrottle");
+    }
+
+    private static void assertMovementGuard(String entryName, String className,
+                                            String expectedMethod) throws IOException {
+        byte[] transformed = new RdpUavTransformer().transform(className, className,
+                getBytes(entryName));
+        final boolean[] guarded = {false};
+        final boolean[] foundVoidMethod = {false};
+        new ClassReader(transformed).accept(new ClassVisitor(Opcodes.ASM5) {
+            @Override
+            public MethodVisitor visitMethod(int access, String name, String descriptor,
+                                             String signature, String[] exceptions) {
+                MethodVisitor visitor = super.visitMethod(access, name, descriptor,
+                        signature, exceptions);
+                if (!expectedMethod.equals(name)) return visitor;
+                foundVoidMethod[0] = descriptor.endsWith(")V");
+                return new MethodVisitor(Opcodes.ASM5, visitor) {
+                    @Override
+                    public void visitMethodInsn(int opcode, String owner, String method,
+                                                String methodDescriptor, boolean isInterface) {
+                        if (opcode == Opcodes.INVOKESTATIC
+                                && "net/vas/rdp/uav/mission/MissionMovementAuthority".equals(owner)
+                                && "suppressWingManMovement".equals(method)) {
+                            guarded[0] = true;
+                        }
+                        super.visitMethodInsn(opcode, owner, method,
+                                methodDescriptor, isInterface);
+                    }
+                };
+            }
+        }, 0);
+        assertTrue(expectedMethod + " must retain its verified void signature", foundVoidMethod[0]);
+        assertTrue(expectedMethod + " must defer to the active addon movement lease",
+                guarded[0]);
+    }
+
     @NotNull
     private static byte[] getBytes() throws IOException {
         return getBytes("com/norwood/mcheli/uav/MCH_EntityUavStation.class");

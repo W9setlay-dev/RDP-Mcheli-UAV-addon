@@ -47,8 +47,9 @@ import net.vas.rdp.uav.RdpUavDebug;
 /**
  * Server-side bridge between persisted RDP missions and WingMan.
  *
- * <p>WingMan remains the sole aircraft controller.  This class only submits
- * safe recon/recovery orders and observes the public WingMan entry state.</p>
+ * <p>WingMan owns route sequencing. For an active mission, the RDP flight
+ * computer owns the final leased attitude/throttle setpoints; this lifecycle
+ * coordinates dispatch, target policy, mission outcomes, and recovery state.</p>
  */
 public final class MissionLifecycle {
     private static final Logger LOGGER = LogManager.getLogger("RDP-UAV/MissionLifecycle");
@@ -800,11 +801,14 @@ public final class MissionLifecycle {
         double currentRouteProgress = routeEntry == null || routeEntry.mission == null
                 ? mission.getRouteProgress() : Math.max(0.0D, routeEntry.missionIndex);
         double currentDistanceToTarget = target == null ? Double.NaN : targetDistance(aircraft, target);
-        double currentDistanceToWaypoint = routeEntry == null || routeEntry.currentNode() == null
+        double currentDistanceToWaypoint = routeEntry == null
+                || !Double.isFinite(routeEntry.autoTargetX)
+                || !Double.isFinite(routeEntry.autoTargetY)
+                || !Double.isFinite(routeEntry.autoTargetZ)
                 ? Double.NaN : Math.sqrt(
-                        Math.pow(aircraft.posX - routeEntry.currentNode().x, 2.0D)
-                                + Math.pow(aircraft.posY - routeEntry.currentNode().y, 2.0D)
-                                + Math.pow(aircraft.posZ - routeEntry.currentNode().z, 2.0D));
+                        Math.pow(aircraft.posX - routeEntry.autoTargetX, 2.0D)
+                                + Math.pow(aircraft.posY - routeEntry.autoTargetY, 2.0D)
+                                + Math.pow(aircraft.posZ - routeEntry.autoTargetZ, 2.0D));
         mission.recordProgress(tick,
                 mission.getRouteProgress(),
                 currentRouteProgress,

@@ -11,7 +11,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
-/** Captures bounded, observed aircraft state after native updates. */
+/** Captures the latest native aircraft physics result for the next control tick. */
 public final class AircraftStateEstimator {
     private final Map<UUID, AircraftState> lastStates = new HashMap<>();
 
@@ -79,10 +79,12 @@ public final class AircraftStateEstimator {
     }
 
     private static double distanceToNode(MCH_EntityAircraft aircraft, WingmanEntry entry) {
-        if (entry == null || entry.currentNode() == null) return Double.NaN;
-        double dx = entry.currentNode().x - aircraft.posX;
-        double dy = entry.currentNode().y - aircraft.posY;
-        double dz = entry.currentNode().z - aircraft.posZ;
+        if (entry == null || !Double.isFinite(entry.autoTargetX)
+                || !Double.isFinite(entry.autoTargetY)
+                || !Double.isFinite(entry.autoTargetZ)) return Double.NaN;
+        double dx = entry.autoTargetX - aircraft.posX;
+        double dy = entry.autoTargetY - aircraft.posY;
+        double dz = entry.autoTargetZ - aircraft.posZ;
         return Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
 
