@@ -33,4 +33,22 @@ public class AircraftStateTest {
                 0.0F, 0.0F, 0.0F, 0.0D, "UNKNOWN",
                 null, null, false, -1, 0.0D, 0.0D, 0.0D, 0.0D, 1L, "UNKNOWN");
     }
+
+    @Test
+    public void preservesPhysicalMotionAndGroundTrackSeparatelyFromPositionDelta() {
+        AircraftState state = AircraftState.observeWithPhysicalMotion(
+                UUID.randomUUID(), 0, 30L,
+                10.0D, 15.0D, 14.0D,
+                8.0D, 15.0D, 14.0D,
+                0.4D, 0.0D, 0.8D, 2.0D,
+                90.0F, 2.0F, -1.0F, 0.6D, "ENROUTE",
+                null, ControlOwner.MISSION_AI, true,
+                2, 0.5D, 8.0D, 20.0D, 25.0D, 20L, "KNOWN");
+
+        assertEquals(0.4D, state.getMotionX(), 0.0D);
+        assertEquals(0.8D, state.getMotionZ(), 0.0D);
+        assertEquals(2.0D, state.getSampleIntervalTicks(), 0.0D);
+        assertEquals(333.4349488D, state.getGroundTrackYaw(), 1.0E-6D);
+        assertEquals(1.0D, state.getVelocityX(), 0.0D);
+    }
 }

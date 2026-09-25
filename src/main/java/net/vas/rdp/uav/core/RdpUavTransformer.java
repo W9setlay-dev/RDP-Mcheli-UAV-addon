@@ -8,14 +8,20 @@ import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Label;
 
 public final class RdpUavTransformer implements net.minecraft.launchwrapper.IClassTransformer {
-    private static final String TARGET = "com.norwood.mcheli.uav.MCH_EntityUavStation";
+    private static final String UAV_STATION_TARGET = "com.norwood.mcheli.uav.MCH_EntityUavStation";
+    private static final String CONTROL_PACKET_TARGET =
+            "com.norwood.mcheli.networking.packet.control.PacketPlayerControlBase";
     private static final String RDP_CORE_PREFIX = "net.vas.rdpcore.";
 
     @Override
     public byte[] transform(String name, String transformedName, byte[] basicClass) {
         byte[] compatibleClass = replaceJava11StringRepeat(name, transformedName, basicClass);
-        if (compatibleClass != basicClass || (!TARGET.equals(transformedName) && !TARGET.equals(name))) {
-            if (!TARGET.equals(transformedName) && !TARGET.equals(name)) return compatibleClass;
+        boolean isUavStation = UAV_STATION_TARGET.equals(transformedName)
+                || UAV_STATION_TARGET.equals(name);
+        boolean isControlPacket = CONTROL_PACKET_TARGET.equals(transformedName)
+                || CONTROL_PACKET_TARGET.equals(name);
+        if (compatibleClass != basicClass || (!isUavStation && !isControlPacket)) {
+            if (!isUavStation && !isControlPacket) return compatibleClass;
             basicClass = compatibleClass;
         }
         ClassReader reader = new ClassReader(basicClass);
@@ -28,8 +34,28 @@ public final class RdpUavTransformer implements net.minecraft.launchwrapper.ICla
             public MethodVisitor visitMethod(int access, String methodName, String descriptor,
                                              String signature, String[] exceptions) {
                 MethodVisitor delegate = super.visitMethod(access, methodName, descriptor, signature, exceptions);
-                if (!"func_70097_a".equals(methodName)
-                        && !"attackEntityFrom".equals(methodName)) return delegate;
+                if (isControlPacket && "handlePilotControls".equals(methodName)) {
+                    return new MethodVisitor(Opcodes.ASM5, delegate) {
+                        @Override
+                        public void visitCode() {
+                            super.visitCode();
+                            super.visitVarInsn(Opcodes.ALOAD, 1);
+                            super.visitVarInsn(Opcodes.ALOAD, 3);
+                            super.visitMethodInsn(Opcodes.INVOKESTATIC,
+                                    "net/vas/rdp/uav/mission/MissionMovementAuthority",
+                                    "suppressOperatorFlightInput",
+                                    "(Lcom/norwood/mcheli/aircraft/MCH_EntityAircraft;"
+                                            + "Lnet/minecraft/entity/Entity;)Z",
+                                    false);
+                            Label allowed = new Label();
+                            super.visitJumpInsn(Opcodes.IFEQ, allowed);
+                            super.visitInsn(Opcodes.RETURN);
+                            super.visitLabel(allowed);
+                        }
+                    };
+                }
+                if (!isUavStation || (!"func_70097_a".equals(methodName)
+                        && !"attackEntityFrom".equals(methodName))) return delegate;
                 return new MethodVisitor(Opcodes.ASM5, delegate) {
                     @Override
                     public void visitMethodInsn(int opcode, String owner, String method,

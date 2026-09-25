@@ -21,6 +21,11 @@ public final class AircraftState {
     private final double velocityX;
     private final double velocityY;
     private final double velocityZ;
+    private final double motionX;
+    private final double motionY;
+    private final double motionZ;
+    private final double sampleIntervalTicks;
+    private final double groundTrackYaw;
     private final double horizontalSpeed;
     private final double verticalSpeed;
     private final float yaw;
@@ -43,14 +48,17 @@ public final class AircraftState {
                           double x, double y, double z,
                           double previousX, double previousY, double previousZ,
                           double velocityX, double velocityY, double velocityZ,
+                          double motionX, double motionY, double motionZ,
+                          double sampleIntervalTicks, double groundTrackYaw,
                           float yaw, float pitch, float roll, double throttle,
                           String flightMode, UUID missionId, ControlOwner controlOwner,
                           boolean controlLeaseValid, int routeNode, double routeProgress,
                           double distanceToWaypoint, double distanceToTarget,
                           double distanceToIntercept, long lastMeaningfulProgressTick,
                           String terrainKnowledgeState) {
-        if (aircraftId == null || sampleTick < 0L || !finite(x, y, z, previousX, previousY,
-                previousZ, velocityX, velocityY, velocityZ, throttle, distanceToWaypoint,
+        if (aircraftId == null || sampleTick < 0L || finite(x, y, z, previousX, previousY,
+                previousZ, velocityX, velocityY, velocityZ, motionX, motionY, motionZ,
+                sampleIntervalTicks, groundTrackYaw, throttle, distanceToWaypoint,
                 distanceToTarget, distanceToIntercept, routeProgress)
                 || routeNode < -1 || lastMeaningfulProgressTick < 0L) {
             throw new IllegalArgumentException("Invalid aircraft state");
@@ -61,6 +69,9 @@ public final class AircraftState {
         this.x = x; this.y = y; this.z = z;
         this.previousX = previousX; this.previousY = previousY; this.previousZ = previousZ;
         this.velocityX = velocityX; this.velocityY = velocityY; this.velocityZ = velocityZ;
+        this.motionX = motionX; this.motionY = motionY; this.motionZ = motionZ;
+        this.sampleIntervalTicks = sampleIntervalTicks;
+        this.groundTrackYaw = groundTrackYaw;
         this.horizontalSpeed = Math.sqrt(velocityX * velocityX + velocityZ * velocityZ);
         this.verticalSpeed = velocityY;
         this.yaw = yaw; this.pitch = pitch; this.roll = roll;
@@ -96,15 +107,54 @@ public final class AircraftState {
         double velocityZ = (z - previousZ) / elapsed;
         return new AircraftState(aircraftId, dimension, tick, x, y, z,
                 previousX, previousY, previousZ, velocityX, velocityY, velocityZ,
+                0.0D, 0.0D, 0.0D, 1.0D,
+                groundTrackYaw(velocityX, velocityZ),
                 yaw, pitch, roll, throttle, flightMode, missionId, controlOwner,
                 leaseValid, routeNode, routeProgress, distanceToWaypoint,
                 distanceToTarget, distanceToIntercept, lastMeaningfulProgressTick,
                 terrainKnowledgeState);
     }
 
+    public static AircraftState observeWithPhysicalMotion(
+            UUID aircraftId, int dimension, long tick,
+            double x, double y, double z,
+            double previousX, double previousY, double previousZ,
+            double motionX, double motionY, double motionZ,
+            double sampleIntervalTicks,
+            float yaw, float pitch, float roll, double throttle,
+            String flightMode, UUID missionId, ControlOwner controlOwner,
+            boolean leaseValid, int routeNode, double routeProgress,
+            double distanceToWaypoint, double distanceToTarget,
+            double distanceToIntercept, long lastMeaningfulProgressTick,
+            String terrainKnowledgeState) {
+        if (finite(motionX, motionY, motionZ, sampleIntervalTicks)
+                || sampleIntervalTicks <= 0.0D) {
+            throw new IllegalArgumentException("Invalid physical aircraft motion");
+        }
+        double velocityX = (x - previousX) / sampleIntervalTicks;
+        double velocityY = (y - previousY) / sampleIntervalTicks;
+        double velocityZ = (z - previousZ) / sampleIntervalTicks;
+        return new AircraftState(aircraftId, dimension, tick, x, y, z,
+                previousX, previousY, previousZ, velocityX, velocityY, velocityZ,
+                motionX, motionY, motionZ, sampleIntervalTicks,
+                groundTrackYaw(motionX, motionZ),
+                yaw, pitch, roll, throttle, flightMode, missionId, controlOwner,
+                leaseValid, routeNode, routeProgress, distanceToWaypoint,
+                distanceToTarget, distanceToIntercept, lastMeaningfulProgressTick,
+                terrainKnowledgeState);
+    }
+
+    private static double groundTrackYaw(double velocityX, double velocityZ) {
+        if (Math.abs(velocityX) < 1.0E-9D && Math.abs(velocityZ) < 1.0E-9D) {
+            return Double.NaN;
+        }
+        double degrees = Math.toDegrees(Math.atan2(-velocityX, velocityZ));
+        return degrees < 0.0D ? degrees + 360.0D : degrees;
+    }
+
     private static boolean finite(double... values) {
-        for (double value : values) if (!Double.isFinite(value)) return false;
-        return true;
+        for (double value : values) if (!Double.isFinite(value)) return true;
+        return false;
     }
 
     public UUID getAircraftId() { return aircraftId; }
@@ -119,6 +169,11 @@ public final class AircraftState {
     public double getVelocityX() { return velocityX; }
     public double getVelocityY() { return velocityY; }
     public double getVelocityZ() { return velocityZ; }
+    public double getMotionX() { return motionX; }
+    public double getMotionY() { return motionY; }
+    public double getMotionZ() { return motionZ; }
+    public double getSampleIntervalTicks() { return sampleIntervalTicks; }
+    public double getGroundTrackYaw() { return groundTrackYaw; }
     public double getHorizontalSpeed() { return horizontalSpeed; }
     public double getVerticalSpeed() { return verticalSpeed; }
     public float getYaw() { return yaw; }

@@ -36,9 +36,13 @@ public final class AircraftStateEstimator {
         TargetLock lock = mission == null ? null : mission.getTargetLock();
         double targetDistance = lock == null ? 0.0D : distance(aircraft.posX, aircraft.posY,
                 aircraft.posZ, lock.getX(), lock.getY(), lock.getZ());
-        AircraftState current = AircraftState.observe(id,
+        double sampleInterval = previous == null
+                ? 1.0D : Math.max(1.0D, tick - previous.getSampleTick());
+        AircraftState current = AircraftState.observeWithPhysicalMotion(
+                id,
                 aircraft.dimension, tick, aircraft.posX, aircraft.posY, aircraft.posZ,
-                previousX, previousY, previousZ, aircraft.getYaw(), aircraft.getPitch(),
+                previousX, previousY, previousZ, aircraft.motionX, aircraft.motionY,
+                aircraft.motionZ, sampleInterval, aircraft.getYaw(), aircraft.getPitch(),
                 aircraft.getRoll(), aircraft.getThrottle(), mode, missionId, owner,
                 leaseValid, routeNode, routeNode < 0 ? 0.0D : routeNode,
                 distanceToNode(aircraft, entry), targetDistance, 0.0D, progressTick,

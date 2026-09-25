@@ -1,5 +1,9 @@
 package net.vas.rdp.uav.mission;
 
+import com.norwood.mcheli.aircraft.MCH_EntityAircraft;
+import net.minecraft.entity.Entity;
+import net.vas.rdp.uav.RDPUavMod;
+
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -59,5 +63,29 @@ public final class MissionMovementAuthority {
 
     public static AircraftControlLease getActiveLease(UUID aircraftId) {
         return aircraftId == null ? null : ACTIVE_LEASES.get(aircraftId);
+    }
+
+    /**
+     * Packet boundary used by the MCheli transformer. Movement packets are
+     * still allowed to carry camera, weapon, and disconnect actions; only the
+     * native flight-axis flags are rejected while an addon mission owns the
+     * aircraft.
+     */
+    public static boolean suppressOperatorFlightInput(MCH_EntityAircraft aircraft,
+                                                       Entity operator) {
+        if (aircraft == null || operator == null || aircraft.world == null
+                || aircraft.world.isRemote) {
+            return false;
+        }
+        RDPMission mission = RDPUavMod.missions().activeMission(
+                aircraft.world, aircraft.getUniqueID());
+        if (mission == null || !nativeWingManRequired(mission)) {
+            return false;
+        }
+        aircraft.throttleUp = false;
+        aircraft.throttleDown = false;
+        aircraft.moveLeft = false;
+        aircraft.moveRight = false;
+        return true;
     }
 }
