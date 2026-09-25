@@ -37,8 +37,16 @@ public final class MissionMovementAuthority {
                 || tick < 0L) return false;
         long expiryTick = tick + CONTROL_LEASE_TICKS;
         AircraftControlLease active = ACTIVE_LEASES.get(aircraftId);
-        if (active != null && !active.isExpired(tick) && !active.getMissionId().equals(mission.getMissionId())) {
+        if (active != null && !active.isExpired(tick)
+                && !active.getMissionId().equals(mission.getMissionId())) {
             return false;
+        }
+        if (active != null && !active.isExpired(tick)
+                && active.getMissionId().equals(mission.getMissionId())) {
+            ACTIVE_LEASES.put(aircraftId,
+                    AircraftControlLease.forMission(mission, aircraftId, tick, expiryTick,
+                            "MISSION_CONTROL_RENEWAL_" + mission.getControlOwner()));
+            return true;
         }
         ACTIVE_LEASES.put(aircraftId,
                 AircraftControlLease.forMission(mission, aircraftId, tick, expiryTick,
@@ -61,6 +69,15 @@ public final class MissionMovementAuthority {
         }
     }
 
+    public static void releaseExpiredControls(long tick) {
+        if (tick < 0L) return;
+        for (Map.Entry<UUID, AircraftControlLease> entry : ACTIVE_LEASES.entrySet()) {
+            if (entry.getValue() != null && entry.getValue().isExpired(tick)) {
+                ACTIVE_LEASES.remove(entry.getKey());
+            }
+        }
+    }
+
     public static AircraftControlLease getActiveLease(UUID aircraftId) {
         return aircraftId == null ? null : ACTIVE_LEASES.get(aircraftId);
     }
@@ -75,6 +92,9 @@ public final class MissionMovementAuthority {
                                                        Entity operator) {
         if (aircraft == null || operator == null || aircraft.world == null
                 || aircraft.world.isRemote) {
+            return false;
+        }
+        if (RDPUavMod.missions() == null) {
             return false;
         }
         RDPMission mission = RDPUavMod.missions().activeMission(

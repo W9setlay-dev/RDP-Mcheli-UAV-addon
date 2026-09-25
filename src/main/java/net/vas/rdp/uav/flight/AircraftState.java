@@ -43,6 +43,10 @@ public final class AircraftState {
     private final double distanceToIntercept;
     private final long lastMeaningfulProgressTick;
     private final String terrainKnowledgeState;
+    private final String source;
+    private final String units;
+    private final double confidence;
+    private final String validityReason;
 
     private AircraftState(UUID aircraftId, int dimension, long sampleTick,
                           double x, double y, double z,
@@ -55,11 +59,13 @@ public final class AircraftState {
                           boolean controlLeaseValid, int routeNode, double routeProgress,
                           double distanceToWaypoint, double distanceToTarget,
                           double distanceToIntercept, long lastMeaningfulProgressTick,
-                          String terrainKnowledgeState) {
+                          String terrainKnowledgeState, String source,
+                          String units, double confidence, String validityReason) {
         if (aircraftId == null || sampleTick < 0L || finite(x, y, z, previousX, previousY,
                 previousZ, velocityX, velocityY, velocityZ, motionX, motionY, motionZ,
-                sampleIntervalTicks, groundTrackYaw, throttle, distanceToWaypoint,
-                distanceToTarget, distanceToIntercept, routeProgress)
+                sampleIntervalTicks, throttle, distanceToWaypoint, distanceToTarget,
+                distanceToIntercept, routeProgress)
+                || (!Double.isFinite(groundTrackYaw) && !Double.isNaN(groundTrackYaw))
                 || routeNode < -1 || lastMeaningfulProgressTick < 0L) {
             throw new IllegalArgumentException("Invalid aircraft state");
         }
@@ -88,6 +94,11 @@ public final class AircraftState {
         this.lastMeaningfulProgressTick = lastMeaningfulProgressTick;
         this.terrainKnowledgeState = terrainKnowledgeState == null
                 ? "UNKNOWN" : terrainKnowledgeState;
+        this.source = source == null || source.trim().isEmpty() ? "UNKNOWN" : source.trim();
+        this.units = units == null || units.trim().isEmpty() ? "BLOCKS_PER_TICK" : units.trim();
+        this.confidence = clampConfidence(confidence);
+        this.validityReason = validityReason == null || validityReason.trim().isEmpty()
+                ? "OK" : validityReason.trim();
     }
 
     public static AircraftState observe(UUID aircraftId, int dimension, long tick,
@@ -101,6 +112,26 @@ public final class AircraftState {
                                         double distanceToIntercept,
                                         long lastMeaningfulProgressTick,
                                         String terrainKnowledgeState) {
+        return observe(aircraftId, dimension, tick, x, y, z, previousX, previousY,
+                previousZ, yaw, pitch, roll, throttle, flightMode, missionId,
+                controlOwner, leaseValid, routeNode, routeProgress,
+                distanceToWaypoint, distanceToTarget, distanceToIntercept,
+                lastMeaningfulProgressTick, terrainKnowledgeState,
+                "POSITION_DELTA", "BLOCKS_PER_TICK", 0.65D, "OK");
+    }
+
+    public static AircraftState observe(UUID aircraftId, int dimension, long tick,
+                                        double x, double y, double z,
+                                        double previousX, double previousY, double previousZ,
+                                        float yaw, float pitch, float roll, double throttle,
+                                        String flightMode, UUID missionId,
+                                        ControlOwner controlOwner, boolean leaseValid,
+                                        int routeNode, double routeProgress,
+                                        double distanceToWaypoint, double distanceToTarget,
+                                        double distanceToIntercept,
+                                        long lastMeaningfulProgressTick,
+                                        String terrainKnowledgeState, String source,
+                                        String units, double confidence, String validityReason) {
         long elapsed = 1L;
         double velocityX = (x - previousX) / elapsed;
         double velocityY = (y - previousY) / elapsed;
@@ -112,7 +143,7 @@ public final class AircraftState {
                 yaw, pitch, roll, throttle, flightMode, missionId, controlOwner,
                 leaseValid, routeNode, routeProgress, distanceToWaypoint,
                 distanceToTarget, distanceToIntercept, lastMeaningfulProgressTick,
-                terrainKnowledgeState);
+                terrainKnowledgeState, source, units, confidence, validityReason);
     }
 
     public static AircraftState observeWithPhysicalMotion(
@@ -127,6 +158,28 @@ public final class AircraftState {
             double distanceToWaypoint, double distanceToTarget,
             double distanceToIntercept, long lastMeaningfulProgressTick,
             String terrainKnowledgeState) {
+        return observeWithPhysicalMotion(aircraftId, dimension, tick, x, y, z,
+                previousX, previousY, previousZ, motionX, motionY, motionZ,
+                sampleIntervalTicks, yaw, pitch, roll, throttle, flightMode,
+                missionId, controlOwner, leaseValid, routeNode, routeProgress,
+                distanceToWaypoint, distanceToTarget, distanceToIntercept,
+                lastMeaningfulProgressTick, terrainKnowledgeState,
+                "PHYSICAL_MOTION", "BLOCKS_PER_TICK", 0.9D, "OK");
+    }
+
+    public static AircraftState observeWithPhysicalMotion(
+            UUID aircraftId, int dimension, long tick,
+            double x, double y, double z,
+            double previousX, double previousY, double previousZ,
+            double motionX, double motionY, double motionZ,
+            double sampleIntervalTicks,
+            float yaw, float pitch, float roll, double throttle,
+            String flightMode, UUID missionId, ControlOwner controlOwner,
+            boolean leaseValid, int routeNode, double routeProgress,
+            double distanceToWaypoint, double distanceToTarget,
+            double distanceToIntercept, long lastMeaningfulProgressTick,
+            String terrainKnowledgeState, String source,
+            String units, double confidence, String validityReason) {
         if (finite(motionX, motionY, motionZ, sampleIntervalTicks)
                 || sampleIntervalTicks <= 0.0D) {
             throw new IllegalArgumentException("Invalid physical aircraft motion");
@@ -141,7 +194,12 @@ public final class AircraftState {
                 yaw, pitch, roll, throttle, flightMode, missionId, controlOwner,
                 leaseValid, routeNode, routeProgress, distanceToWaypoint,
                 distanceToTarget, distanceToIntercept, lastMeaningfulProgressTick,
-                terrainKnowledgeState);
+                terrainKnowledgeState, source, units, confidence, validityReason);
+    }
+
+    private static double clampConfidence(double value) {
+        if (!Double.isFinite(value)) return 0.0D;
+        return Math.max(0.0D, Math.min(1.0D, value));
     }
 
     private static double groundTrackYaw(double velocityX, double velocityZ) {
@@ -191,4 +249,8 @@ public final class AircraftState {
     public double getDistanceToIntercept() { return distanceToIntercept; }
     public long getLastMeaningfulProgressTick() { return lastMeaningfulProgressTick; }
     public String getTerrainKnowledgeState() { return terrainKnowledgeState; }
+    public String getSource() { return source; }
+    public String getUnits() { return units; }
+    public double getConfidence() { return confidence; }
+    public String getValidityReason() { return validityReason; }
 }

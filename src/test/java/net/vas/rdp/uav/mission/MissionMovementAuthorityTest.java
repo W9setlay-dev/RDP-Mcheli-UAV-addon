@@ -62,6 +62,17 @@ public class MissionMovementAuthorityTest {
         assertFalse(MissionMovementAuthority.canIssueNativeControl(mission, aircraftId, 1L));
     }
 
+    @Test
+    public void staleLeaseCleanupLeavesTheAircraftAvailableForFreshClaim() {
+        RDPMission mission = mission();
+        UUID aircraftId = UUID.randomUUID();
+
+        assertTrue(MissionMovementAuthority.claimControl(mission, aircraftId, 20L));
+        MissionMovementAuthority.releaseExpiredControls(23L);
+        assertTrue(MissionMovementAuthority.claimControl(mission, aircraftId, 24L));
+        assertTrue(MissionMovementAuthority.canIssueNativeControl(mission, aircraftId, 24L));
+    }
+
     private static RDPMission mission() {
         return new RDPMission(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
                 "switchblade", MissionType.RECONNAISSANCE,

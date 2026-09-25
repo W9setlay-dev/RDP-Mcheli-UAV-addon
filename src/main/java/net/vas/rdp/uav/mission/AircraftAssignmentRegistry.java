@@ -8,8 +8,12 @@ public final class AircraftAssignmentRegistry {
     private final Map<UUID, UUID> aircraftToMission = new HashMap<>();
 
     public synchronized boolean reserve(UUID aircraftId, UUID missionId) {
-        if (aircraftId == null || missionId == null || aircraftToMission.containsKey(aircraftId)) {
+        if (aircraftId == null || missionId == null) {
             return false;
+        }
+        UUID assignedMission = aircraftToMission.get(aircraftId);
+        if (assignedMission != null) {
+            return assignedMission.equals(missionId);
         }
         aircraftToMission.put(aircraftId, missionId);
         return true;

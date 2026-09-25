@@ -1,6 +1,7 @@
 package net.vas.rdp.uav.mission;
 
 import net.vas.rdp.uav.RdpUavDebug;
+import net.vas.rdp.uav.flight.RouteProgressTracker;
 import net.vas.rdp.uav.target.TargetPriority;
 import net.vas.rdp.uav.target.TargetSelectionMode;
 import net.vas.rdp.uav.target.TargetSpec;
@@ -29,6 +30,8 @@ public final class RDPMission {
     private String lastTargetReason;
     private long lastTargetTick = -1L;
     private long lastUpdateTick;
+    private double routeProgress = 0.0D;
+    private long lastMeaningfulProgressTick = -1L;
     private String failureReason;
     private String reportId;
     private int dimension;
@@ -70,6 +73,7 @@ public final class RDPMission {
         this.observationDistance = observationDistance;
         this.createdTick = createdTick;
         this.lastUpdateTick = createdTick;
+        this.lastMeaningfulProgressTick = createdTick;
         this.state = MissionState.PLANNED;
     }
 
@@ -326,6 +330,11 @@ public final class RDPMission {
         if (targetId == null || tick < lastUpdateTick) {
             throw new IllegalArgumentException("Target UUID and tick are required");
         }
+        if (state == MissionState.KAMIKADZE_TARGET
+                && this.targetId != null
+                && !this.targetId.equals(targetId)) {
+            throw new IllegalStateException("Terminal target cannot be replaced");
+        }
         this.targetId = targetId;
         if (targetLock == null || !targetLock.getEntityId().equals(targetId)) {
             targetLock = new TargetLock(targetId, "rdpuav:unknown", dimension,
@@ -340,12 +349,66 @@ public final class RDPMission {
         if (reason == null || reason.trim().isEmpty() || tick < lastUpdateTick) {
             throw new IllegalArgumentException("Target clear reason and tick are required");
         }
+        if (state == MissionState.KAMIKADZE_TARGET && targetId != null) {
+            throw new IllegalStateException("Terminal target cannot be cleared");
+        }
         if (targetId != null) lastTargetId = targetId;
         targetId = null;
         targetLock = null;
         lastTargetReason = reason;
         lastTargetTick = tick;
         lastUpdateTick = tick;
+    }
+
+    public void recordProgress(long tick, double previousRouteProgress,
+                              double currentRouteProgress,
+                              double previousDistanceToTarget,
+                              double currentDistanceToTarget,
+                              double previousDistanceToWaypoint,
+                              double currentDistanceToWaypoint) {
+        if (tick < lastUpdateTick || !Double.isFinite(previousRouteProgress)
+                || !Double.isFinite(currentRouteProgress)
+                || !Double.isFinite(previousDistanceToTarget)
+                || !Double.isFinite(currentDistanceToTarget)
+                || !Double.isFinite(previousDistanceToWaypoint)
+                || !Double.isFinite(currentDistanceToWaypoint)) {
+            throw new IllegalArgumentException("Invalid route progress update");
+        }
+        RouteProgressTracker.Snapshot snapshot = RouteProgressTracker.evaluate(
+                tick,
+                previousRouteProgress,
+                currentRouteProgress,
+                previousDistanceToTarget,
+                currentDistanceToTarget,
+                previousDistanceToWaypoint,
+                currentDistanceToWaypoint,
+                lastMeaningfulProgressTick < 0L ? createdTick : lastMeaningfulProgressTick,
+                0.5D,
+                200L);
+        this.routeProgress = snapshot.getRouteProgress();
+        this.lastMeaningfulProgressTick = snapshot.getLastMeaningfulProgressTick();
+        MissionProgressPolicy.Decision progressDecision = MissionProgressPolicy.evaluate(
+                state,
+                targetId != null,
+                snapshot.isMeaningfulProgress(),
+                tick,
+                this.lastMeaningfulProgressTick,
+                200L);
+        if (progressDecision.getAction() == MissionProgressPolicy.Action.REACQUIRE
+                && state.canTransitionTo(MissionState.LOST)) {
+            transitionTo(MissionState.LOST, tick, progressDecision.getReason());
+        } else if (progressDecision.getAction() == MissionProgressPolicy.Action.REPLAN
+                && state.canTransitionTo(MissionState.REPLAN)) {
+            transitionTo(MissionState.REPLAN, tick, progressDecision.getReason());
+        }
+        this.lastUpdateTick = tick;
+    }
+
+    public boolean isProgressStalled(long tick, long stallWindowTicks) {
+        if (tick < lastMeaningfulProgressTick || stallWindowTicks < 1L) {
+            return false;
+        }
+        return tick - lastMeaningfulProgressTick >= stallWindowTicks;
     }
 
     public void fail(String reason, long tick) {
@@ -512,6 +575,8 @@ public final class RDPMission {
     }
     public long getCreatedTick() { return createdTick; }
     public long getLastUpdateTick() { return lastUpdateTick; }
+    public double getRouteProgress() { return routeProgress; }
+    public long getLastMeaningfulProgressTick() { return lastMeaningfulProgressTick; }
     public MissionState getState() { return state; }
     public UUID getTargetId() { return targetId; }
     public TargetLock getTargetLock() { return targetLock; }

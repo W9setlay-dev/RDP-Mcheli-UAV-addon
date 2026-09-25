@@ -50,5 +50,24 @@ public class AircraftStateTest {
         assertEquals(2.0D, state.getSampleIntervalTicks(), 0.0D);
         assertEquals(333.4349488D, state.getGroundTrackYaw(), 1.0E-6D);
         assertEquals(1.0D, state.getVelocityX(), 0.0D);
+        assertEquals("PHYSICAL_MOTION", state.getSource());
+        assertEquals("BLOCKS_PER_TICK", state.getUnits());
+        assertEquals(0.9D, state.getConfidence(), 0.0D);
+        assertEquals("OK", state.getValidityReason());
+    }
+
+    @Test
+    public void carriesExplicitTelemetryMetadataWhenMotionIsPartial() {
+        AircraftState state = AircraftState.observe(UUID.randomUUID(), 0, 5L,
+                15.0D, 10.0D, 12.0D,
+                10.0D, 8.0D, 10.0D,
+                90.0F, 1.0F, 0.0F, 0.5D, "SEARCHING",
+                UUID.randomUUID(), ControlOwner.MISSION_AI, true,
+                1, 0.25D, 6.0D, 12.0D, 24.0D, 4L, "PARTIAL",
+                "POSITION_DELTA", "BLOCKS_PER_TICK", 0.68D, "SAMPLE_INTERVAL_LOW");
+
+        assertEquals("POSITION_DELTA", state.getSource());
+        assertEquals("SAMPLE_INTERVAL_LOW", state.getValidityReason());
+        assertEquals(0.68D, state.getConfidence(), 0.0D);
     }
 }

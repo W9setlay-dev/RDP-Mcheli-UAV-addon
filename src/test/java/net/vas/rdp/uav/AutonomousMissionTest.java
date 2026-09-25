@@ -131,6 +131,30 @@ public class AutonomousMissionTest {
     }
 
     @Test
+    public void routeProgressTracksRealMovementAndStallsAfterTimeout() {
+        RDPMission mission = mission(new AiTaskRequest(UUID.randomUUID(), UUID.randomUUID(),
+                MissionType.STRIKE, TargetSpec.manual("hostile:target", TargetPriority.HIGH),
+                TargetPriority.HIGH, true, AutonomyLevel.AUTONOMOUS), UUID.randomUUID());
+        UUID targetId = UUID.randomUUID();
+        mission.transitionTo(MissionState.DISPATCHED, 1L);
+        mission.transitionTo(MissionState.TAKEOFF, 2L);
+        mission.transitionTo(MissionState.CRUISE, 3L);
+        mission.transitionTo(MissionState.SEARCHING, 4L);
+        mission.transitionTo(MissionState.TARGET_ACQUIRED, 5L);
+        mission.transitionTo(MissionState.TARGET_LOCKED, 6L);
+        mission.reacquireTarget(targetId, 7L);
+
+        mission.recordProgress(100L, 0.0D, 0.4D, 40.0D, 22.0D, 60.0D, 41.0D);
+        assertFalse(mission.isProgressStalled(180L, 200L));
+        assertEquals(0.4D, mission.getRouteProgress(), 0.0D);
+        assertEquals(100L, mission.getLastMeaningfulProgressTick());
+
+        mission.recordProgress(350L, 0.4D, 0.4D, 22.0D, 22.0D, 41.0D, 41.0D);
+        assertTrue(mission.isProgressStalled(500L, 200L));
+        assertEquals(MissionState.LOST, mission.getState());
+    }
+
+    @Test
     public void wingmanFlightPlanAlternatesFlyAndAttackPasses() {
         SquareStrikePlan plan = new SquareStrikePlan(
                 100.0D, 140.0D, -50.0D, 60.0D, 90.0D, 0.0D,
@@ -281,6 +305,59 @@ public class AutonomousMissionTest {
                         candidate("farmersdelight:tomato", "tomato"),
                         candidate("minecraft:diamond_ore", "ore")));
         assertEquals("zombie", selected);
+    }
+
+    @Test
+    public void targetSelectorManualSelectionUsesExactRegistryAndStableTieBreak() {
+        TargetSelector<String> selector = new TargetSelector<>();
+        String selected = selector.select(TargetSpec.manual("hostile:target", TargetPriority.HIGH),
+                Arrays.asList(
+                        candidate("hostile:other", "other", 8.0D),
+                        candidate("Hostile:Target", "target", 2.0D),
+                        candidate("hostile:target", "target-later", 5.0D)));
+        assertEquals("target", selected);
+    }
+
+    @Test
+    public void targetSelectorManualSelectionMatchesNormalizedRegistryIdsCaseInsensitively() {
+        TargetSelector<String> selector = new TargetSelector<>();
+        String selected = selector.select(TargetSpec.manual("MINECRAFT:ZOMBIE", TargetPriority.HIGH),
+                Arrays.asList(
+                        candidate("minecraft:zombie", "zombie", 3.0D),
+                        candidate("minecraft:spider", "spider", 1.0D)));
+        assertEquals("zombie", selected);
+    }
+
+    @Test
+    public void terminalTargetCannotBeReacquiredOrCleared() {
+        UUID operator = UUID.randomUUID();
+        UUID aircraftId = UUID.randomUUID();
+        RDPMission mission = mission(new AiTaskRequest(UUID.randomUUID(), operator,
+                MissionType.STRIKE, TargetSpec.manual("hostile:target", TargetPriority.HIGH),
+                TargetPriority.HIGH, true, AutonomyLevel.AUTONOMOUS), aircraftId);
+        UUID safeTarget = UUID.randomUUID();
+        mission.transitionTo(MissionState.DISPATCHED, 1);
+        mission.transitionTo(MissionState.TAKEOFF, 2);
+        mission.transitionTo(MissionState.CRUISE, 3);
+        mission.transitionTo(MissionState.SEARCHING, 4);
+        mission.transitionTo(MissionState.TARGET_ACQUIRED, 5);
+        mission.lockTarget(safeTarget, 5);
+        mission.transitionTo(MissionState.TARGET_LOCKED, 6);
+        mission.transitionTo(MissionState.KAMIKADZE_TARGET, 7);
+
+        try {
+            mission.reacquireTarget(UUID.randomUUID(), 8);
+            fail("Terminal target must be immutable during kamikaze commit");
+        } catch (IllegalStateException expected) {
+            // Terminal target is intentionally immutable once committed.
+        }
+
+        try {
+            mission.clearTarget("TARGET_LOST", 8);
+            fail("Terminal target must not be cleared after commit");
+        } catch (IllegalStateException expected) {
+            // Terminal target remains authoritative while the payload is committed.
+        }
     }
 
     private static RDPMission mission(AiTaskRequest request, UUID aircraftId) {

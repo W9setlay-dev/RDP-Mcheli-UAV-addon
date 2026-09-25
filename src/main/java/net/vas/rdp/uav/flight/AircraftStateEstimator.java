@@ -31,22 +31,41 @@ public final class AircraftStateEstimator {
         ControlOwner owner = mission == null ? null : mission.getControlOwner();
         UUID missionId = mission == null ? null : mission.getMissionId();
         boolean leaseValid = MissionMovementAuthority.canIssueNativeControl(mission, id, tick);
-        long progressTick = previous == null ? tick
-                : previous.getLastMeaningfulProgressTick();
         TargetLock lock = mission == null ? null : mission.getTargetLock();
         double targetDistance = lock == null ? 0.0D : distance(aircraft.posX, aircraft.posY,
                 aircraft.posZ, lock.getX(), lock.getY(), lock.getZ());
+        double waypointDistance = distanceToNode(aircraft, entry);
+        double routeProgress = routeNode < 0 ? (previous == null ? 0.0D : previous.getRouteProgress())
+                : (double) routeNode;
+        long progressTick = previous == null ? tick
+                : RouteProgressTracker.evaluate(
+                        tick,
+                        previous.getRouteProgress(),
+                        routeProgress,
+                        previous.getDistanceToTarget(),
+                        targetDistance,
+                        previous.getDistanceToWaypoint(),
+                        waypointDistance,
+                        previous.getLastMeaningfulProgressTick(),
+                        0.5D,
+                        200L).getLastMeaningfulProgressTick();
         double sampleInterval = previous == null
                 ? 1.0D : Math.max(1.0D, tick - previous.getSampleTick());
+        boolean hasPhysicalMotion = Double.isFinite(aircraft.motionX)
+                && Double.isFinite(aircraft.motionY)
+                && Double.isFinite(aircraft.motionZ);
+        String source = hasPhysicalMotion ? "PHYSICAL_MOTION" : "POSITION_DELTA";
+        String validityReason = hasPhysicalMotion ? "OK" : "MOTION_UNAVAILABLE";
+        double confidence = hasPhysicalMotion ? 0.92D : 0.68D;
         AircraftState current = AircraftState.observeWithPhysicalMotion(
                 id,
                 aircraft.dimension, tick, aircraft.posX, aircraft.posY, aircraft.posZ,
                 previousX, previousY, previousZ, aircraft.motionX, aircraft.motionY,
                 aircraft.motionZ, sampleInterval, aircraft.getYaw(), aircraft.getPitch(),
                 aircraft.getRoll(), aircraft.getThrottle(), mode, missionId, owner,
-                leaseValid, routeNode, routeNode < 0 ? 0.0D : routeNode,
-                distanceToNode(aircraft, entry), targetDistance, 0.0D, progressTick,
-                "UNKNOWN");
+                leaseValid, routeNode, routeProgress,
+                waypointDistance, targetDistance, 0.0D, progressTick,
+                "UNKNOWN", source, "BLOCKS_PER_TICK", confidence, validityReason);
         lastStates.put(id, current);
         return current;
     }

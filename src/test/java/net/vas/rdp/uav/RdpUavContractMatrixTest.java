@@ -14,6 +14,7 @@ import net.vas.rdp.uav.flight.SquareStrikePlan;
 import net.vas.rdp.uav.flight.FpvFlightState;
 import net.vas.rdp.uav.flight.FpvFlightStateMachine;
 import net.vas.rdp.uav.flight.FlightCommand;
+import net.vas.rdp.uav.flight.FpvFlightController;
 import net.vas.rdp.uav.flight.FpvFlightMode;
 import net.vas.rdp.uav.scan.RDPScanReport;
 import net.vas.rdp.uav.scan.ReportNbtCodec;
@@ -88,6 +89,24 @@ public class RdpUavContractMatrixTest {
         assertEquals(10.0D, guided[0], 0.0D);
         assertEquals(-16.0D, guided[1], 0.0D);
         assertEquals(4.0D, guided[2], 0.0D);
+    }
+
+    @Test
+    public void fpvControllerCreatesBoundedMissionCommands() {
+        FlightCommand approach = FpvFlightController.compute(0.0D, 0.0D, 0.0D,
+                40.0D, 10.0D, 0.0D, 0.0D, false);
+        assertEquals(FpvFlightMode.AI_APPROACH, approach.getMode());
+        assertEquals(1.0D, approach.getForward(), 0.0D);
+        assertEquals(7.5D, approach.getVertical(), 0.0D);
+
+        FlightCommand terminal = FpvFlightController.compute(0.0D, 0.0D, 0.0D,
+                4.0D, 0.25D, 0.0D, 0.0D, true);
+        assertEquals(FpvFlightMode.TERMINAL_APPROACH, terminal.getMode());
+        assertEquals("ARMED", terminal.getTerminalState());
+
+        FlightCommand hover = FpvFlightController.compute(0.0D, 0.0D, 0.0D,
+                0.05D, 0.05D, 0.0D, 0.0D, false);
+        assertEquals(FpvFlightMode.HOVER, hover.getMode());
     }
 
     @Test

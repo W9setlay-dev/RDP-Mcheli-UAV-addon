@@ -147,7 +147,8 @@ public final class WingManFlightAdapter {
         entry.autoTargetZ = z;
         if (isFpv(aircraft)) {
             fpvCommands.put(aircraftId,
-                    FlightCommand.approach(1.0D, safeY - aircraft.posY, 1.0D));
+                    FpvFlightController.compute(aircraft.posX, aircraft.posY, aircraft.posZ,
+                            x, safeY, z, aircraft.rotationYaw, false));
             FpvFlightStateMachine state = new FpvFlightStateMachine();
             state.moveToTarget();
             fpvStates.put(aircraftId, state);
@@ -183,7 +184,9 @@ public final class WingManFlightAdapter {
                 return false;
             }
             fpvCommands.put(aircraft.getUniqueID(),
-                    FlightCommand.approach(1.0D, y - aircraft.posY, 1.0D));
+                    FpvFlightController.compute(aircraft.posX, aircraft.posY, aircraft.posZ,
+                            x, normalizeHelicopterTargetY(aircraft, y), z,
+                            aircraft.rotationYaw, false));
         }
 
         double safeY = normalizeHelicopterTargetY(aircraft, y);
@@ -325,6 +328,15 @@ public final class WingManFlightAdapter {
             leaveFpvHover(aircraft);
             return;
         }
+        double safeY = normalizeHelicopterTargetY(aircraft, y);
+        if (isFpv(aircraft)) {
+            FpvFlightState state = fpvFlightState(aircraft);
+            if (state != FpvFlightState.TERMINAL_APPROACH) {
+                fpvCommands.put(aircraft.getUniqueID(),
+                        FpvFlightController.compute(aircraft.posX, aircraft.posY, aircraft.posZ,
+                                x, safeY, z, aircraft.rotationYaw, false));
+            }
+        }
         double dx = x - entry.autoTargetX, dy = y - entry.autoTargetY, dz = z - entry.autoTargetZ;
         double length = Math.sqrt(dx * dx + dy * dy + dz * dz);
         double maxStep = 128.0D;
@@ -333,14 +345,6 @@ public final class WingManFlightAdapter {
             x = entry.autoTargetX + dx * scale;
             y = entry.autoTargetY + dy * scale;
             z = entry.autoTargetZ + dz * scale;
-        }
-        double safeY = normalizeHelicopterTargetY(aircraft, y);
-        if (isFpv(aircraft)) {
-            FpvFlightState state = fpvFlightState(aircraft);
-            if (state != FpvFlightState.TERMINAL_APPROACH) {
-                fpvCommands.put(aircraft.getUniqueID(),
-                        FlightCommand.approach(1.0D, safeY - aircraft.posY, 1.0D));
-            }
         }
         entry.currentAutoTarget = targetId;
         entry.autoTargetX = x; entry.autoTargetY = safeY; entry.autoTargetZ = z;
@@ -414,7 +418,8 @@ public final class WingManFlightAdapter {
         beginFpvTerminalApproach(aircraft);
         if (isFpv(aircraft)) {
             fpvCommands.put(aircraft.getUniqueID(),
-                    FlightCommand.terminalApproach(1.0D, y - aircraft.posY, 1.0D));
+                    FpvFlightController.compute(aircraft.posX, aircraft.posY, aircraft.posZ,
+                            x, y, z, aircraft.rotationYaw, true));
         }
         int weaponId = selectSelfDestructWeapon(aircraft);
         if (weaponId < 0) return true;
@@ -752,7 +757,8 @@ public final class WingManFlightAdapter {
         if (isFpv(aircraft)) {
             beginFpvTerminalApproach(aircraft);
             fpvCommands.put(aircraftId,
-                    FlightCommand.terminalApproach(1.0D, safeY - aircraft.posY, 1.0D));
+                    FpvFlightController.compute(aircraft.posX, aircraft.posY, aircraft.posZ,
+                            plannedX, safeY, plannedZ, aircraft.rotationYaw, true));
         }
     }
 

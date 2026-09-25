@@ -1230,6 +1230,22 @@ public final class MissionLifecycle {
         Vec3d end = new Vec3d(target.x, target.y + 1.0D, target.z);
         RayTraceResult hit = world.rayTraceBlocks(start, end, false, true, false);
         boolean corridorBlocked = hit != null && hit.typeOfHit == RayTraceResult.Type.BLOCK;
+        boolean lineOfSightBlocked = corridorBlocked;
+        boolean fuelReady = !flight.isFuelInsufficientForMission(aircraft);
+        boolean returnViable = true;
+        TerminalCommitPolicy.Decision terminal = TerminalCommitPolicy.evaluate(
+                distance, altitudeDelta, corridorBlocked, lineOfSightBlocked,
+                false, fuelReady, returnViable, observationDistance,
+                Math.max(8.0D, observationDistance * 0.5D));
+
+        if (terminal.getState() == TerminalCommitPolicy.DecisionState.HOLD
+                || terminal.getState() == TerminalCommitPolicy.DecisionState.ABORT) {
+            return MissionSafety.RouteDecision.HOLD_AND_REEVALUATE;
+        }
+        if (terminal.getCorridor() != null) {
+            MissionSafety.RouteDecision route = terminal.getCorridor().getRouteDecision();
+            if (route != null) return route;
+        }
         return MissionSafety.decideRoute(distance, altitudeDelta, corridorBlocked, observationDistance);
     }
 
