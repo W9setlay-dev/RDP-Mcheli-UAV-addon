@@ -212,6 +212,34 @@ and live target confidence still require their respective production data
 providers; they must not be filled with synthetic zeros. Runtime values remain
 `PENDING_DEVELOPER_IN_GAME_TEST`.
 
+## Phase 3 — fixed-wing route-following contract
+
+### Objective
+
+Convert the already-defined FPV route intent into a bounded native guidance
+bias without inventing a second movement writer. The fixed-wing/FPV guidance
+must remain deterministic, profile-aware, and consistent with the mission's
+server-authoritative control boundary.
+
+### Changes
+
+- `NativeAircraftControlAdapter.applyFpvGuidance(...)` now folds the FPV
+  command's forward, lateral, and vertical intent into the native target
+  vector in a bounded, profile-safe way before the server controller computes
+  the final yaw/pitch/roll/throttle values.
+- Forward bias is clamped to a small positive/negative envelope, lateral bias
+  is constrained to a narrow side slip correction, and vertical bias is limited
+  to the existing native terminal-approach safety window.
+- Regression coverage was added to verify the path-bias remains bounded and
+  deterministic when a mission is already using the FPV approach mode.
+
+### Audit and limits
+
+This is a deterministic controller contract, not a claim of live aircraft
+behavior. It is intentionally bounded and separated from position or motion
+writing until the developer verifies the real in-game response of the airframe.
+`PENDING_DEVELOPER_IN_GAME_TEST` remains in effect.
+
 ### Automated verification
 
 - Command: `.\\gradlew.bat test --no-daemon`

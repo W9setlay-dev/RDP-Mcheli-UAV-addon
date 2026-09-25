@@ -80,6 +80,17 @@ public class RdpUavContractMatrixTest {
     }
 
     @Test
+    public void fpvGuidanceBiasesRouteVectorWithoutBreakingBounds() {
+        double[] guided = net.vas.rdp.uav.flight.NativeAircraftControlAdapter
+                .applyFpvGuidance(10.0D, 0.0D, 0.0D,
+                        FlightCommand.approach(1.0D, -100.0D, 12.0D));
+
+        assertEquals(10.0D, guided[0], 0.0D);
+        assertEquals(-16.0D, guided[1], 0.0D);
+        assertEquals(4.0D, guided[2], 0.0D);
+    }
+
+    @Test
     public void hoverExitIsSeparateFromTheFirstPursuitWrite() {
         FpvFlightStateMachine states = new FpvFlightStateMachine();
         states.hover();

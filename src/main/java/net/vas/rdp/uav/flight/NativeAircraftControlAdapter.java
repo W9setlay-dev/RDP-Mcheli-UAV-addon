@@ -87,6 +87,10 @@ public final class NativeAircraftControlAdapter {
         double dx = targetX - aircraft.posX;
         double dy = targetY - aircraft.posY;
         double dz = targetZ - aircraft.posZ;
+        double[] guided = applyFpvGuidance(dx, dy, dz, fpvCommand);
+        dx = guided[0];
+        dy = guided[1];
+        dz = guided[2];
         NativeControlMath.Command shaped = NativeControlMath.compute(
                 aircraft.getYaw(), aircraft.getPitch(), aircraft.getRoll(),
                 aircraft.getCurrentThrottle(), dx, dy, dz,
@@ -102,9 +106,31 @@ public final class NativeAircraftControlAdapter {
                 shaped.getRoll(), shaped.getThrottle());
     }
 
+    public static double[] applyFpvGuidance(double dx, double dy, double dz, FlightCommand fpvCommand) {
+        if (fpvCommand == null) {
+            return new double[] { dx, dy, dz };
+        }
+        double forwardBias = clamp(Math.abs(fpvCommand.getForward()), 0.0D, 1.0D) * 4.0D;
+        double lateralBias = clamp(fpvCommand.getLateral(), -1.0D, 1.0D) * 2.0D;
+        double verticalBias = clamp(fpvCommand.getVertical(), -16.0D, 16.0D);
+        double forwardDirection = Math.signum(fpvCommand.getForward());
+        if (Double.isNaN(forwardDirection)) {
+            forwardDirection = 0.0D;
+        }
+        return new double[] {
+                dx + lateralBias,
+                dy + verticalBias,
+                dz + (forwardDirection * forwardBias)
+        };
+    }
+
     private static boolean finite(double... values) {
         for (double value : values) if (!Double.isFinite(value)) return false;
         return true;
+    }
+
+    private static double clamp(double value, double minimum, double maximum) {
+        return Math.max(minimum, Math.min(maximum, value));
     }
 
     public static final class ControlCommand {
