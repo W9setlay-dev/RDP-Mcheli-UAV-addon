@@ -1578,6 +1578,20 @@ public final class RdpUavNetwork {
                 return net.vas.rdp.uav.weapon.GuidedWeaponRegistry.find(
                         weapon.getName(), weapon.getInfo().type) != null;
             }
+            // The GUI may retain a stale priority from another aircraft.
+            // Accept the mission when this airframe has another verified
+            // guided weapon; the adapter will select it and emit telemetry.
+            for (MCH_WeaponSet weapon : aircraft.getWeapons()) {
+                if (weapon == null || weapon.getInfo() == null) continue;
+                net.vas.rdp.uav.weapon.GuidedWeaponCapability capability =
+                        net.vas.rdp.uav.weapon.GuidedWeaponRegistry.find(
+                                weapon.getName(), weapon.getInfo().type);
+                if (capability != null
+                        && capability.getBehavior()
+                        != net.vas.rdp.uav.weapon.GuidedNativeBehavior.UNSUPPORTED) {
+                    return true;
+                }
+            }
             return false;
         }
 
@@ -1915,7 +1929,7 @@ public final class RdpUavNetwork {
                                 false, "NOT_CHECKED");
                         return;
                     }
-                    if (!net.vas.rdp.uav.target.TargetPolicy.isSelectableContact(
+                    if (!net.vas.rdp.uav.target.TargetPolicy.isSelectableExactContact(
                             player.world, target, player)) {
                         rejectTargetLock(player, aircraft, message.targetId, "TARGET_FILTERED",
                                 net.minecraft.entity.EntityList.getKey(target),

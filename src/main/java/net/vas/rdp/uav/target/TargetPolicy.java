@@ -100,8 +100,29 @@ public final class TargetPolicy {
         String id = EntityList.getKey(entity) == null ? "" : Objects.requireNonNull(EntityList.getKey(entity)).toString();
         boolean actualVehicleHostile = entity instanceof MCH_EntityAircraft
                 && TargetClassifier.isHostileVehicle(entity);
+        // An operator lock is an explicit crosshair selection.  When vehicle
+        // targets are enabled, a loaded McHeli aircraft is a valid exact
+        // contact even if its registry id is not in the hostile classifier.
+        // Automatic discovery still applies the normal hostile filters.
+        if (allowHostileVehicles && actualVehicleHostile) return true;
         return TargetClassifier.isHostileCandidate(id)
-                || (allowHostileVehicles && (TargetClassifier.isHostileVehicle(id) || actualVehicleHostile));
+                || (allowHostileVehicles && TargetClassifier.isHostileVehicle(id));
+    }
+
+    /** Server gate for an operator's explicit crosshair UUID selection. */
+    public static boolean isSelectableExactContact(World world, Entity entity,
+                                                   EntityPlayer operator) {
+        if (world == null || entity == null || entity.isDead
+                || entity instanceof MCH_EntityAircraft
+                && operator != null && entity == operator.getRidingEntity()) return false;
+        if (entity instanceof EntityPlayer
+                && operator != null && operator.isOnSameTeam(entity)) return false;
+        // Explicit crosshair selection is authoritative for McHeli vehicle
+        // contacts; do not reject an airborne/landed aircraft through the
+        // generic embedded-contact heuristic.
+        if (entity instanceof MCH_EntityAircraft && allowHostileVehicles) return true;
+        if (rejectDeeplyEmbedded && isSafeContact(world, entity)) return false;
+        return isSelectableContact(world, entity, operator);
     }
 
     public static final class Builder {
@@ -166,8 +187,9 @@ public final class TargetPolicy {
             }
             boolean actualVehicleHostile = entity instanceof MCH_EntityAircraft
                     && TargetClassifier.isHostileVehicle(entity);
+            if (allowVehicleTargets && actualVehicleHostile) return Decision.accept();
             boolean hostile = TargetClassifier.isHostileCandidate(id)
-                    || (allowVehicleTargets && (TargetClassifier.isHostileVehicle(id) || actualVehicleHostile));
+                    || (allowVehicleTargets && TargetClassifier.isHostileVehicle(id));
             if (!hostile) return Decision.reject(ResultCode.NOT_HOSTILE, "NOT_HOSTILE");
             if (minimumConfidence > 0D && TargetClassifier.threatScore(id) < minimumConfidence) {
                 return Decision.reject(ResultCode.LOW_CONFIDENCE, "LOW_CONFIDENCE");

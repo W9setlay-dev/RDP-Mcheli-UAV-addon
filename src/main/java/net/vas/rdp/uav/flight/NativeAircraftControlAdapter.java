@@ -23,10 +23,10 @@ public final class NativeAircraftControlAdapter {
      * Applies one authoritative server command. McHeliCE's setters are
      * absolute, so every value is rate-limited against the observed attitude.
      */
-    public static boolean apply(World world, MissionManager missions,
-                                MCH_EntityAircraft aircraft, RDPMission mission,
-                                double targetX, double targetY, double targetZ,
-                                FlightCommand fpvCommand, long tick) {
+    public static void apply(World world, MissionManager missions,
+                             MCH_EntityAircraft aircraft, RDPMission mission,
+                             double targetX, double targetY, double targetZ,
+                             FlightCommand fpvCommand, long tick) {
         if (world == null || world.isRemote || missions == null || aircraft == null
                 || mission == null || aircraft.isDead
                 || !MissionMovementAuthority.claimControl(mission,
@@ -34,17 +34,16 @@ public final class NativeAircraftControlAdapter {
                 || !MissionMovementAuthority.canIssueNativeControl(mission,
                 aircraft.getUniqueID(), tick)
                 || !canControlAircraft(aircraft)) {
-            return false;
+            return;
         }
         ControlCommand command = commandFor(aircraft, targetX, targetY, targetZ, fpvCommand);
-        if (!command.isSupported()) return false;
+        if (!command.isSupported()) return;
 
         aircraft.setRotYaw(command.getYaw());
         aircraft.setRotPitch(command.getPitch());
         aircraft.setRotRoll(command.getRoll());
         aircraft.setThrottle(command.getThrottle());
         aircraft.updateControl();
-        return true;
     }
 
     public static boolean canControlAircraft(MCH_EntityAircraft aircraft) {

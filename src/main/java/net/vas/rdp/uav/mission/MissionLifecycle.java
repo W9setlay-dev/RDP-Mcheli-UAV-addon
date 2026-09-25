@@ -567,7 +567,10 @@ public final class MissionLifecycle {
                     continue;
                 }
                 if (!mission.isKamikazePayloadLaunched()
-                        && flight.fireSelfDestructWeapon(aircraft, true)) {
+                        && flight.detonateSelfDestructWeapon(aircraft,
+                        target == null ? aircraft.posX : target.x,
+                        target == null ? aircraft.posY : target.y,
+                        target == null ? aircraft.posZ : target.z, true)) {
                     LOGGER.info("Mission {} kamikaze payload launch accepted aircraft={} impact={} inRadius={} target={} tick={}",
                             mission.getMissionId(), aircraft.getUniqueID(), noseImpact,
                             targetInRadius, formatTarget(target), tick);

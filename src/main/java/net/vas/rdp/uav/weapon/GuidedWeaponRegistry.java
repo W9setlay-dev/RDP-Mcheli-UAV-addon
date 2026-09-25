@@ -181,6 +181,19 @@ public final class GuidedWeaponRegistry {
                 }
             }
         }
+        // Addon packs commonly retain the native McHeli type while changing
+        // only the display/definition name (for example agm114 or hellfire).
+        // Resolve those aliases to the verified AT entity-seeker contract.
+        String probe = normalizedType + "|" + normalizedDefinition;
+        if (probe.contains("agm") || probe.contains("hellfire")
+                || probe.contains("atmissile")) {
+            for (GuidedWeaponCapability capability : orderedCapabilities()) {
+                if ("atmissile".equals(capability.getType())
+                        && capability.getBehavior() != GuidedNativeBehavior.UNSUPPORTED) {
+                    return capability;
+                }
+            }
+        }
         return null;
     }
 

@@ -3,6 +3,7 @@ package net.vas.rdp.uav.client;
 import net.minecraft.client.gui.GuiButton;
 import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.gui.GuiTextField;
+import net.minecraft.client.Minecraft;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityList;
 import net.minecraft.util.ResourceLocation;
@@ -28,6 +29,7 @@ import java.util.List;
 
 public final class GuiMissionControl extends GuiScreen {
     private static volatile GuiMissionControl active;
+    private static java.util.UUID capturedCrosshairTargetId;
     private String[] missionRows = new String[0];
     private String[] missionIds = new String[0];
     private int selected = -1;
@@ -56,7 +58,35 @@ public final class GuiMissionControl extends GuiScreen {
     private final MissionDefinition definition = new MissionDefinition();
     private NBTTagCompound savedDefinition;
 
-    public GuiMissionControl() { active = this; }
+    public GuiMissionControl() {
+        active = this;
+        capturedCrosshairTargetId = null;
+        rememberCurrentCrosshairTarget();
+    }
+
+    private void rememberCurrentCrosshairTarget() {
+        if (mc != null && mc.objectMouseOver != null
+                && mc.objectMouseOver.entityHit != null) {
+            rememberCrosshairTarget(mc.objectMouseOver.entityHit);
+        }
+    }
+
+    static void rememberCrosshairTarget(Entity target) {
+        if (target != null) capturedCrosshairTargetId = target.getUniqueID();
+    }
+
+    static Entity capturedCrosshairTarget() {
+        if (capturedCrosshairTargetId == null || Minecraft.getMinecraft().world == null) {
+            return null;
+        }
+        for (Entity entity : Minecraft.getMinecraft().world.loadedEntityList) {
+            if (entity != null && !entity.isDead
+                    && capturedCrosshairTargetId.equals(entity.getUniqueID())) {
+                return entity;
+            }
+        }
+        return null;
+    }
 
     public static void receiveMissionData(String[] rows, String[] ids) {
         receiveMissionData(rows, ids, new String[0], new String[0]);
@@ -491,9 +521,12 @@ public final class GuiMissionControl extends GuiScreen {
 
     private void lockCrosshairTarget() {
         RayTraceResult hit = mc.objectMouseOver;
-        if (hit != null && hit.entityHit != null) {
-            RdpUavNetwork.lockAiTarget(hit.entityHit.getUniqueID());
-            status = "Target lock requested for " + hit.entityHit.getName() + ".";
+        Entity target = hit == null ? null : hit.entityHit;
+        if (target == null) target = capturedCrosshairTarget();
+        if (target != null) {
+            rememberCrosshairTarget(target);
+            RdpUavNetwork.lockAiTarget(target.getUniqueID());
+            status = "Target lock requested for " + target.getName() + ".";
             return;
         }
         status = "No crosshair contact; aim directly at a valid target.";

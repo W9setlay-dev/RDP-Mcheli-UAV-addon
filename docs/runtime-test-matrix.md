@@ -17,7 +17,10 @@
 | captured native WingMan route execution | CRM `latest.log` 2026-09-23 | OBSERVED | Server log records accepted `FLY_TO` routes and `FLY_TO reached`; no current process was running during this validation, and trajectory convergence remains unproven |
 | captured kamikaze effect confirmation | CRM `latest.log` 2026-09-23 | NOT OBSERVED | Log contained a detonation-labeled path but zero `IMPACT_OBSERVED`/`EFFECT_CONFIRMED` events; it was treated as false success and the source path was corrected |
 | single-press exact lock / separate clear action | `.\gradlew.bat test --no-daemon` | PASS | Client now sends exact crosshair UUID on `L`; `J` and dashboard clear request recovery; live packet behavior remains unverified |
-| production artifact build | `.\gradlew.bat build --no-daemon` | PASS | Reobfuscated addon JAR built successfully; current SHA-256 `C662FF4EE30A40B5FFE549B39F98FCAFAE2B5C4E07BA6A263FA818C2C7D24995` |
+| production artifact build | `.\gradlew.bat build --no-daemon` | PASS | Reobfuscated addon JAR built successfully; current SHA-256 `D3B0D52D5BE4FFFE63C8D8E5615DAA2149DA73B667FFB795656E671F0B0A1024` |
+| live instance log inspection | `minecraft/logs/debug.log` through 2026-09-25 | ACTIONED | Crosshair locks were rejected as `TARGET_FILTERED` for `mcheli:mch.e.plane`; another request targeted the controlled aircraft itself and was rejected as `PROFILE_UNSUPPORTED` |
+| exact operator vehicle lock | server UUID validation | PASS (source) | Explicit crosshair locks now allow loaded McHeli aircraft when `allowHostileVehicles=true`, while automatic discovery keeps the hostile classifier |
+| instant kamikaze payload | AI/manual detonation path | PASS (source) | Detonation now uses the configured McHeli explosion at the authoritative target point for both plane and helicopter paths; physical block/entity damage remains `LIVE_VALIDATION_REQUIRED` |
 | performance-aware native guidance | deterministic unit tests and McHeliCE setter integration | PASS (source) | Native commands now use profile cruise/stall speed, climb/descent, bank, turn-radius, and observed motion-speed limits; McHeliCE remains the physics executor |
 | RDP instance deployment | copy rebuilt `rdp-uav-addon-0.1.0.jar` to an RDP instance | NOT ATTEMPTED | No JAR was copied during the current rework; deployment is intentionally outside source validation |
 | final sequential validation | `.\gradlew.bat test --no-daemon` then `.\gradlew.bat build --no-daemon` | PASS | Tests and reobfuscated build passed sequentially; no deployment claim is made |
@@ -42,7 +45,7 @@
 Build:
 
 - Addon JAR: `D:\Forge Modding\rdp-uav-addon\build\libs\rdp-uav-addon-0.1.0.jar`
-- SHA-256: `C662FF4EE30A40B5FFE549B39F98FCAFAE2B5C4E07BA6A263FA818C2C7D24995`
+- SHA-256: `D3B0D52D5BE4FFFE63C8D8E5615DAA2149DA73B667FFB795656E671F0B0A1024`
 - Expected McHeliCE: `1.5.1`, matching `libs\mcheli-ce-1.5.1.jar`
 - Restart: required after replacing the addon JAR
 
@@ -64,6 +67,35 @@ Action:
 5. Repeat with the one-way profile only after the reusable route is stable.
 6. Abort before terminal commitment, then separately test a committed terminal
    mission without attempting to force an abort.
+
+### Developer Live Test: exact entity lock input
+
+The default lock action is key `3` and the GUI **Entity lock [3]** button. The
+client sends only the UUID captured from the crosshair; the server resolves
+that UUID in the current world and never substitutes a different registry
+entity. Key `3` may also be assigned to hotbar slot 2 in an existing
+`options.txt`; the addon now checks the raw LWJGL event as well as the Forge
+binding, but a custom rebind is still recommended if the hotbar action causes
+visible interference.
+
+1. Start an active mission with a selected aircraft and keep the target loaded.
+2. With the GUI closed, aim directly at the target and press `3` once.
+3. Confirm `logs\debug.log` contains `Entity lock request`, followed by either
+    `Entity lock accepted` or an explicit `Entity lock rejected` reason.
+4. Open Mission Control while still aiming at the target, then click
+    **Entity lock [3]**. The GUI captures the crosshair UUID on open and reuses
+    it if the screen hides the world ray trace.
+5. Confirm HUD/telemetry shows the target UUID and the accepted lock state.
+6. Repeat against a McHeli aircraft only when `allowHostileVehicles=true`.
+    A loaded aircraft is valid for explicit crosshair selection; automatic
+    hostile scanning remains separately filtered.
+7. If there is no active mission, `NO_ACTIVE_MISSION` is expected: locking is
+    intentionally not a mission-creation action.
+
+Acceptance of the packet, exact UUID continuity, and player-facing status are
+source/instrumentation validated. Actual client key delivery, McHeli aircraft
+acceptance, guided launch, and payload effects remain
+`LIVE_VALIDATION_REQUIRED`.
 
 Expected telemetry:
 

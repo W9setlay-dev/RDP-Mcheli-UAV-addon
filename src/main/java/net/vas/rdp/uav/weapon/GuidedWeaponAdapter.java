@@ -63,6 +63,16 @@ public final class GuidedWeaponAdapter {
             selectedPriority = available == null ? "" : available.getName();
         }
         if (findWeapon(aircraft, selectedPriority) == null) {
+            MCH_WeaponSet fallback = findAnyGuidedWeapon(aircraft);
+            if (fallback != null) {
+                RdpUavDebug.event("Guidance", "weapon_priority_fallback",
+                        "aircraft", aircraft.getUniqueID(),
+                        "requested", selectedPriority,
+                        "selected", fallback.getName());
+                selectedPriority = fallback.getName();
+            }
+        }
+        if (findWeapon(aircraft, selectedPriority) == null) {
             RdpUavDebug.event("Guidance", "validation_rejected",
                     "aircraft", aircraft == null ? null : aircraft.getUniqueID(),
                     "weapon", selectedPriority, "reason", "NO_GUIDED_WEAPON");

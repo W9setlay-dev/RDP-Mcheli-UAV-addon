@@ -86,7 +86,9 @@ public final class RdpUavClientKeys {
     public void onKeyInput(InputEvent.KeyInputEvent event) {
         Minecraft minecraft = net.minecraftforge.fml.client.FMLClientHandler.instance().getClient();
         if (minecraft.player == null) return;
-        if (AI_TARGET_LOCK.isPressed()) lockAiTarget(minecraft);
+        boolean lockPressed = Keyboard.getEventKeyState()
+                && Keyboard.getEventKey() == AI_TARGET_LOCK.getKeyCode();
+        if (lockPressed) lockAiTarget(minecraft);
         if (SIGHT_STABILIZATION.isPressed()) stabilizeSight(minecraft);
         if (CLEAR_TARGET_LOCK.isPressed()) RdpUavNetwork.clearAiTargetLock();
         if (ABORT_SELECTED.isPressed()) {
@@ -111,12 +113,16 @@ public final class RdpUavClientKeys {
     }
 
     private void lockAiTarget(Minecraft minecraft) {
-        if (minecraft.objectMouseOver == null || minecraft.objectMouseOver.entityHit == null) {
+        net.minecraft.entity.Entity target = GuiMissionControl.capturedCrosshairTarget();
+        if (minecraft.objectMouseOver != null && minecraft.objectMouseOver.entityHit != null) {
+            target = minecraft.objectMouseOver.entityHit;
+        }
+        if (target == null) {
             // An empty lock request must never make the server choose an arbitrary
             // nearby entity. The clear-lock key is the explicit unlock operation.
             return;
         }
-        net.minecraft.entity.Entity target = minecraft.objectMouseOver.entityHit;
+        GuiMissionControl.rememberCrosshairTarget(target);
         RdpUavNetwork.lockAiTarget(target.getUniqueID());
     }
 

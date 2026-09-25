@@ -9,11 +9,13 @@ import com.norwood.mcheli.wingman.mission.AutonomousState;
 import com.norwood.mcheli.wingman.wingman.WingmanEntry;
 import com.norwood.mcheli.wingman.wingman.WingmanRegistry;
 import com.norwood.mcheli.weapon.MCH_WeaponSet;
-import com.norwood.mcheli.weapon.MCH_WeaponParam;
 import net.minecraft.entity.Entity;
+import net.minecraft.world.World;
 import net.vas.rdp.uav.RdpUavDebug;
 import net.vas.rdp.uav.energy.UavEnergyHandler;
+import net.vas.rdp.uav.mission.MissionManager;
 import net.vas.rdp.uav.mission.MissionMovementAuthority;
+import net.vas.rdp.uav.mission.RDPMission;
 import net.vas.rdp.uav.profile.UavExecutionProfile;
 import net.vas.rdp.uav.profile.UavVehicleProfile;
 import net.vas.rdp.uav.profile.UavVehicleProfiles;
@@ -47,11 +49,11 @@ public final class WingManFlightAdapter {
         return dispatch(aircraft, x, y, z, orbitRadius, orbitTicks, false, null);
     }
 
-    public AircraftState observeAircraftState(MCH_EntityAircraft aircraft,
-                                               net.vas.rdp.uav.mission.RDPMission mission,
-                                               long tick) {
-        if (aircraft == null) return null;
-        return aircraftStates.observe(aircraft, getEntry(aircraft), mission, tick);
+    public void observeAircraftState(MCH_EntityAircraft aircraft,
+                                     RDPMission mission,
+                                     long tick) {
+        if (aircraft == null) return;
+        aircraftStates.observe(aircraft, getEntry(aircraft), mission, tick);
     }
 
     /**
@@ -59,17 +61,17 @@ public final class WingManFlightAdapter {
      * WingMan still owns the high-level route; this method supplies bounded
      * attitude/throttle inputs before McHeliCE advances its physics.
      */
-    public boolean applyNativeControl(net.minecraft.world.World world,
-                                      net.vas.rdp.uav.mission.MissionManager missions,
-                                      MCH_EntityAircraft aircraft,
-                                      net.vas.rdp.uav.mission.RDPMission mission,
-                                      long tick) {
+    public void applyNativeControl(World world,
+                                   MissionManager missions,
+                                   MCH_EntityAircraft aircraft,
+                                   RDPMission mission,
+                                   long tick) {
         if (world == null || missions == null || aircraft == null || mission == null
-                || mission.isTerminal()) return false;
+                || mission.isTerminal()) return;
         WingmanEntry entry = getEntry(aircraft);
-        if (entry == null || !entry.isAutonomous()) return false;
+        if (entry == null || !entry.isAutonomous()) return;
         FlightCommand command = isFpv(aircraft) ? fpvFlightCommand(aircraft) : null;
-        return NativeAircraftControlAdapter.apply(world, missions, aircraft, mission,
+        NativeAircraftControlAdapter.apply(world, missions, aircraft, mission,
                 entry.autoTargetX, entry.autoTargetY, entry.autoTargetZ, command, tick);
     }
 
@@ -440,6 +442,21 @@ public final class WingManFlightAdapter {
     }
 
     public boolean fireSelfDestructWeapon(MCH_EntityAircraft aircraft, boolean requireNoseTrigger) {
+        return detonateSelfDestructWeapon(aircraft,
+                aircraft == null ? 0.0D : aircraft.posX,
+                aircraft == null ? 0.0D : aircraft.posY,
+                aircraft == null ? 0.0D : aircraft.posZ,
+                requireNoseTrigger);
+    }
+
+    /**
+     * Detonates the armed payload immediately at the authoritative terminal
+     * point. This is deliberately independent of the helicopter/plane weapon
+     * animation path so manual and AI detonation have identical effects.
+     */
+    public boolean detonateSelfDestructWeapon(MCH_EntityAircraft aircraft,
+                                               double x, double y, double z,
+                                               boolean requireNoseTrigger) {
         if (aircraft == null) return false;
         if (requireNoseTrigger && !KamikazeImpactDetector.hasNoseImpact(aircraft, KamikazeConfig.noseTriggerDistance)) {
             return false;
@@ -460,41 +477,16 @@ public final class WingManFlightAdapter {
             return false;
         }
         if (!weapon.canFire()) return false;
-        if (!(aircraft instanceof MCH_EntityHeli)) {
-            int ammoBefore = weapon.getAmmo();
-            // Plane and other non-heli airframes use the direct payload detonation branch.
-            MCH_Explosion.newExplosion(
-                    aircraft.world,
-                    null,
-                    aircraft,
-                    aircraft.posX,
-                    aircraft.posY,
-                    aircraft.posZ,
-                    weapon.getInfo().explosion,
-                    weapon.getInfo().explosionBlock,
-                    true,
-                    true,
-                    weapon.getInfo().flaming,
-                    true,
-                    0);
-            weapon.setAmmo(ammoBefore - 1);
-            aircraft.destruct();
-            RdpUavDebug.debug("Kamikaze",
-                    "self-destruct detonated directly aircraft={} weapon={} ammo={}",
-                    aircraft.getUniqueID(), weapon.getName(), weapon.getAmmo());
-            return true;
-        }
-        MCH_WeaponParam parameter = new MCH_WeaponParam();
-        parameter.entity = aircraft;
-        parameter.user = aircraft;
-        parameter.setPosAndRot(aircraft.posX, aircraft.posY, aircraft.posZ,
-                aircraft.getYaw(), aircraft.getPitch());
-        parameter.rotRoll = aircraft.getRoll();
-        parameter.isInfinity = false;
-        boolean fired = weapon.use(parameter);
-        RdpUavDebug.debug("Kamikaze", "self-destruct fire aircraft={} weapon={} fired={} ammo={}",
-                aircraft.getUniqueID(), weapon.getName(), fired, weapon.getAmmo());
-        return fired;
+        int ammoBefore = weapon.getAmmo();
+        MCH_Explosion.newExplosion(aircraft.world, null, aircraft, x, y, z,
+                weapon.getInfo().explosion, weapon.getInfo().explosionBlock,
+                true, true, weapon.getInfo().flaming, true, 0);
+        weapon.setAmmo(ammoBefore - 1);
+        aircraft.destruct();
+        RdpUavDebug.event("Kamikaze", "PAYLOAD_DETONATED",
+                "aircraft", aircraft.getUniqueID(), "weapon", weapon.getName(),
+                "x", x, "y", y, "z", z, "ammo", weapon.getAmmo());
+        return true;
     }
 
     public boolean isKamikazeSpeedReached(MCH_EntityAircraft aircraft) {
