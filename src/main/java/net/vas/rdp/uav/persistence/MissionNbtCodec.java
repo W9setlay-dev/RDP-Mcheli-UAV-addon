@@ -14,7 +14,7 @@ import net.vas.rdp.uav.target.TargetSpec;
 import java.util.UUID;
 
 public final class MissionNbtCodec {
-    private static final int CURRENT_SCHEMA = 4;
+    private static final int CURRENT_SCHEMA = 6;
     private MissionNbtCodec() {
     }
 
@@ -50,6 +50,9 @@ public final class MissionNbtCodec {
         tag.setDouble("observationDistance", mission.getObservationDistance());
         tag.setLong("createdTick", mission.getCreatedTick());
         tag.setLong("lastUpdateTick", mission.getLastUpdateTick());
+        tag.setDouble("routeProgress", mission.getRouteProgress());
+        tag.setLong("lastMeaningfulProgressTick", mission.getLastMeaningfulProgressTick());
+        tag.setLong("lastTargetTick", mission.getLastTargetTick());
         tag.setString("state", mission.getState().name());
         tag.setString("phase", mission.getPhase().name());
         tag.setString("controlOwner", mission.getControlOwner().name());
@@ -108,6 +111,12 @@ public final class MissionNbtCodec {
                 tag.getLong("lastUpdateTick"), failureReason.isEmpty() ? null : failureReason,
                 report.isEmpty() ? null : report);
         mission.setDimension(tag.getInteger("dimension"));
+        mission.restoreProgressState(
+                tag.hasKey("routeProgress") ? tag.getDouble("routeProgress") : 0.0D,
+                tag.hasKey("lastMeaningfulProgressTick")
+                        ? tag.getLong("lastMeaningfulProgressTick") : mission.getCreatedTick());
+        mission.restoreLastTargetTick(tag.hasKey("lastTargetTick")
+                ? tag.getLong("lastTargetTick") : -1L);
         if (tag.hasKey("policyDomain") && !"ENTITY".equals(tag.getString("policyDomain"))) {
             throw new IllegalArgumentException("Unsupported target policy domain");
         }

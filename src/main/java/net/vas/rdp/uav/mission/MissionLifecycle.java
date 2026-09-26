@@ -14,7 +14,6 @@ import net.minecraft.util.ResourceLocation;
 import net.minecraft.world.World;
 import net.vas.rdp.uav.flight.WingManFlightAdapter;
 import net.vas.rdp.uav.persistence.RDPMissionWorldData;
-import net.vas.rdp.uav.target.TargetLock;
 import net.vas.rdp.uav.scan.RDPScanReport;
 import net.vas.rdp.uav.scan.RDPScanReportRepository;
 import net.vas.rdp.uav.profile.UavVehicleProfile;
@@ -55,8 +54,10 @@ public final class MissionLifecycle {
     private static final Logger LOGGER = LogManager.getLogger("RDP-UAV/MissionLifecycle");
     static final long MISSION_TIMEOUT = 12000L;
     private static final long PROJECTILE_OBSERVATION_TIMEOUT = 100L;
+    private static final long EFFECT_CONFIRMATION_TIMEOUT = 100L;
     private static final long WINGMAN_ENTRY_GRACE_TICKS = 20L;
     private static final long GUIDANCE_RETRY_INTERVAL = 10L;
+    private static final long TARGET_LOSS_GRACE_TICKS = 40L;
 
     private final MissionManager manager;
     private final WingManFlightAdapter flight = new WingManFlightAdapter();
@@ -274,6 +275,7 @@ public final class MissionLifecycle {
                 defer(world, mission, "WINGMAN_DISPATCH_REJECTED",
                         MissionState.EXECUTION_STALLED, tick);
             } else {
+                mission.beginRouteProgressWindow(tick);
                 WingmanEntry routeEntry = flight.getEntry(aircraft);
                 RdpUavDebug.event("MissionRuntime", "ROUTE_DISPATCH",
                         "mission", mission.getMissionId(), "aircraft", aircraft.getUniqueID(),
@@ -350,6 +352,19 @@ public final class MissionLifecycle {
                     .effectConfirmedForObjective(mission.getMissionId())) {
                 mission.transitionTo(MissionState.EFFECT_CONFIRMED, tick,
                         "EFFECT_CONFIRMED");
+                RDPMissionWorldData.get(world).markDirty();
+                continue;
+            }
+            if (mission.getState() == MissionState.IMPACT_OBSERVED
+                    && tick - mission.getLastUpdateTick() > EFFECT_CONFIRMATION_TIMEOUT) {
+                mission.transitionTo(MissionState.OUTCOME_UNKNOWN, tick,
+                        "NATIVE_EFFECT_NOT_CONFIRMED");
+                RdpUavDebug.event("MissionRuntime", "PAYLOAD_OUTCOME_UNKNOWN",
+                        "mission", mission.getMissionId(),
+                        "aircraft", mission.getAircraftId(),
+                        "state", mission.getState(),
+                        "reason", "NATIVE_EFFECT_NOT_CONFIRMED",
+                        "tick", tick);
                 RDPMissionWorldData.get(world).markDirty();
                 continue;
             }
@@ -474,29 +489,77 @@ public final class MissionLifecycle {
                     mission.getTargetSpec().getY(), mission.getTargetSpec().getZ())
                     : reacquire(world, aircraft, mission, tick);
             if (mission.getTargetSelectionMode() != TargetSelectionMode.POINT && target == null) {
-                if (profile(aircraft).isHelicopterProfile()) {
-                    flight.enterFpvHover(aircraft);
-                }
-                flight.clearGuidance(aircraft);
-                if (mission.isAttack()) {
-                    // Do not leave a stale native loiter route active while
-                    // an entity lock is temporarily unavailable. REPLAN will
-                    // rebuild the route when the same objective is available.
-                    if (!profile(aircraft).isHelicopterProfile()) {
-                        flight.release(aircraft);
+                if (mission.getTargetId() != null) {
+                    long lastObservedTick = mission.getLastTargetTick();
+                    ContactSnapshot trackedContact = targets.get(mission.getTargetId());
+                    if (trackedContact != null) {
+                        lastObservedTick = Math.max(lastObservedTick,
+                                trackedContact.getLastDetectionTick());
+                    }
+                    boolean inGrace = lastObservedTick >= 0L
+                            && tick >= lastObservedTick
+                            && tick - lastObservedTick <= TARGET_LOSS_GRACE_TICKS;
+                    if (mission.getState() == MissionState.KAMIKADZE_TARGET) {
+                        // Once terminal guidance is committed, preserve the
+                        // last finite terminal route during the brief loss
+                        // grace. After that, hold a straight leg until the
+                        // existing bounded terminal timeout ends the mission.
+                        if (!inGrace) flight.holdForTargetReacquisition(aircraft);
+                        if (!inGrace && tick % 20L == 0L) {
+                            RdpUavDebug.event("TerminalGuidance", "TARGET_TRACK_UNAVAILABLE",
+                                    "mission", mission.getMissionId(),
+                                    "target", mission.getTargetId(),
+                                    "lastObservedTick", lastObservedTick,
+                                    "graceTicks", TARGET_LOSS_GRACE_TICKS,
+                                    "tick", tick);
+                        }
+                        continue;
+                    }
+                    flight.holdForTargetReacquisition(aircraft);
+                    if (inGrace) {
+                        if (tick % 20L == 0L) {
+                            RdpUavDebug.event("TargetTracking", "TARGET_LOSS_GRACE",
+                                    "mission", mission.getMissionId(),
+                                    "target", mission.getTargetId(),
+                                    "ageTicks", tick - lastObservedTick,
+                                    "graceTicks", TARGET_LOSS_GRACE_TICKS,
+                                    "state", mission.getState(), "tick", tick);
+                        }
+                        continue;
+                    }
+                    if (mission.getState() == MissionState.LOST) {
+                        mission.transitionTo(MissionState.WAITING_FOR_TARGET, tick,
+                                "TARGET_LOSS_GRACE_EXPIRED");
+                        dirty = true;
+                        continue;
+                    }
+                    if (mission.getState() == MissionState.WAITING_FOR_TARGET) {
+                        continue;
+                    }
+                    if (mission.getState().canTransitionTo(MissionState.LOST)) {
+                        MissionState previousState = mission.getState();
+                        mission.transitionTo(MissionState.LOST, tick,
+                                "TARGET_LOSS_GRACE_EXPIRED");
+                        RdpUavDebug.event("TargetTracking", "TARGET_LOST",
+                                "mission", mission.getMissionId(),
+                                "target", mission.getTargetId(),
+                                "lastObservedTick", lastObservedTick,
+                                "graceTicks", TARGET_LOSS_GRACE_TICKS,
+                                "previousState", previousState, "tick", tick);
+                        dirty = true;
+                        continue;
+                    }
+                    if (mission.getState().canTransitionTo(MissionState.WAITING_FOR_TARGET)) {
+                        mission.transitionTo(MissionState.WAITING_FOR_TARGET, tick,
+                                "TARGET_LOSS_GRACE_EXPIRED");
+                        dirty = true;
+                        continue;
                     }
                 }
-                if (mission.getTargetId() != null
-                        && mission.isAttack()
-                        && mission.getMissionType() != MissionType.SQUARE_STRIKE
-                        && (mission.getState() == MissionState.ATTACK_TARGET
-                        || mission.getState() == MissionState.TARGET_LOCKED
-                        || mission.getState() == MissionState.APPROACHING
-                        || mission.getState() == MissionState.KAMIKADZE_TARGET)) {
-                    defer(world, mission, "TARGET_TEMPORARILY_UNAVAILABLE",
-                            MissionState.WAITING_FOR_TARGET, tick);
-                    dirty = true;
-                    continue;
+                if (profile(aircraft).isHelicopterProfile()) flight.enterFpvHover(aircraft);
+                flight.clearGuidance(aircraft);
+                if (mission.isAttack() && !profile(aircraft).isHelicopterProfile()) {
+                    flight.release(aircraft);
                 }
                 if (mission.getState() == MissionState.SEARCHING
                         || mission.getState() == MissionState.WAITING_FOR_TARGET) {
@@ -535,7 +598,6 @@ public final class MissionLifecycle {
                 mission.transitionTo(MissionState.SEARCHING, tick);
                 dirty = true;
             }
-            if (target != null) mission.clearRecovery();
             if (mission.getTargetSelectionMode() != TargetSelectionMode.POINT && target == null
                     && requiresTarget(mission.getState())) {
                 continue;
@@ -585,6 +647,7 @@ public final class MissionLifecycle {
                             mission.getMissionId(), aircraft.getUniqueID(), noseImpact,
                             targetInRadius, formatTarget(target), tick);
                     mission.markKamikazePayloadLaunched(tick);
+                    confirmKamikazeEffect(world, mission, tick);
                     RdpUavDebug.event("TerminalGuidance", "PAYLOAD_LAUNCH_ACCEPTED",
                             "mission", mission.getMissionId(),
                             "aircraft", mission.getAircraftId(),
@@ -639,14 +702,6 @@ public final class MissionLifecycle {
         return Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
 
-    private double targetDistanceForLock(MCH_EntityAircraft aircraft, TargetLock lock) {
-        if (aircraft == null || lock == null) return Double.NaN;
-        double dx = aircraft.posX - lock.getX();
-        double dy = aircraft.posY - lock.getY();
-        double dz = aircraft.posZ - lock.getZ();
-        return Math.sqrt(dx * dx + dy * dy + dz * dz);
-    }
-
     private boolean routeAlreadyDispatched(MCH_EntityAircraft aircraft, Target target, RDPMission mission) {
         if (aircraft == null || target == null || mission == null) return false;
         WingmanEntry entry = flight.getEntry(aircraft);
@@ -682,11 +737,11 @@ public final class MissionLifecycle {
             return true;
         }
         if (mission.getState() == MissionState.REPLAN && target != null) {
-            if (mission.getRecoveryAttempts() >= RDPMission.MAX_RECOVERY_ATTEMPTS) {
-                fail(world, mission, "REPLAN_LIMIT_EXCEEDED", tick);
-                return true;
-            }
-            if (routeAlreadyDispatched(aircraft, target, mission)) {
+            String replanReason = mission.getLastTransitionReason();
+            boolean stalledRoute = "NO_PROGRESS_TIMEOUT".equals(replanReason)
+                    || "ROUTE_STALLED_TARGET_RETAINED".equals(replanReason)
+                    || "ROUTE_STALLED_NO_TARGET".equals(replanReason);
+            if (!stalledRoute && routeAlreadyDispatched(aircraft, target, mission)) {
                 if (mission.getTargetSelectionMode() == TargetSelectionMode.POINT) {
                     mission.transitionTo(MissionState.TARGET_LOCKED, tick);
                 }
@@ -701,7 +756,7 @@ public final class MissionLifecycle {
                         MissionState.EXECUTION_STALLED, tick);
                 return true;
             }
-            mission.clearRecovery();
+            mission.beginRouteProgressWindow(tick);
             mission.transitionTo(MissionState.SEARCHING, tick);
             return true;
         }
@@ -755,6 +810,7 @@ public final class MissionLifecycle {
                         return true;
                     }
                     mission.markKamikazePayloadLaunched(tick);
+                    confirmKamikazeEffect(world, mission, tick);
                     RdpUavDebug.event("TerminalGuidance", "PAYLOAD_LAUNCH_ACCEPTED",
                             "mission", mission.getMissionId(),
                             "aircraft", mission.getAircraftId(),
@@ -766,6 +822,7 @@ public final class MissionLifecycle {
                 if (flight.dispatch(aircraft, target.x, routeY, target.z,
                         mission.getObservationDistance(), 0, true,
                         target.entity == null ? null : target.entity.getUniqueID())) {
+                    mission.beginRouteProgressWindow(tick);
                     mission.transitionTo(MissionState.REPLAN, tick);
                     return true;
                 }
@@ -809,14 +866,14 @@ public final class MissionLifecycle {
                         Math.pow(aircraft.posX - routeEntry.autoTargetX, 2.0D)
                                 + Math.pow(aircraft.posY - routeEntry.autoTargetY, 2.0D)
                                 + Math.pow(aircraft.posZ - routeEntry.autoTargetZ, 2.0D));
-        mission.recordProgress(tick,
+        boolean recoveryChanged = mission.recordObservedProgress(tick,
                 mission.getRouteProgress(),
                 currentRouteProgress,
-                mission.getTargetLock() == null ? Double.NaN : targetDistanceForLock(aircraft, mission.getTargetLock()),
                 currentDistanceToTarget,
-                Double.NaN,
                 currentDistanceToWaypoint,
                 progressExpected(mission.getState()));
+        if (recoveryChanged) RDPMissionWorldData.get(world).markDirty();
+        if (mission.isTerminal()) return true;
 
         switch (mission.getState()) {
         case SEARCHING:
@@ -977,6 +1034,7 @@ public final class MissionLifecycle {
                                 return true;
                             }
                             mission.markKamikazePayloadLaunched(tick);
+                            confirmKamikazeEffect(world, mission, tick);
                             RdpUavDebug.event("TerminalGuidance", "PAYLOAD_LAUNCH_ACCEPTED",
                                     "mission", mission.getMissionId(),
                                     "aircraft", mission.getAircraftId(),
@@ -1084,6 +1142,25 @@ public final class MissionLifecycle {
         default:
             return true;
         }
+    }
+
+    /**
+     * The native payload adapter returns true only after MCH_Explosion has
+     * synchronously produced an ExplosionResult and the aircraft has been
+     * destructed. Record that effect before the next world tick can mistake
+     * the intentionally removed aircraft for an unconfirmed loss. The result
+     * does not claim that a particular target entity was hit or destroyed.
+     */
+    private void confirmKamikazeEffect(World world, RDPMission mission, long tick) {
+        mission.confirmKamikazeEffect(tick);
+        RdpUavDebug.event("TerminalGuidance", "PAYLOAD_EFFECT_CONFIRMED",
+                "mission", mission.getMissionId(),
+                "aircraft", mission.getAircraftId(),
+                "target", mission.getTargetId(),
+                "tick", tick,
+                "effect", "MCHELI_EXPLOSION_CREATED",
+                "targetHitInferred", false);
+        RDPMissionWorldData.get(world).markDirty();
     }
 
     private void persistReport(World world, RDPMission mission, Target target, long tick) {
@@ -1276,13 +1353,12 @@ public final class MissionLifecycle {
         Vec3d start = new Vec3d(aircraft.posX, aircraft.posY + aircraft.getEyeHeight(), aircraft.posZ);
         Vec3d end = new Vec3d(target.x, target.y + 1.0D, target.z);
         RayTraceResult hit = world.rayTraceBlocks(start, end, false, true, false);
-        boolean corridorBlocked = hit != null && hit.typeOfHit == RayTraceResult.Type.BLOCK;
-        boolean lineOfSightBlocked = corridorBlocked;
+        boolean lineOfSightBlocked = hit != null && hit.typeOfHit == RayTraceResult.Type.BLOCK;
         boolean hostileExposure = corridorHasHostileExposure(world, aircraft, target, start, end);
         boolean fuelReady = !flight.isFuelInsufficientForMission(aircraft);
         boolean returnViable = true;
         TerminalCommitPolicy.Decision terminal = TerminalCommitPolicy.evaluate(
-                distance, altitudeDelta, corridorBlocked, lineOfSightBlocked,
+                distance, altitudeDelta, lineOfSightBlocked, lineOfSightBlocked,
                 hostileExposure, fuelReady, returnViable, observationDistance,
                 Math.max(8.0D, observationDistance * 0.5D));
 
@@ -1294,7 +1370,7 @@ public final class MissionLifecycle {
             MissionSafety.RouteDecision route = terminal.getCorridor().getRouteDecision();
             if (route != null) return route;
         }
-        return MissionSafety.decideRoute(distance, altitudeDelta, corridorBlocked, observationDistance);
+        return MissionSafety.decideRoute(distance, altitudeDelta, lineOfSightBlocked, observationDistance);
     }
 
     private static boolean corridorHasHostileExposure(World world,
@@ -1343,8 +1419,10 @@ public final class MissionLifecycle {
 
     private static boolean progressExpected(MissionState state) {
         return state != MissionState.ORBITING
+                && state != MissionState.ON_TARGET
                 && state != MissionState.SCANNING
                 && state != MissionState.DEEP_SCANNING
+                && state != MissionState.REPORTING
                 && state != MissionState.HOLDING;
     }
 

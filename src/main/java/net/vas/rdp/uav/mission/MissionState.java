@@ -62,8 +62,10 @@ public enum MissionState {
             case TAXI: return next == TAKEOFF;
             case TAKEOFF: return next == CRUISE;
             case CRUISE: return next == SEARCHING;
-            case SEARCHING: return next == TARGET_ACQUIRED || next == WAITING_FOR_TARGET;
-            case WAITING_FOR_TARGET: return next == SEARCHING || next == TARGET_ACQUIRED;
+            case SEARCHING: return next == TARGET_ACQUIRED || next == WAITING_FOR_TARGET
+                    || next == LOST;
+            case WAITING_FOR_TARGET: return next == SEARCHING || next == TARGET_ACQUIRED
+                    || next == LOST;
             case LOST: return next == SEARCHING || next == WAITING_FOR_TARGET;
             case TARGET_ACQUIRED: return next == TARGET_LOCKED || next == LOST;
             case TARGET_LOCKED: return next == APPROACHING || next == ATTACK_TARGET
@@ -80,20 +82,21 @@ public enum MissionState {
             case OUTCOME_UNKNOWN: return next == RETURNING || next == COMPLETE;
             case DIRECT_LAUNCH_COMPLETE: return next == LAUNCH_ACCEPTED
                     || next == PROJECTILE_TRACKED || next == OUTCOME_UNKNOWN;
-            case ATTACK_TARGET: return next == APPROACHING || next == ON_TARGET
-                    || next == RETURNING || next == KAMIKADZE_TARGET;
             case KAMIKADZE_TARGET: return next == ON_TARGET || next == RETURNING
                     || next == KAMIKADZE_DETONATED || next == AIRCRAFT_LOST;
             case APPROACHING: return next == ON_TARGET || next == LOST;
-            case ON_TARGET: return next == ORBITING || next == SCANNING;
-            case ORBITING: return next == SCANNING;
-            case SCANNING: return next == DEEP_SCANNING || next == REPORTING;
+            case ON_TARGET: return next == ORBITING || next == SCANNING || next == LOST;
+            case ORBITING: return next == SCANNING || next == LOST;
+            case SCANNING: return next == DEEP_SCANNING || next == REPORTING || next == LOST;
             case DEEP_SCANNING: return next == REPORTING;
             case REPORTING: return next == HOLDING || next == RETURNING;
             case HOLDING: return next == RETURNING || next == COMPLETE;
             case REPLAN:
                 return next == SEARCHING || next == TARGET_LOCKED
-                        || next == APPROACHING || next == ATTACK_TARGET;
+                        || next == APPROACHING || next == ATTACK_TARGET || next == LOST;
+            case ATTACK_TARGET:
+                return next == APPROACHING || next == ON_TARGET || next == RETURNING
+                        || next == KAMIKADZE_TARGET || next == LOST;
             case RETURNING: return next == LANDING;
             case LANDING: return next == PARKING;
             case PARKING: return next == COMPLETE;

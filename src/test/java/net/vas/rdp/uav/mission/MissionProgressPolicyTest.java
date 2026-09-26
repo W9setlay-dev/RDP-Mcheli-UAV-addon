@@ -26,8 +26,8 @@ public class MissionProgressPolicyTest {
                 MissionState.APPROACHING, true, false, true,
                 500L, 10L, 200L);
 
-        assertEquals(MissionProgressPolicy.Action.REACQUIRE, decision.getAction());
-        assertEquals("TARGET_LOST", decision.getReason());
+        assertEquals(MissionProgressPolicy.Action.REPLAN, decision.getAction());
+        assertEquals("ROUTE_STALLED_TARGET_RETAINED", decision.getReason());
     }
 
     @Test
@@ -52,5 +52,30 @@ public class MissionProgressPolicyTest {
 
         assertEquals(MissionState.SCANNING, mission.getState());
         assertEquals(500L, mission.getLastMeaningfulProgressTick());
+    }
+
+    @Test
+    public void acceptedReplanStartsANewStallWindowInsteadOfCyclingEveryTick() {
+        RDPMission mission = new RDPMission(
+                UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
+                "shahed136", MissionType.STRIKE,
+                TargetSpec.point(100.0D, 80.0D, 100.0D, TargetPriority.HIGH),
+                true, false, false, 256.0D, 32.0D, 50_000L);
+        mission.transitionTo(MissionState.DISPATCHED, 50_001L);
+        mission.transitionTo(MissionState.TAKEOFF, 50_002L);
+        mission.transitionTo(MissionState.CRUISE, 50_003L);
+        mission.transitionTo(MissionState.SEARCHING, 50_004L);
+
+        mission.recordProgress(50_204L, 0.0D, 0.0D,
+                100.0D, 100.0D, 80.0D, 80.0D, true);
+        assertEquals(MissionState.REPLAN, mission.getState());
+
+        mission.beginRouteProgressWindow(50_205L);
+        mission.transitionTo(MissionState.SEARCHING, 50_205L);
+        mission.recordProgress(50_206L, 0.0D, 0.0D,
+                100.0D, 100.0D, 80.0D, 80.0D, true);
+
+        assertEquals(MissionState.SEARCHING, mission.getState());
+        assertEquals(50_205L, mission.getLastMeaningfulProgressTick());
     }
 }

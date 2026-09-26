@@ -73,6 +73,18 @@ public class MissionMovementAuthorityTest {
         assertTrue(MissionMovementAuthority.canIssueNativeControl(mission, aircraftId, 24L));
     }
 
+    @Test
+    public void leaseMatchingRejectsMissingIdentitiesWithoutThrowing() {
+        RDPMission mission = mission();
+        UUID aircraftId = UUID.randomUUID();
+        AircraftControlLease lease = AircraftControlLease.forMission(
+                mission, aircraftId, 10L, 20L, "TEST");
+
+        assertFalse(lease.matches(null, mission.getMissionId()));
+        assertFalse(lease.matches(aircraftId, null));
+        assertTrue(lease.matches(aircraftId, mission.getMissionId()));
+    }
+
     private static RDPMission mission() {
         return new RDPMission(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
                 "switchblade", MissionType.RECONNAISSANCE,

@@ -102,6 +102,132 @@ public class RdpUavTransformerTest {
     }
 
     @Test
+    public void exactMcheli151AircraftDestructionPathHasPreDestructionFuseHook() throws IOException {
+        byte[] original = getBytes("com/norwood/mcheli/aircraft/MCH_EntityAircraft.class");
+        byte[] transformed = new RdpUavTransformer().transform(
+                "com.norwood.mcheli.aircraft.MCH_EntityAircraft",
+                "com.norwood.mcheli.aircraft.MCH_EntityAircraft",
+                original);
+
+        final boolean[] foundMethod = {false};
+        final boolean[] hasFuseHook = {false};
+        new ClassReader(transformed).accept(new ClassVisitor(Opcodes.ASM5) {
+            @Override
+            public MethodVisitor visitMethod(int access, String name, String descriptor,
+                                             String signature, String[] exceptions) {
+                MethodVisitor visitor = super.visitMethod(access, name,
+                        descriptor, signature, exceptions);
+                if (!"handleDestruction".equals(name)
+                        || !"(Lnet/minecraft/util/DamageSource;Lnet/minecraft/entity/Entity;Ljava/lang/String;Z)V"
+                        .equals(descriptor)) return visitor;
+                foundMethod[0] = true;
+                return new MethodVisitor(Opcodes.ASM5, visitor) {
+                    @Override
+                    public void visitMethodInsn(int opcode, String owner, String method,
+                                                String methodDescriptor, boolean isInterface) {
+                        if (opcode == Opcodes.INVOKESTATIC
+                                && "net/vas/rdp/uav/flight/KamikazePreDestructionHook".equals(owner)
+                                && "beforeAircraftDestruction".equals(method)) {
+                            hasFuseHook[0] = true;
+                        }
+                        super.visitMethodInsn(opcode, owner, method,
+                                methodDescriptor, isInterface);
+                    }
+                };
+            }
+        }, 0);
+
+        assertTrue("the installed McHeliCE 1.5.1 destruction signature must be found", foundMethod[0]);
+        assertTrue("the pre-destruction fuse callback must run before native destruction", hasFuseHook[0]);
+    }
+
+    @Test
+    public void exactMcheli151BulletImpactPathHasNativeImpactObservers() throws IOException {
+        byte[] original = getBytes("com/norwood/mcheli/weapon/MCH_EntityBaseBullet.class");
+        byte[] transformed = new RdpUavTransformer().transform(
+                "com.norwood.mcheli.weapon.MCH_EntityBaseBullet",
+                "com.norwood.mcheli.weapon.MCH_EntityBaseBullet",
+                original);
+
+        final boolean[] foundMethod = {false};
+        final boolean[] hasBeginHook = {false};
+        final boolean[] hasFinishHook = {false};
+        new ClassReader(transformed).accept(new ClassVisitor(Opcodes.ASM5) {
+            @Override
+            public MethodVisitor visitMethod(int access, String name, String descriptor,
+                                             String signature, String[] exceptions) {
+                MethodVisitor visitor = super.visitMethod(access, name,
+                        descriptor, signature, exceptions);
+                if (!"onImpact".equals(name)
+                        || !"(Lnet/minecraft/util/math/RayTraceResult;F)V".equals(descriptor)) {
+                    return visitor;
+                }
+                foundMethod[0] = true;
+                return new MethodVisitor(Opcodes.ASM5, visitor) {
+                    @Override
+                    public void visitMethodInsn(int opcode, String owner, String method,
+                                                String methodDescriptor, boolean isInterface) {
+                        if (opcode == Opcodes.INVOKESTATIC
+                                && "net/vas/rdp/uav/weapon/NativeMissileImpactHook".equals(owner)) {
+                            hasBeginHook[0] |= "beginImpact".equals(method);
+                            hasFinishHook[0] |= "finishImpact".equals(method);
+                        }
+                        super.visitMethodInsn(opcode, owner, method,
+                                methodDescriptor, isInterface);
+                    }
+                };
+            }
+        }, 0);
+
+        assertTrue("the installed McHeliCE 1.5.1 bullet impact signature must be found", foundMethod[0]);
+        assertTrue("native collision processing must begin an observation context", hasBeginHook[0]);
+        assertTrue("native collision completion must record its outcome", hasFinishHook[0]);
+    }
+
+    @Test
+    public void exactMcheli151ExplosionResultPathHasNativeEffectObserver() throws IOException {
+        byte[] original = getBytes("com/norwood/mcheli/MCH_Explosion.class");
+        byte[] transformed = new RdpUavTransformer().transform(
+                "com.norwood.mcheli.MCH_Explosion",
+                "com.norwood.mcheli.MCH_Explosion",
+                original);
+
+        final boolean[] foundCompatibleMethod = {false};
+        final boolean[] hasExplosionObserver = {false};
+        new ClassReader(transformed).accept(new ClassVisitor(Opcodes.ASM5) {
+            @Override
+            public MethodVisitor visitMethod(int access, String name, String descriptor,
+                                             String signature, String[] exceptions) {
+                MethodVisitor visitor = super.visitMethod(access, name,
+                        descriptor, signature, exceptions);
+                if (!("newExplosion".equals(name) || "newExplosionInWater".equals(name))
+                        || !descriptor.endsWith(")Lcom/norwood/mcheli/MCH_Explosion$ExplosionResult;")) {
+                    return visitor;
+                }
+                foundCompatibleMethod[0] = true;
+                return new MethodVisitor(Opcodes.ASM5, visitor) {
+                    @Override
+                    public void visitMethodInsn(int opcode, String owner, String method,
+                                                String methodDescriptor, boolean isInterface) {
+                        if (opcode == Opcodes.INVOKESTATIC
+                                && "net/vas/rdp/uav/weapon/NativeMissileImpactHook".equals(owner)
+                                && "observeNativeExplosion".equals(method)) {
+                            hasExplosionObserver[0] = true;
+                        }
+                        super.visitMethodInsn(opcode, owner, method,
+                                methodDescriptor, isInterface);
+                    }
+                };
+            }
+        }, 0);
+
+        assertTrue("the installed McHeliCE 1.5.1 must expose a compatible explosion result method",
+                foundCompatibleMethod[0]);
+        assertTrue("native explosion results must be observed by the mission outcome bridge",
+                hasExplosionObserver[0]);
+    }
+
+    @Test
     public void transformedWingmanMovementWritersRespectAddonControlLease() throws IOException {
         assertMovementGuard("com/norwood/mcheli/wingman/handler/WingmanTickHandler.class",
                 "com.norwood.mcheli.wingman.handler.WingmanTickHandler", "setRotYaw");

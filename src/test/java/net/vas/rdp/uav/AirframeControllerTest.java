@@ -20,7 +20,7 @@ public class AirframeControllerTest {
         UavVehicleProfile profile = new UavVehicleProfile(UavExecutionProfile.ONE_WAY,
                 50.0D, 20.0D, 200.0D, 6.0D, false, "SELF_DESTRUCT");
         AircraftState state = state(10L, 0.0D, 20.0D, 0.0D,
-                0.0D, 0.0D, 0.0D, 0.0F, 0.0F, 0.0F);
+                0.0F);
 
         NativeFlightControlCommand command = AirframeController.forProfile(profile)
                 .update(state, 300.0D, 60.0D, 0.0D, 10L);
@@ -40,7 +40,7 @@ public class AirframeControllerTest {
                 UavExecutionProfile.HELICOPTER_ONE_WAY_FPV,
                 8.0D, 4.0D, 32.0D, 6.0D, false, "NONE");
         AircraftState state = state(12L, 10.0D, 8.0D, 4.0D,
-                0.0D, 0.0D, 0.0D, 0.0F, 0.0F, 0.0F);
+                0.0F);
 
         NativeFlightControlCommand command = new HelicopterFlightController(profile)
                 .update(state, 30.0D, 28.0D, 20.0D, 12L);
@@ -59,7 +59,7 @@ public class AirframeControllerTest {
 
         NativeFlightControlCommand command = new FixedWingFlightController(profile)
                 .update(state(1L, 0.0D, 10.0D, 0.0D,
-                        0.0D, 0.0D, 0.0D, 0.0F, 0.0F, 0.0F),
+                                0.0F),
                         20.0D, 10.0D, 10.0D, 4L);
 
         assertFalse(command.isSupported());
@@ -70,8 +70,8 @@ public class AirframeControllerTest {
     public void terminalFixedWingUsesRouteDiveSlopeAndCanCommandSteeperPitch() {
         UavVehicleProfile profile = new UavVehicleProfile(UavExecutionProfile.ONE_WAY,
                 50.0D, 20.0D, 200.0D, 6.0D, false, "SELF_DESTRUCT");
-        AircraftState state = state(12L, ControlOwner.TERMINAL_GUIDANCE,
-                0.0D, 100.0D, 0.0D, 0.0F, 0.0F, 0.0F);
+        AircraftState state = state(
+        );
 
         NativeFlightControlCommand command = new FixedWingFlightController(profile)
                 .update(state, 50.0D, 0.0D, 0.0D, 12L);
@@ -88,7 +88,7 @@ public class AirframeControllerTest {
                 50.0D, 20.0D, 200.0D, 6.0D, false, "SELF_DESTRUCT");
         NativeFlightControlCommand command = new FixedWingFlightController(profile)
                 .update(state(1L, 0.0D, 50.0D, 0.0D,
-                        0.0D, 0.0D, 0.0D, 179.0F, 0.0F, 0.0F),
+                                179.0F),
                         Double.MAX_VALUE, 100.0D, Double.MAX_VALUE, 1L);
 
         assertTrue(command.isSupported());
@@ -100,26 +100,22 @@ public class AirframeControllerTest {
     }
 
     private static AircraftState state(long tick, double x, double y, double z,
-                                       double motionX, double motionY, double motionZ,
-                                       float yaw, float pitch, float roll) {
+                                       float yaw) {
         return state(tick, ControlOwner.MISSION_AI, x, y, z,
-                motionX, motionY, motionZ, yaw, pitch, roll);
+                yaw);
+    }
+
+    private static AircraftState state() {
+        return state(12L, ControlOwner.TERMINAL_GUIDANCE, 0.0, 100.0, 0.0, (float) 0.0);
     }
 
     private static AircraftState state(long tick, ControlOwner owner,
                                        double x, double y, double z,
-                                       float yaw, float pitch, float roll) {
-        return state(tick, owner, x, y, z, 0.0D, 0.0D, 0.0D, yaw, pitch, roll);
-    }
-
-    private static AircraftState state(long tick, ControlOwner owner,
-                                       double x, double y, double z,
-                                       double motionX, double motionY, double motionZ,
-                                       float yaw, float pitch, float roll) {
+                                       float yaw) {
         return AircraftState.observeWithPhysicalMotion(UUID.randomUUID(), 0, tick,
-                x, y, z, x - motionX, y - motionY, z - motionZ,
-                motionX, motionY, motionZ, 1.0D,
-                yaw, pitch, roll, 0.6D,
+                x, y, z, x - 0.0, y - 0.0, z - 0.0,
+                0.0, 0.0, 0.0, 1.0D,
+                yaw, (float) 0.0, (float) 0.0, 0.6D,
                 "ENROUTE", UUID.randomUUID(), owner, true,
                 0, 0.0D, 100.0D, 100.0D, 0.0D, tick, "KNOWN");
     }

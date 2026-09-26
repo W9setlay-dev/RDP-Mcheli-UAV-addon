@@ -45,6 +45,8 @@ public final class RDPUavMod {
         RdpUavNetwork.init();
         net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(
                 new net.vas.rdp.uav.energy.UavEnergyHandler());
+        net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(
+                new net.vas.rdp.uav.flight.KamikazeDetonationHandler());
         if (event.getSide() == Side.CLIENT) {
             net.vas.rdp.uav.client.RdpUavClientKeys.register();
             net.vas.rdp.uav.client.RdpUavHudConfig.load(

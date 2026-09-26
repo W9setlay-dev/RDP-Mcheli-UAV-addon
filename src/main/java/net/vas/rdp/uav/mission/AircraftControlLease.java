@@ -46,8 +46,7 @@ public final class AircraftControlLease {
     }
 
     public boolean matches(UUID aircraftId, UUID missionId) {
-        return aircraftId != null && missionId != null
-                && this.aircraftId.equals(aircraftId)
+        return this.aircraftId.equals(aircraftId)
                 && this.missionId.equals(missionId);
     }
 

@@ -31,19 +31,21 @@ public final class KamikazeImpactDetector {
                 aircraft.prevPosZ, aircraft.prevRotationYaw, aircraft.prevRotationPitch);
         Vec3d currentNose = nosePosition(aircraft, aircraft.posX, aircraft.posY,
                 aircraft.posZ, aircraft.rotationYaw, aircraft.rotationPitch);
-        AxisAlignedBB sweep = new AxisAlignedBB(
-                Math.min(previousNose.x, currentNose.x),
-                Math.min(previousNose.y, currentNose.y),
-                Math.min(previousNose.z, currentNose.z),
-                Math.max(previousNose.x, currentNose.x),
-                Math.max(previousNose.y, currentNose.y),
-                Math.max(previousNose.z, currentNose.z))
-                .grow(KamikazeConfig.impactSweepPadding + triggerDistance);
+        Vec3d forward = forwardVector(aircraft.rotationYaw, aircraft.rotationPitch);
+        Vec3d noseEnd = currentNose.add(forward.scale(triggerDistance));
+        AxisAlignedBB sweep = new AxisAlignedBB(previousNose, noseEnd)
+                .grow(KamikazeConfig.impactSweepPadding);
 
         World world = aircraft.world;
-        if (!world.getCollisionBoxes(aircraft, sweep).isEmpty()) {
-            RdpUavDebug.debug("Kamikaze", "nose block impact aircraft={} speed={}",
-                    aircraft.getUniqueID(), Math.sqrt(speedSquared));
+        net.minecraft.util.math.RayTraceResult blockHit = world.rayTraceBlocks(
+                previousNose, noseEnd, false, true, false);
+        if (blockHit != null
+                && blockHit.typeOfHit == net.minecraft.util.math.RayTraceResult.Type.BLOCK) {
+            if (aircraft.ticksExisted % 20 == 0) {
+                RdpUavDebug.debug("Kamikaze",
+                        "nose block contact aircraft={} block={} speed={}",
+                        aircraft.getUniqueID(), blockHit.getBlockPos(), Math.sqrt(speedSquared));
+            }
             return true;
         }
         List<Entity> entities = world.getEntitiesWithinAABBExcludingEntity(aircraft, sweep);
@@ -53,14 +55,15 @@ public final class KamikazeImpactDetector {
                     || entity.isRidingSameEntity(aircraft)) {
                 continue;
             }
-            double dx = entity.posX - currentNose.x;
-            double dy = entity.posY - currentNose.y;
-            double dz = entity.posZ - currentNose.z;
-            double distSq = dx * dx + dy * dy + dz * dz;
-            if (distSq <= triggerDistance * triggerDistance + 1.0D) {
-                RdpUavDebug.debug("Kamikaze", "nose entity impact aircraft={} target={} type={} speed={}",
-                        aircraft.getUniqueID(), entity.getUniqueID(), entity.getClass().getName(),
-                        Math.sqrt(speedSquared));
+            AxisAlignedBB contactBounds = entity.getEntityBoundingBox()
+                    .grow(KamikazeConfig.impactSweepPadding);
+            if (contactBounds.calculateIntercept(previousNose, noseEnd) != null) {
+                if (aircraft.ticksExisted % 20 == 0) {
+                    RdpUavDebug.debug("Kamikaze",
+                            "nose entity contact aircraft={} target={} type={} speed={}",
+                            aircraft.getUniqueID(), entity.getUniqueID(), entity.getClass().getName(),
+                            Math.sqrt(speedSquared));
+                }
                 return true;
             }
         }

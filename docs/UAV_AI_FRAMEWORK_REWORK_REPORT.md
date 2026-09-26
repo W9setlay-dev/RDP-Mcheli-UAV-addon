@@ -164,6 +164,64 @@ the developer supplies build identity, logs, and observed telemetry.
 - Runtime in-game flight proof remains `PENDING_DEVELOPER_IN_GAME_TEST`; source/test
   validation is a deterministic contract check, not a physical flight claim.
 
+## Current runtime evidence and Phase H changes — 2026-09-26
+
+### Evidence identity and limits
+
+- Inspected `D:\ElyPrismLauncher\instances\RDP - (Reality Distortion Phenomen-v1)\minecraft\logs\latest.log`, 48,745,899 bytes, last written 2026-09-25 18:51:54. It is the newest supplied runtime evidence, but predates this source rework.
+- The installed `mcheli-ce-1.5.1.jar` and `libs/mcheli-ce-1.5.1.jar` match at SHA-256 `740B4DF7C6AE8FF66C2E54ADD422AF4F4495EEEF45DDF5815AF7FDF7FF49015B`.
+- At audit start, the installed addon and existing `build/libs/rdp-uav-addon-0.1.0.jar` matched at SHA-256 `976558789D27863436280C5A24B4A4AB9BC8B010BDFEA29DEF2E68FEA58B0D43`. This is the build that produced the log; it does not contain Phase H source changes.
+- The log contains no `[RDP-UAV/... ERROR]` or RDP exception stack. It does contain unrelated startup errors from NuclearCraftAdditions metadata and VintageFix cache recovery. Neither is evidence for the UAV lock/FSM/fuse failures. TickDynamic tile-entity warnings also have no demonstrated connection to the UAV events.
+
+### Findings confirmed by the supplied log and exact source
+
+1. **Entity-lock input reaches the server, then is rejected by the configured range.** The log contains eight `TargetLock REQUEST` entries, three entity requests rejected as `OUT_OF_RANGE`, and no accepted entity lock. For `shahed136`, the active profile has `lockRange=256`; the rejected loaded and filter-accepted targets were 299.325 and 309.188 blocks away. The client sends the exact crosshair UUID and the server performs authorization, loaded-entity, filter, profile, and distance checks. This trace does not support a missing key packet as the cause of these attempts. The observed server decision is consistent with the current profile limit.
+2. **The lock marker cannot show a 3D entity box.** `RdpUavTargetHud` previously drew a fixed-size 2D screen square around a projected telemetry point. It did not use the target entity's `AxisAlignedBB`, so it could not represent the target's actual dimensions or camera-space depth. The image references suggest corner brackets and a center cue; their numerical labels and implied sensor capabilities are not treated as project facts.
+3. **The mission FSM repeatedly dispatches a route without starting a new progress interval.** The log records 19,560 `SEARCHING -> REPLAN` and 18,489 `REPLAN -> SEARCHING` transitions. One mission repeatedly transitions on consecutive ticks while WingMan accepts the same `FLY_TO` route. `recordProgress` can mark a no-progress route for replanning; after the route is accepted, the prior expired stall timestamp remained active. On the next tick the same route was immediately replanned. The same no-progress policy also maps navigation stalls in locked states to `LOST`, mixing aircraft route progress with target visibility.
+4. **`TAKEOFF` is a label in this trace, not a demonstrated takeoff phase.** The point mission log goes `DISPATCHED -> TAKEOFF -> CRUISE -> SEARCHING` in the same server tick. That proves state transitions occurred; it does not prove a climbout controller, safe-altitude gate, or measured minimum-speed gate ran.
+5. **The point-task key path did execute in this session.** At 18:48:35 the server logged creation of a point mission with explicit XYZ coordinates. This proves one T/point-task request in this session; it does not prove camera alignment or general key reliability.
+6. **One mission's synchronous explosion was followed by a false aircraft-loss outcome.** At 18:37:34, aircraft `9997bc33-9bda-456c-a35d-dc0772064f0a` logged `PAYLOAD_DETONATED`; the mission then recorded `PAYLOAD_LAUNCH_ACCEPTED`, and one tick later transitioned to `AIRCRAFT_LOST` with `EFFECT_NOT_CONFIRMED`. Source inspection showed `detonateSelfDestructWeapon` called `MCH_Explosion.newExplosion`, destructed the aircraft, and returned success, while the lifecycle only recorded launch acceptance and never called `confirmKamikazeEffect` in production. This is a confirmed lifecycle race after a synchronous native effect, not proof that the target was hit or destroyed.
+7. **A separate terminal run never logged a payload effect before aircraft loss.** Mission `cdeb744a-1656-4298-9c55-1b39a5b5d22f` was a point attack. It entered `KAMIKADZE_TARGET`, generated 125 repeated broad “nose block impact” candidates over its terminal interval, then became `AIRCRAFT_LOST` with `EFFECT_NOT_CONFIRMED`. The old detector expanded a swept box by `impactSweepPadding + triggerDistance` in every axis. Those log messages were broad proximity candidates, not proof of a nose collision. At an earlier sample the aircraft-to-point distance was still 9.75 blocks and its course error was about 99 degrees; the sample does not establish a valid terminal impact geometry.
+
+### Changes made in this phase
+
+- A successful route dispatch now starts a fresh no-progress window and resets per-route progress. The reset is applied to initial dispatch, replanning, and one-way route refresh; dispatch acceptance still does not count as physical movement. Mission transition diagnostics now include the transition reason.
+- Entity target visualization now draws red lock brackets around the synchronized target entity's interpolated world-space bounding box, with an amber state while the server has not reported `TARGET_LOCKED`. Entity targets no longer fall back to the old screen-space square if the client cannot resolve the target entity. Point objectives retain their projected point marker. Server telemetry remains the authority; the client marker cannot assign a target.
+- `OUT_OF_RANGE` feedback now includes measured distance and profile lock limit so the operator can distinguish a rejected request from a non-working key.
+- The contact detector now traces a narrow forward nose segment to blocks/entities instead of treating a large expanded 3D box as contact. Repeated contact logs are rate-limited.
+- At the native effect boundary, the addon now requires a non-null `MCH_Explosion.ExplosionResult`, logs whether MCH reports an entity hit, and explicitly does not infer target destruction. Once the native effect call succeeds, the mission records `KAMIKADZE_DETONATED` synchronously before the aircraft can disappear from the next world-tick scan.
+- Added a synchronous `KamikazePreDestructionEvent` posted from a transformer hook at the verified McHeliCE 1.5.1 `MCH_EntityAircraft.handleDestruction(DamageSource, Entity, String, boolean)` method. The `EventPriority.HIGHEST` subscriber detonates only a committed, non-reusable self-destruct mission with sufficient speed and an actual nose-segment contact; the transformer skips native destruction only after the subscriber records a successful payload effect. The event is non-cancelable so unrelated subscribers cannot accidentally suppress McHeli destruction. If the event path fails or the weapon is unavailable, the hook fails open to McHeli's ordinary destruction behavior.
+- Restored null-safe `AircraftControlLease.matches`; a null UUID must not throw while evaluating movement ownership.
+
+### FSM and detonation architecture
+
+Keep four related but independent records rather than making every fact another rapidly changing mission enum value:
+
+1. **Mission phase:** `PLANNED -> DISPATCHED -> TAKEOFF/CLIMBOUT -> TRANSIT/SEARCH -> TARGET_ACQUIRED/LOCKED -> APPROACH -> TERMINAL_COMMIT -> EFFECT_PENDING -> EFFECT_CONFIRMED | OUTCOME_UNKNOWN -> RECOVERY/COMPLETE/FAILED`.
+2. **Contact track:** candidate UUID, loaded/dimension status, last-observed tick, hitbox, sampled position and velocity, confidence, and lifecycle `SEARCHING -> CANDIDATE -> LOCKED -> TRACKING -> LOST_GRACE -> REACQUIRING`. A route stall must not itself mean target loss. Target loss is based on contact freshness and server resolution after a bounded grace interval.
+3. **Route controller:** active route revision, route node, last measurable aircraft progress, last accepted replan tick, and a bounded retry deadline. An accepted replacement route resets its stall baseline once; the state stays in a stable replan/route phase until subsequent aircraft telemetry demonstrates progress. Do not toggle `SEARCHING` and `REPLAN` every tick.
+4. **Payload outcome:** `UNARMED -> ARMED -> CONTACT_CANDIDATE -> DETONATION_COMMITTED -> NATIVE_EFFECT_CREATED -> TARGET_EFFECT_OBSERVED | TARGET_EFFECT_UNVERIFIED`. A synchronous `MCH_Explosion` result confirms that the native effect routine ran; `ExplosionResult.hitEntity` is useful evidence but does not identify the intended target, so the code must not claim target destruction from it. The pre-destruction callback is idempotent through mission state and the payload-launched latch.
+
+The client lock display is a read-only projection of server-confirmed identity. It resolves the UUID in the client's current world and draws the entity's interpolated AABB as corner brackets; if the target entity is absent locally, show status/telemetry without inventing a box at a stale point. `T` point strike remains a coordinate objective and does not alias entity lock.
+
+### Validation and remaining work
+
+- `.\gradlew.bat test --no-daemon`: PASS, 239 tests, 0 failures, 0 errors, 0 skipped. Includes a regression for fresh route progress windows and a transformer test against the exact McHeliCE 1.5.1 JAR signature.
+- `.\gradlew.bat build --no-daemon`: PASS. Reobfuscated artifact: `build/libs/rdp-uav-addon-0.1.0.jar`, 568,498 bytes, SHA-256 `0333FE0BABB83B6CA197E61056AEA51A406DF3CDFC430981A0DE13E1EE276687`.
+- Source compilation and ASM transformation are validated. No source changes were copied to the active RDP instance and no current-build gameplay was performed.
+- `PENDING_DEVELOPER_IN_GAME_TEST`: actual `EventPriority.HIGHEST` fuse invocation before native aircraft destruction; exact explosion/aircraft-removal ordering; marker alignment in player/UAV/remote camera modes; entity lock inside/outside 256 blocks; route progress recovery; and T key camera-point alignment.
+- Still outside this phase: a real bounded `TAKEOFF`/climbout controller, independent target-loss hysteresis, full fixed-wing/helicopter flight-profile calibration, terrain/water-safe 3D navigation, missile seeker UI and projectile outcome confirmation, reusable stand-off attack/recovery, and comprehensive filter/swarm GUI validation. No source/test result here establishes realistic live flight or full-framework release readiness.
+
+### Developer live-test handoff for this artifact
+
+1. In a disposable copy of the RDP instance, back up the installed addon JAR and install the artifact above; keep the exact McHeliCE JAR whose hash is recorded in this report. Restart the client/server so the coremod transformer runs from startup.
+2. At startup, confirm the new log line says the `MCH_EntityAircraft.handleDestruction` fuse hook was installed. If it reports a signature mismatch, stop this live scenario and save the log; ordinary aircraft destruction should remain enabled.
+3. Test entity lock with a loaded target first within the Shahed profile's 256-block limit, then at approximately 300 blocks. Expect an accepted lock in-range and an explicit `OUT_OF_RANGE` message with distance and profile limit out-of-range. Check that the accepted entity receives the red 3D AABB brackets in player view and in the UAV/remote camera modes you use.
+4. Submit a point task with `T` while aiming at a loaded block. Record the created server XYZ and confirm the point marker remains distinct from the entity AABB marker.
+5. Fly a harmless straight route for at least 200 ticks in a loaded area. Save mission transition events and confirm an accepted replan opens one new progress window instead of repeating `SEARCHING -> REPLAN -> SEARCHING` each tick.
+6. For the one-way payload case, use a disposable test area and a supported loaded self-destruct weapon. Save the complete interval from terminal commit through the pre-destruction fuse event, `PAYLOAD_DETONATED`, `PAYLOAD_EFFECT_CONFIRMED`, and final mission state. Record whether the intended target was actually hit separately from whether the explosion was created.
+7. Keep the new `latest.log` and, if available, a short trajectory capture. Those artifacts are needed to close the runtime items marked `PENDING_DEVELOPER_IN_GAME_TEST`.
+
 ## Phase 1 — packet movement arbitration
 
 ### Objective
@@ -595,3 +653,228 @@ closed-loop autopilot, not a proven copy of direct human input.
 Remaining release work is enumerated in
 `docs/ai-flight-control-ownership.md` and the developer handoff in
 `docs/runtime-test-matrix.md`.
+
+## Phase I — target freshness hysteresis and route-stall separation — 2026-09-26
+
+### Source findings
+
+- `ContactTracker` already had a 40-tick lost-contact grace, but
+  `MissionLifecycle` immediately cleared/released target guidance when the
+  entity was unavailable. The mission state therefore did not honor the
+  tracker's grace interval.
+- A route stall while in `TARGET_LOCKED`, `APPROACHING`, or `ATTACK_TARGET`
+  was classified as `REACQUIRE`, and `RDPMission.recordProgress` translated
+  that navigation timeout to mission state `LOST`. Route progress is not
+  evidence that the entity disappeared.
+- Target loss handling tried to defer several locked/attack states directly
+  to `WAITING_FOR_TARGET`, a transition the FSM did not permit. A persisted
+  target UUID could consequently be retained in data while the transition
+  failed at runtime.
+
+### Changes
+
+- Persisted the last server observation tick for the locked target in mission
+  schema 5. Older saved missions without this timestamp receive `-1`, so the
+  addon does not invent a fresh contact after loading old world data.
+- During the 40-tick contact grace, the mission keeps the same target UUID and
+  does not change its mission state. FPV aircraft enter their existing hover
+  behavior; other aircraft receive a short non-attacking forward hold leg while
+  the mission keeps its control lease. The prior attack route is replaced so
+  it cannot continue steering toward a stale point or launch against a stale
+  target.
+- After grace expires, the mission transitions once to `LOST`, then to
+  `WAITING_FOR_TARGET` on the following update. The target UUID is retained;
+  reacquisition can only resolve that same entity. FSM transitions now permit
+  this outcome from route and target-dependent phases.
+- Route-progress timeout now requests `REPLAN` for active navigation states
+  and retains target identity. Intentional on-target/reporting phases no longer
+  use route-motion timeout as their progress expectation. Actual target loss
+  comes from contact freshness, independently of navigation stall.
+- During an already committed kamikaze approach, the same UUID remains
+  authoritative. The existing terminal timeout remains the bound. The last
+  finite approach is preserved during grace; after grace the adapter may hold
+  a forward leg, except an FPV controller already in terminal approach keeps
+  its committed route because its hover state machine rejects a late mode
+  switch.
+
+### Validation and limits
+
+- `.\gradlew.bat compileJava --no-daemon`: PASS after the FSM, persistence,
+  and flight-route changes. `compileTestJava` also passed, confirming the
+  updated existing policy contract compiles; no unit tests were executed.
+- `reobfJar` completed successfully. Artifact:
+  `build/libs/rdp-uav-addon-0.1.0.jar`, 569,676 bytes, SHA-256
+  `C0BC13390669D8B5D8F0F517CACA00E826FE7FEEFD4C3F596670BFA990FE422A`.
+  This JAR was not copied into the active RDP instance.
+- No current-build JAR was installed into the active RDP instance. The 40-tick
+  policy, loaded/unloaded chunk behavior, same-UUID reacquisition, route
+  suspension, and FPV terminal behavior require live validation.
+- The hold leg is a bounded route setpoint, not terrain clearance or a tested
+  loiter procedure. It does not prove the aircraft can safely remain airborne
+  in every MCheli definition.
+
+## Phase J — stable target-loss hold routing — 2026-09-26
+
+### Source finding
+
+`MissionLifecycle` requests `holdForTargetReacquisition` on every server tick
+while an entity is unavailable. The adapter rebuilt the same two-node
+`FLY_TO -> LOITER` route on every request and reset its route index and timer.
+That prevented WingMan from completing the bounded hold leg. A completed hold
+could also leave an old `LOITER` suffix behind when the same target returned,
+allowing the resumed mission to orbit before its next action.
+
+### Change
+
+- The adapter now records which aircraft currently owns a target-loss hold
+  route and preserves its active `FLY_TO` or `LOITER` node across repeated
+  lifecycle updates.
+- Once WingMan completes or parks that leg, a later hold request may install a
+  fresh bounded forward leg. Return-to-base and landing routes remain untouched.
+- Reacquiring the target removes the hold marker and replaces the hold route
+  with a fresh single `FLY_TO` target leg, discarding the hold-only `LOITER`
+  suffix. A parked hold entry is returned to `ENROUTE` only during this
+  explicit route resumption.
+- The marker is cleared when another route, attack, terminal route, mission
+  release, or new dispatch takes ownership.
+
+### Validation and limits
+
+- `.\gradlew.bat compileJava compileTestJava reobfJar --no-daemon`: PASS.
+  Test sources compiled; no unit tests were executed.
+- `git diff --check`: PASS (Git reports existing LF/CRLF normalization
+  warnings).
+- Reobfuscated artifact:
+  `build/libs/rdp-uav-addon-0.1.0.jar`, 570,231 bytes, SHA-256
+  `74C7A7BA3CA4CC9AFFCF883711B69D65DE576D0DE94206BFD4FD25BB24144EDB`.
+- The artifact was not installed in the active RDP instance. Route-index
+  stability, WingMan parking timing, same-UUID reacquisition, terminal resume,
+  and observed flight path still require the developer's in-game run. The
+  hold route remains a short route intent, not terrain-safe loiter.
+
+## Phase K — bounded route recovery and measured progress — 2026-09-26
+
+### Source finding
+
+The lifecycle could repeatedly replan a mission without consuming its recovery
+budget: the existence of a target cleared `recoveryAttempts` every active tick,
+and accepting a replacement route cleared it again. In addition, route-stall
+tracking compared the current waypoint distance with `NaN`, so it could not
+recognize physical movement toward a waypoint. A one-tick distance delta also
+missed slow but cumulative progress below the 0.5-block threshold.
+
+### Change
+
+- Recovery attempts now increase when a no-progress policy enters `REPLAN` and
+  when an existing recovery path is deferred. The actual recovery reason is
+  preserved as the FSM transition reason.
+- Target presence and route acceptance no longer reset the budget. It resets
+  only when consecutive server observations establish at least 0.5 blocks of
+  accumulated distance reduction toward the active target or route waypoint.
+- Distance baselines reset on accepted route dispatch. The first observation
+  establishes a baseline; dispatch itself is not movement. Improvements smaller
+  than the threshold accumulate against the best measured distance so slow
+  motion can still count. When WingMan advances to a different route node, the
+  waypoint-distance baseline is re-established for that node rather than
+  comparing the new waypoint against the previous node's distance.
+- Once more than five recovery attempts are consumed without measured movement,
+  the mission enters `FAILED` with a `_RECOVERY_EXHAUSTED` reason. The lifecycle
+  observes the terminal state and releases the aircraft mission lease.
+- Recovery counter/state changes and meaningful progress-timestamp/route-index
+  changes mark mission world data dirty so they survive a save before the next
+  unrelated mission event.
+- Mission NBT schema 6 persists route progress and the last meaningful-progress
+  tick. Older saves without those fields load with a conservative baseline at
+  mission creation; per-route distance samples are intentionally re-established
+  from live observations after load.
+
+### Validation and limits
+
+- `git diff --check`: PASS (only repository LF/CRLF normalization warnings).
+- `compileJava compileTestJava reobfJar --no-daemon`: PASS. Test sources compile;
+  no unit tests were executed.
+- Reobfuscated artifact:
+  `build/libs/rdp-uav-addon-0.1.0.jar`, 570,977 bytes, SHA-256
+  `895F4C37017BDEACC5EB83B792AA37CD37C1AAFB42671E6F8B97B184B018D416`.
+- The artifact was not installed in the active RDP instance. The 0.5-block
+  progress threshold, slow/curved profiles, target motion, actual WingMan
+  redispatch, schema-6 migration, save/reload recovery accounting, and exhaustion
+  cleanup need the developer's live run. Compilation is not evidence of aircraft
+  motion.
+
+## Phase L — native guided-projectile outcomes — 2026-09-26
+
+### Source evidence from McHeliCE 1.5.1
+
+- The local `libs/mcheli-ce-1.5.1.jar` implements server projectile collision in
+  `MCH_EntityBaseBullet.onImpact(RayTraceResult,float)`. The terminal block/entity
+  branch calls `func_70106_y()` after native impact handling. Several rejected,
+  intercepted, or water-pass-through branches return before that removal. The
+  observer therefore requires a server world, a block/entity ray result, and
+  `isDead`; it does not treat a proximity update, timeout, or mere disappearance
+  as impact.
+- `MCH_Explosion.newExplosion(...)` and `newExplosionInWater(...)` return a
+  nullable `ExplosionResult`; its `hitEntity` flag reports whether the explosion
+  hit any entity. It does not identify the assigned objective. The inspected
+  native return path provides no Forge event result suitable for this outcome
+  handoff, so the addon uses narrow hooks at these McHeliCE return points.
+
+### Changes in this phase
+
+- `RdpUavTransformer` now installs a server impact observer in the verified
+  `MCH_EntityBaseBullet.onImpact` method and observes native explosion results
+  returned synchronously by McHeliCE.
+- The callback associates only bullets with a currently authorized AI guidance
+  assignment whose weapon matches the fired projectile. It records collision
+  separately from native explosion processing and logs `explosionHitEntity`
+  separately; it never claims that the assigned target was hit or destroyed.
+- Impact evidence is retained by objective UUID when the projectile entity is
+  pruned from the live-projectile map. Retention is bounded to 512 outcomes.
+- Each observed projectile now retains its dimension and last observed block
+  position. A missing projectile in an unloaded last-seen chunk is deferred,
+  not classified as a miss; ticks for another dimension also no longer prune
+  its in-memory tracking state. If that chunk loads and the projectile is still
+  absent, the outcome becomes unknown.
+- A mission with a confirmed collision but no native explosion result now moves
+  to `OUTCOME_UNKNOWN` after 100 ticks instead of remaining in
+  `IMPACT_OBSERVED` indefinitely.
+
+### Validation and limits
+
+- Exact MCheliCE API signatures and collision branch behavior were inspected
+  from the local 1.5.1 JAR with `javap`.
+- `gradlew compileJava --no-daemon`: PASS. `gradlew reobfJar --no-daemon`: PASS.
+  Unit tests were not run.
+- Current reobfuscated artifact:
+  `build/libs/rdp-uav-addon-0.1.0.jar`, 578,342 bytes, SHA-256
+  `39E56DA13529C2FE24E2052E6D30629699D42C72D7D003B26DD8CDD6D343EE68`.
+- The artifact was not copied into the active RDP instance. Transformer
+  installation messages, collision timing, target damage, explosion effects,
+  and chunk-unload deferral still require a live developer run. A non-null
+  native explosion result proves that McHeliCE processed its explosion
+  operation; `hitEntity` proves only that some entity was hit by that
+  explosion. Target-specific damage/destruction is not yet measured.
+
+### Remaining outcome risks
+
+- The chunk guard uses the projectile's last sampled block position. Its
+  behavior across chunk save/reload must be confirmed in-game; projectile
+  persistence itself is controlled by McHeliCE/Minecraft and is not guaranteed
+  by this in-memory observer.
+- Aircraft/world save and server restart persistence for projectile assignments
+  is not implemented. The new retained observations are bounded in-memory
+  runtime evidence only.
+- Projectiles whose subclasses bypass the verified base `onImpact` path require
+  their own signature audit; first live validation should use the guided
+  AAM/AT/AS/TV families whose local 1.5.1 classes inherit this method.
+
+### Carried helicopter-controller failure
+
+The previously reported `Invalid helicopter controller inputs` exception was
+not changed in this phase. In the current checkout that exception is thrown
+only for a null `AircraftState`, non-finite target coordinates, or a negative
+`currentTick`. The checked `helicopterSeparatesHorizontalAttitudeAndCollective`
+source case supplies a state and finite `(30, 28, 20)` coordinates at tick 12,
+so the pasted stack trace does not match the current source inputs. JUnit was
+not run; diagnose this next against the exact failing checkout/build and runtime
+arguments before changing the controller's fail-closed behavior.

@@ -3,19 +3,14 @@ package net.vas.rdp.uav.weapon;
 import net.minecraftforge.common.config.Configuration;
 import net.vas.rdp.uav.RdpUavDebug;
 import java.io.File;
-import java.util.EnumSet;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Locale;
-import java.util.Map;
+import java.util.*;
 
 /** Server-loaded registry keyed by McHeli definition name and weapon type. */
 public final class GuidedWeaponRegistry {
     private static final Map<String, GuidedWeaponCapability> CAPABILITIES =
             new HashMap<>();
 
-    private GuidedWeaponRegistry() { }
+    private GuidedWeaponRegistry() {}
 
     public static void load(File configDir) {
         Configuration config = new Configuration(new File(configDir, "rdp-uav-guided-weapons.cfg"));
@@ -201,10 +196,9 @@ public final class GuidedWeaponRegistry {
     private static ArrayList<GuidedWeaponCapability> orderedCapabilities() {
         ArrayList<GuidedWeaponCapability> result =
                 new ArrayList<>(CAPABILITIES.values());
-        Collections.sort(result, (left, right) -> {
-            int definition = left.getDefinition().compareTo(right.getDefinition());
-            return definition != 0 ? definition : left.getType().compareTo(right.getType());
-        });
+        result.sort(Comparator
+                .comparing(GuidedWeaponCapability::getDefinition)
+                .thenComparing(GuidedWeaponCapability::getType));
         return result;
     }
 

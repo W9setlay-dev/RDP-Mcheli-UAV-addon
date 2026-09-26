@@ -2,7 +2,7 @@ package net.vas.rdp.uav.mission;
 
 /**
  * Deterministic policy for deciding whether a no-progress mission should hold,
- * replan, or declare the target lost.
+ * replan a route. Contact freshness is evaluated independently by target tracking.
  */
 public final class MissionProgressPolicy {
     private MissionProgressPolicy() { }
@@ -63,13 +63,9 @@ public final class MissionProgressPolicy {
         if (state == MissionState.TARGET_ACQUIRED
                 || state == MissionState.TARGET_LOCKED
                 || state == MissionState.APPROACHING
-                || state == MissionState.ATTACK_TARGET
-                || state == MissionState.ON_TARGET
-                || state == MissionState.ORBITING
-                || state == MissionState.SCANNING
-                || state == MissionState.DEEP_SCANNING
-                || state == MissionState.REPORTING) {
-            return new Decision(Action.REACQUIRE, hasTarget ? "TARGET_LOST" : "TARGET_LOSS_STALLED");
+                || state == MissionState.ATTACK_TARGET) {
+            return new Decision(Action.REPLAN,
+                    hasTarget ? "ROUTE_STALLED_TARGET_RETAINED" : "ROUTE_STALLED_NO_TARGET");
         }
         return new Decision(Action.HOLD, "NO_PROGRESS_TIMEOUT");
     }

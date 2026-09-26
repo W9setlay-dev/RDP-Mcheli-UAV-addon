@@ -31,7 +31,9 @@ public final class RDPMission {
     private long lastTargetTick = -1L;
     private long lastUpdateTick;
     private double routeProgress = 0.0D;
-    private long lastMeaningfulProgressTick = -1L;
+    private long lastMeaningfulProgressTick;
+    private double bestMeasuredTargetDistance = Double.NaN;
+    private double bestMeasuredWaypointDistance = Double.NaN;
     private String failureReason;
     private String reportId;
     private int dimension;
@@ -45,6 +47,7 @@ public final class RDPMission {
     private String recoveryReason;
     private double squareWidth;
     private double squareDepth;
+    private static final double PROGRESS_DISTANCE_THRESHOLD = 0.5D;
     private MissionPhase phase = MissionPhase.PLANNING;
     private ControlOwner controlOwner = ControlOwner.MISSION_AI;
     public static final int MAX_RECOVERY_ATTEMPTS = 5;
@@ -110,7 +113,8 @@ public final class RDPMission {
                 "phase", phase,
                 "controlOwner", controlOwner,
                 "tick", tick,
-                "target", targetId);
+                "target", targetId,
+                "reason", lastTransitionReason);
     }
 
     public boolean isTerminal() {
@@ -162,6 +166,7 @@ public final class RDPMission {
         this.targetLock = new TargetLock(targetId, "rdpuav:unknown", dimension,
                 0.0D, 0.0D, 0.0D, tick, ownerId, missionId);
         this.lastTargetId = targetId;
+        this.lastTargetTick = tick;
         transitionTo(MissionState.TARGET_LOCKED, tick);
     }
 
@@ -392,11 +397,14 @@ public final class RDPMission {
                 previousDistanceToWaypoint,
                 currentDistanceToWaypoint,
                 lastMeaningfulProgressTick < 0L ? createdTick : lastMeaningfulProgressTick,
-                0.5D,
+                PROGRESS_DISTANCE_THRESHOLD,
                 200L);
         this.routeProgress = snapshot.getRouteProgress();
         this.lastMeaningfulProgressTick = progressExpected
                 ? snapshot.getLastMeaningfulProgressTick() : tick;
+        if (progressExpected && snapshot.isMeasuredDistanceProgress()) {
+            clearRecovery();
+        }
         MissionProgressPolicy.Decision progressDecision = MissionProgressPolicy.evaluate(
                 state,
                 targetId != null,
@@ -410,9 +418,50 @@ public final class RDPMission {
             transitionTo(MissionState.LOST, tick, progressDecision.getReason());
         } else if (progressDecision.getAction() == MissionProgressPolicy.Action.REPLAN
                 && state.canTransitionTo(MissionState.REPLAN)) {
-            transitionTo(MissionState.REPLAN, tick, progressDecision.getReason());
+            defer(progressDecision.getReason(), MissionState.REPLAN, tick);
         }
         this.lastUpdateTick = tick;
+    }
+
+    /**
+     * Records sequential distance samples from the server-observed aircraft
+     * and its current route/target. Route assignment alone is not progress.
+     */
+    public boolean recordObservedProgress(long tick, double previousRouteProgress,
+                                          double currentRouteProgress,
+                                          double currentDistanceToTarget,
+                                          double currentDistanceToWaypoint,
+                                          boolean progressExpected) {
+        MissionState previousState = state;
+        int previousRecoveryAttempts = recoveryAttempts;
+        long previousMeaningfulProgressTick = lastMeaningfulProgressTick;
+        double previousProgress = routeProgress;
+        double previousTargetDistance = bestMeasuredTargetDistance;
+        boolean routeNodeAdvanced = Double.isFinite(previousRouteProgress)
+                && Double.isFinite(currentRouteProgress)
+                && currentRouteProgress > previousRouteProgress;
+        double previousWaypointDistance = routeNodeAdvanced
+                ? Double.NaN : bestMeasuredWaypointDistance;
+        recordProgress(tick, previousRouteProgress, currentRouteProgress,
+                previousTargetDistance, currentDistanceToTarget,
+                previousWaypointDistance, currentDistanceToWaypoint,
+                progressExpected);
+        bestMeasuredTargetDistance = nextProgressBaseline(
+                previousTargetDistance, currentDistanceToTarget);
+        bestMeasuredWaypointDistance = nextProgressBaseline(
+                previousWaypointDistance, currentDistanceToWaypoint);
+        return previousState != state
+                || previousRecoveryAttempts != recoveryAttempts
+                || Double.compare(previousProgress, routeProgress) != 0
+                || (progressExpected
+                && previousMeaningfulProgressTick != lastMeaningfulProgressTick);
+    }
+
+    private static double nextProgressBaseline(double previousBest, double current) {
+        if (!Double.isFinite(current)) return Double.NaN;
+        if (!Double.isFinite(previousBest)
+                || previousBest - current > PROGRESS_DISTANCE_THRESHOLD) return current;
+        return previousBest;
     }
 
     public boolean isProgressStalled(long tick, long stallWindowTicks) {
@@ -420,6 +469,33 @@ public final class RDPMission {
             return false;
         }
         return tick - lastMeaningfulProgressTick >= stallWindowTicks;
+    }
+
+    /**
+     * Starts a fresh no-progress window after the server accepts a new route.
+     * Dispatching a route is not counted as movement; it only prevents the
+     * previous route's expired stall timer from immediately dispatching the
+     * replacement route again on the next tick.
+     */
+    public void beginRouteProgressWindow(long tick) {
+        if (tick < lastUpdateTick) {
+            throw new IllegalArgumentException("Route progress baseline is before mission activity");
+        }
+        lastMeaningfulProgressTick = tick;
+        routeProgress = 0.0D;
+        bestMeasuredTargetDistance = Double.NaN;
+        bestMeasuredWaypointDistance = Double.NaN;
+        lastUpdateTick = tick;
+    }
+
+    public void restoreProgressState(double restoredRouteProgress,
+                                     long restoredLastMeaningfulProgressTick) {
+        if (!Double.isFinite(restoredRouteProgress) || restoredRouteProgress < 0.0D) {
+            throw new IllegalArgumentException("Invalid persisted route progress");
+        }
+        routeProgress = restoredRouteProgress;
+        lastMeaningfulProgressTick = Math.max(createdTick,
+                Math.min(lastUpdateTick, restoredLastMeaningfulProgressTick));
     }
 
     public void fail(String reason, long tick) {
@@ -477,7 +553,7 @@ public final class RDPMission {
             fail(reason + "_RECOVERY_EXHAUSTED", tick);
             return false;
         }
-        transitionTo(recoveryState, tick);
+        transitionTo(recoveryState, tick, reason.trim());
         return true;
     }
 
@@ -594,21 +670,32 @@ public final class RDPMission {
 
     public void updateTargetLock(String registryId, int targetDimension,
                                  double x, double y, double z, long tick) {
+        if (tick < lastUpdateTick) {
+            throw new IllegalArgumentException("Target observation is before mission activity");
+        }
         if (targetLock == null || !targetLock.getEntityId().equals(targetId)) {
             if (targetId == null) return;
             targetLock = new TargetLock(targetId,
                     registryId == null || registryId.trim().isEmpty()
                             ? "rdpuav:unknown" : registryId,
                     targetDimension, x, y, z, tick, ownerId, missionId);
+            lastTargetId = targetId;
+            lastTargetTick = tick;
             return;
         }
         targetLock.updateIdentity(registryId == null || registryId.trim().isEmpty()
                 ? targetLock.getRegistryId() : registryId, targetDimension);
         targetLock.update(x, y, z, tick);
+        lastTargetId = targetId;
+        lastTargetTick = tick;
     }
     public UUID getLastTargetId() { return lastTargetId; }
     public String getLastTargetReason() { return lastTargetReason; }
     public long getLastTargetTick() { return lastTargetTick; }
+    public void restoreLastTargetTick(long tick) {
+        if (tick < -1L) throw new IllegalArgumentException("Invalid target observation tick");
+        lastTargetTick = tick;
+    }
     public String getFailureReason() { return failureReason; }
     public String getLastTransitionReason() { return lastTransitionReason; }
     public void restoreTransitionReason(String reason) {

@@ -571,13 +571,28 @@ public final class GuiMissionControl extends GuiScreen {
                     if (pair.length != 2) throw new IllegalArgumentException("Use key=value clauses");
                     String key = pair[0].trim().toLowerCase(java.util.Locale.ROOT);
                     String[] values = splitPolicyValues(pair[1]);
-                    if ("include".equals(key)) policy.include(values);
-                    else if ("require".equals(key)) policy.require(values);
-                    else if ("exclude".equals(key)) policy.exclude(values);
-                    else if ("rejectembedded".equals(key)) rejectEmbedded = Boolean.parseBoolean(pair[1].trim());
-                    else if ("allowvehicles".equals(key)) allowVehicles = Boolean.parseBoolean(pair[1].trim());
-                    else if ("confidence".equals(key)) confidence = Double.parseDouble(pair[1].trim());
-                    else throw new IllegalArgumentException("Unknown policy key: " + key);
+                    switch (key) {
+                        case "include":
+                            policy.include(values);
+                            break;
+                        case "require":
+                            policy.require(values);
+                            break;
+                        case "exclude":
+                            policy.exclude(values);
+                            break;
+                        case "rejectembedded":
+                            rejectEmbedded = Boolean.parseBoolean(pair[1].trim());
+                            break;
+                        case "allowvehicles":
+                            allowVehicles = Boolean.parseBoolean(pair[1].trim());
+                            break;
+                        case "confidence":
+                            confidence = Double.parseDouble(pair[1].trim());
+                            break;
+                        default:
+                            throw new IllegalArgumentException("Unknown policy key: " + key);
+                    }
                 }
             }
             definition.setTargetPolicy(policy.rejectDeeplyEmbedded(rejectEmbedded)
@@ -670,7 +685,7 @@ public final class GuiMissionControl extends GuiScreen {
     private void createSquareMission() {
         String parameters = targetField == null ? "" : targetField.getText().trim();
         if (!parameters.matches("-?[0-9.]+\\s+-?[0-9.]+\\s+-?[0-9.]+(\\s+[0-9.]+)?")) {
-            status = "Square format: centerX centerY centerZ [size].";
+            status = "Square format: X Y Z [size].";
             return;
         }
         definition.setTarget(parameters).setAttack(true).setMissionType(MissionType.SQUARE_STRIKE);
@@ -712,17 +727,22 @@ public final class GuiMissionControl extends GuiScreen {
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
         drawDefaultBackground();
         refreshMode();
-        String title = uavMode && guidedMode ? "RDP UAV + GUIDED WEAPON CONTROL"
+        String title = uavMode && guidedMode ? "GUIDED WEAPON CONTROL"
                 : uavMode ? "RDP UAV MISSION CONTROL"
-                : guidedMode ? "RDP GUIDED WEAPON CONTROL" : "RDP MISSION CONTROL";
-        drawCenteredString(fontRenderer, title + " / " + activeTab.name(), width / 2, 12, 0xFFFFFF);
+                : guidedMode ? "GUIDED WEAPON CONTROL" : "RDP MISSION CONTROL";
+        drawCenteredString(fontRenderer, title + " / "
+                + activeTab.name(),
+                width / 2,
+                12,
+                0xFFFFFF);
+
         if (help) {
             drawHelp();
         } else {
             int left = width / 2 - 220;
             int right = width / 2 + 15;
             drawString(fontRenderer, "SECTION: " + activeTab.name(), left, 30, 0xB0D8FF);
-            drawString(fontRenderer, "ENTITY ID FILTER (namespace:path or mod=namespace)", left, 42, 0xB0D8FF);
+            drawString(fontRenderer, "ENTITY ID FILTER (namespace:path)", left, 42, 0xB0D8FF);
             if (activeTab == MissionGuiTab.VALIDATION) {
                 MissionValidationResult validation = MissionValidationResult.validate(definition);
                 drawString(fontRenderer, validation.isValid() ? "VALID" : "INVALID",

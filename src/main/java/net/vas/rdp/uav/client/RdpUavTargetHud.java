@@ -3,19 +3,28 @@ package net.vas.rdp.uav.client;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.client.renderer.GlStateManager;
+import net.minecraft.entity.Entity;
+import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.RayTraceResult;
 import net.minecraft.util.math.Vec3d;
 import net.minecraftforge.client.event.RenderGameOverlayEvent;
+import net.minecraftforge.client.event.RenderWorldLastEvent;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
 import org.lwjgl.opengl.GL11;
+
+import java.util.UUID;
 
 @SideOnly(Side.CLIENT)
 public final class RdpUavTargetHud {
     private static final RdpUavTargetHud INSTANCE = new RdpUavTargetHud();
     private Telemetry telemetry;
     private long receivedAt;
+    private UUID cachedTargetId;
+    private Entity cachedTarget;
+    private net.minecraft.world.World cachedWorld;
+    private long nextTargetLookupAt;
 
     private RdpUavTargetHud() { }
 
@@ -27,6 +36,13 @@ public final class RdpUavTargetHud {
         Telemetry previous = telemetry;
         telemetry = value;
         receivedAt = System.currentTimeMillis();
+        if (previous == null || value == null
+                || !same(previous.targetUuid, value.targetUuid)) {
+            cachedTargetId = null;
+            cachedTarget = null;
+            cachedWorld = null;
+            nextTargetLookupAt = 0L;
+        }
     }
 
     public Telemetry snapshot() {
@@ -52,8 +68,110 @@ public final class RdpUavTargetHud {
             }
         }
         if (RdpUavHudConfig.markerVisible && telemetry.hasPosition
+                && (telemetry.targetUuid == null || telemetry.targetUuid.isEmpty())
                 && MissionUiState.isMarkerVisible(telemetry.missionState, telemetry.markerState)) drawMarker(mc,
                 event.getResolution().getScaledWidth(), event.getResolution().getScaledHeight());
+    }
+
+    /** Draws a target lock around the synchronized entity's actual 3D bounds. */
+    @SubscribeEvent
+    public void renderWorldTarget(RenderWorldLastEvent event) {
+        if (!RdpUavHudConfig.markerVisible || telemetry == null || !telemetry.active
+                || telemetry.targetUuid == null || telemetry.targetUuid.isEmpty()
+                || !MissionUiState.isMarkerVisible(telemetry.missionState, telemetry.markerState)
+                || System.currentTimeMillis() - receivedAt > 3000L) return;
+
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc.player == null || mc.world == null
+                || telemetry.dimension != mc.world.provider.getDimension()) return;
+        Entity target = resolveTarget(mc, telemetry.targetUuid);
+        if (target == null || target.isDead) return;
+
+        float partialTicks = event.getPartialTicks();
+        double x = target.lastTickPosX + (target.posX - target.lastTickPosX) * partialTicks;
+        double y = target.lastTickPosY + (target.posY - target.lastTickPosY) * partialTicks;
+        double z = target.lastTickPosZ + (target.posZ - target.lastTickPosZ) * partialTicks;
+        AxisAlignedBB box = target.getEntityBoundingBox().offset(
+                x - target.posX, y - target.posY, z - target.posZ);
+        Entity camera = mc.getRenderViewEntity();
+        if (camera == null) camera = mc.player;
+        if (camera == null) return;
+        Vec3d cameraPosition = camera.getPositionEyes(partialTicks);
+        box = box.offset(-cameraPosition.x, -cameraPosition.y, -cameraPosition.z);
+
+        boolean locked = "TARGET_LOCKED".equals(telemetry.targetState);
+        GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_LINE_BIT | GL11.GL_CURRENT_BIT
+                | GL11.GL_DEPTH_BUFFER_BIT | GL11.GL_COLOR_BUFFER_BIT);
+        GlStateManager.pushMatrix();
+        GlStateManager.disableTexture2D();
+        GlStateManager.enableBlend();
+        GlStateManager.tryBlendFuncSeparate(770, 771, 1, 0);
+        GlStateManager.depthMask(false);
+        GL11.glLineWidth(2.0F);
+        if (locked) GlStateManager.color(1.0F, 0.12F, 0.12F, 0.95F);
+        else GlStateManager.color(1.0F, 0.72F, 0.12F, 0.8F);
+        drawTargetBrackets(box);
+        GlStateManager.popMatrix();
+        GL11.glPopAttrib();
+    }
+
+    private Entity resolveTarget(Minecraft mc, String targetUuid) {
+        UUID id;
+        try {
+            id = UUID.fromString(targetUuid);
+        } catch (IllegalArgumentException invalidUuid) {
+            return null;
+        }
+        if (cachedTargetId != null && cachedTargetId.equals(id)
+                && cachedWorld == mc.world && cachedTarget != null
+                && !cachedTarget.isDead && cachedTarget.world == mc.world) return cachedTarget;
+
+        long now = System.currentTimeMillis();
+        if (cachedTargetId != null && cachedTargetId.equals(id)
+                && cachedWorld == mc.world && now < nextTargetLookupAt) return null;
+        cachedTargetId = id;
+        cachedWorld = mc.world;
+        cachedTarget = null;
+        nextTargetLookupAt = now + 250L;
+        for (Entity entity : mc.world.loadedEntityList) {
+            if (id.equals(entity.getUniqueID())) {
+                cachedTarget = entity;
+                break;
+            }
+        }
+        return cachedTarget;
+    }
+
+    private static boolean same(String first, String second) {
+        return first == null ? second == null : first.equals(second);
+    }
+
+    private static void drawTargetBrackets(AxisAlignedBB box) {
+        double sx = Math.max(0.15D, Math.min(0.55D, (box.maxX - box.minX) * 0.28D));
+        double sy = Math.max(0.15D, Math.min(0.55D, (box.maxY - box.minY) * 0.28D));
+        double sz = Math.max(0.15D, Math.min(0.55D, (box.maxZ - box.minZ) * 0.28D));
+        GL11.glBegin(GL11.GL_LINES);
+        for (int ix = 0; ix <= 1; ix++) {
+            double x = ix == 0 ? box.minX : box.maxX;
+            double dx = ix == 0 ? sx : -sx;
+            for (int iy = 0; iy <= 1; iy++) {
+                double y = iy == 0 ? box.minY : box.maxY;
+                double dy = iy == 0 ? sy : -sy;
+                for (int iz = 0; iz <= 1; iz++) {
+                    double z = iz == 0 ? box.minZ : box.maxZ;
+                    double dz = iz == 0 ? sz : -sz;
+                    GL11.glVertex3d(x, y, z); GL11.glVertex3d(x + dx, y, z);
+                    GL11.glVertex3d(x, y, z); GL11.glVertex3d(x, y + dy, z);
+                    GL11.glVertex3d(x, y, z); GL11.glVertex3d(x, y, z + dz);
+                }
+            }
+        }
+        double cx = (box.minX + box.maxX) * 0.5D;
+        double cy = (box.minY + box.maxY) * 0.5D;
+        double cz = (box.minZ + box.maxZ) * 0.5D;
+        GL11.glVertex3d(cx - sx * 0.18D, cy, cz); GL11.glVertex3d(cx + sx * 0.18D, cy, cz);
+        GL11.glVertex3d(cx, cy - sy * 0.18D, cz); GL11.glVertex3d(cx, cy + sy * 0.18D, cz);
+        GL11.glEnd();
     }
 
     private void drawTelemetry(Minecraft mc, int width, int height) {

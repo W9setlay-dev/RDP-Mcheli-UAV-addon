@@ -1,6 +1,8 @@
 package net.vas.rdp.uav.weapon;
 
 import java.util.UUID;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.World;
 import net.vas.rdp.uav.RdpUavDebug;
 
 /**
@@ -12,6 +14,8 @@ public final class ProjectileGuidanceMission {
     private final String weapon;
     private final GuidedNativeBehavior behavior;
     private final GuidedStrikeObjective objective;
+    private int dimension = Integer.MIN_VALUE;
+    private BlockPos lastObservedPosition;
     private ProjectileGuidanceState state = ProjectileGuidanceState.ASSIGNED;
     private String reason = "ASSIGNED";
 
@@ -81,4 +85,17 @@ public final class ProjectileGuidanceMission {
     public GuidedStrikeObjective getObjective() { return objective; }
     public ProjectileGuidanceState getState() { return state; }
     public String getReason() { return reason; }
+
+    public void observePosition(int dimension, double x, double y, double z) {
+        if (!Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)) return;
+        this.dimension = dimension;
+        this.lastObservedPosition = new BlockPos(x, y, z);
+    }
+
+    public int getDimension() { return dimension; }
+
+    public boolean wasLastChunkLoaded(World world) {
+        return world != null && world.provider.getDimension() == dimension
+                && lastObservedPosition != null && world.isBlockLoaded(lastObservedPosition);
+    }
 }

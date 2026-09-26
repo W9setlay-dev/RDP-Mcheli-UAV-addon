@@ -16,7 +16,8 @@ public final class GuidedTerrainAnalyzer {
     private static final int MAX_CACHE = 256;
     private static final long CACHE_TICKS = 10L;
     private static final int MAX_SAMPLES = 32;
-    private static final Map<Key, Analysis> CACHE = new LinkedHashMap<Key, Analysis>(MAX_CACHE, .75F, true) {
+    private static final Map<Key, Analysis> CACHE =
+            new LinkedHashMap<Key, Analysis>(MAX_CACHE, .75F, true) {
         @Override protected boolean removeEldestEntry(Map.Entry<Key, Analysis> eldest) {
             return size() > MAX_CACHE;
         }

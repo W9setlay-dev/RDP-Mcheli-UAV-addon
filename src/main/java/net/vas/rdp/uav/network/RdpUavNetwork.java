@@ -2008,6 +2008,11 @@ public final class RdpUavNetwork {
         private void rejectTargetLock(EntityPlayerMP player, MCH_EntityAircraft aircraft,
                                       String targetId, String reason, ResourceLocation registryId,
                                       Double distance, boolean loaded, String filterResult) {
+            double lockRange = aircraft == null || aircraft.getAcInfo() == null
+                    || net.vas.rdp.uav.profile.UavVehicleProfiles.forAircraft(
+                    aircraft.getAcInfo().name) == null ? Double.NaN
+                    : net.vas.rdp.uav.profile.UavVehicleProfiles.forAircraft(
+                    aircraft.getAcInfo().name).getLockRange();
             RdpUavDebug.event("TargetLock", "REJECTED",
                     "player", player.getUniqueID(),
                     "aircraft", aircraft == null ? null : aircraft.getUniqueID(),
@@ -2021,12 +2026,21 @@ public final class RdpUavNetwork {
                             aircraft.getAcInfo().name).getExecutionProfile(),
                     "registryId", registryId, "distance", distance,
                     "dimension", player.dimension, "loaded", loaded,
+                    "lockRange", lockRange,
                     "filterResult", filterResult);
+            String rejection = "UAV target lock rejected: "
+                    + reason.toLowerCase().replace('_', ' ');
+            if ("OUT_OF_RANGE".equals(reason) && distance != null && Double.isFinite(lockRange)) {
+                rejection += String.format(java.util.Locale.ROOT,
+                        " (%.1f blocks; profile limit %.1f).", distance, lockRange);
+            } else {
+                rejection += ".";
+            }
             player.sendMessage(new net.minecraft.util.text.TextComponentString(
-                    "UAV target lock rejected: " + reason.toLowerCase().replace('_', ' ') + "."));
-            LOGGER.warn("Entity lock rejected player={} aircraft={} target={} reason={} registryId={} distance={} loaded={} filter={}",
+                    rejection));
+            LOGGER.warn("Entity lock rejected player={} aircraft={} target={} reason={} registryId={} distance={} lockRange={} loaded={} filter={}",
                     player.getUniqueID(), aircraft == null ? null : aircraft.getUniqueID(),
-                    targetId, reason, registryId, distance, loaded, filterResult);
+                    targetId, reason, registryId, distance, lockRange, loaded, filterResult);
         }
 
         private void clearTargetLock(EntityPlayerMP player, MCH_EntityAircraft aircraft) {

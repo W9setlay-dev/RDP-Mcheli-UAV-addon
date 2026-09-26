@@ -42,6 +42,38 @@
 | current full unit suite | `.\gradlew.bat test --no-daemon` | PASS | 236 tests, zero failures, zero errors, zero skipped |
 | active RDP instance addon JAR | installed instance file inspection | NOT DEPLOYED | Installed artifact remains the older 541,876-byte JAR (SHA-256 `C4002E5C15689C291A3F478F846F1F874C6FEF500073ECE63FA86428D5C6532E`); source build was not copied into the instance |
 | active RDP instance McHeliCE JAR | SHA-256 comparison with local dependency | MATCH | Both files are 82,128,715 bytes with SHA-256 `740B4DF7C6AE8FF66C2E54ADD422AF4F4495EEEF45DDF5815AF7FDF7FF49015B` |
+| RDP Reality Distortion latest log | `latest.log` 2026-09-25 18:51:54 | OBSERVED | 48,745,899 bytes; supplied log predates Phase H source changes |
+| exact Shahed lock rejection | RDP `latest.log` TargetLock events | OBSERVED | Three entity requests rejected at 299.325/309.188 blocks against configured 256-block lock range; target was loaded and passed the filter; zero lock acceptances in this log |
+| progress/replan state churn | RDP `latest.log` transition counts | OBSERVED | 19,560 `SEARCHING->REPLAN`, 18,489 `REPLAN->SEARCHING`; accepted routes were repeatedly dispatched while the expired progress window was retained |
+| takeoff phase | RDP `latest.log` point mission at tick 16976 | NOT PROVEN | `DISPATCHED->TAKEOFF->CRUISE->SEARCHING` happened in one tick; no climbout behavior is established |
+| point-task request | RDP `latest.log` 2026-09-25 18:48:35 | OBSERVED | Server created point mission `cdeb744a-1656-4298-9c55-1b39a5b5d22f` with server-side XYZ; camera alignment remains unverified |
+| kamikaze effect/outcome race | RDP `latest.log` 2026-09-25 18:37:34 | OBSERVED | `PAYLOAD_DETONATED` was logged for the mission aircraft, followed by `AIRCRAFT_LOST / EFFECT_NOT_CONFIRMED` on the next tick; source now confirms the synchronous native effect before that scan |
+| exact pre-destruction hook | `.\gradlew.bat test --no-daemon` | PASS (SOURCE) | Transformer test reads the exact local/runtime-matching MCheliCE 1.5.1 JAR and confirms the callback in `handleDestruction(DamageSource, Entity, String, boolean)`; live collision order remains pending |
+| route progress window after accepted replan | `.\gradlew.bat test --no-daemon` | PASS (SOURCE) | Regression test confirms the next route does not re-enter `REPLAN` on the following tick; runtime route movement is unverified |
+| client entity lock marker | `.\gradlew.bat test --no-daemon` | PASS (COMPILE) | Entity target marker now renders brackets from the client entity's interpolated AABB; player/UAV/remote camera alignment remains `LIVE_VALIDATION_REQUIRED` |
+| full test suite after Phase H edits | `.\gradlew.bat test --no-daemon` | PASS | 239 tests, zero failures, zero errors, zero skipped |
+| Phase H artifact in active RDP instance | installed instance file inspection | NOT DEPLOYED | No modified addon JAR was copied into the active RDP instance |
+| Phase H reobfuscated artifact | `.\gradlew.bat build --no-daemon` | PASS | 568,498 bytes; SHA-256 `0333FE0BABB83B6CA197E61056AEA51A406DF3CDFC430981A0DE13E1EE276687` |
+| Phase I source and test-source compilation | `.\gradlew.bat compileJava compileTestJava --no-daemon` | PASS | Target-loss grace, FSM transition, mission NBT schema 5, hold-route source, and updated existing policy contract compile; tests not executed |
+| Phase I reobfuscated artifact | `.\gradlew.bat reobfJar --no-daemon` | PASS | 569,676 bytes; SHA-256 `C0BC13390669D8B5D8F0F517CACA00E826FE7FEEFD4C3F596670BFA990FE422A` |
+| Phase I artifact in active RDP instance | installed instance file inspection | NOT DEPLOYED | Active installation still has the pre-Phase-I addon JAR |
+| Target missing for fewer than 40 ticks | runtime contact-loss scenario | PENDING_DEVELOPER_IN_GAME_TEST | Confirm mission state does not flap, target UUID remains, and route stops using the stale attack point |
+| Target missing beyond 40 ticks then returns | unload/reload same entity | PENDING_DEVELOPER_IN_GAME_TEST | Confirm one transition to LOST/WAITING_FOR_TARGET and reacquisition of the same UUID only |
+| Navigation stall with target still loaded | harmless fixed-wing / FPV route | PENDING_DEVELOPER_IN_GAME_TEST | Confirm route goes to REPLAN while contact identity remains assigned; no false target-loss transition |
+| Terminal target becomes unavailable | one-way and FPV committed terminal test | PENDING_DEVELOPER_IN_GAME_TEST | Confirm existing terminal timeout remains bounded and the committed FPV route is not silently switched to hover |
+| Phase J source/test-source compilation and reobfuscated package | `.\gradlew.bat compileJava compileTestJava reobfJar --no-daemon` | PASS | Source and test sources compile; the test runner was not invoked |
+| Phase J fixed-wing hold-route stability | source inspection and compilation | PASS (SOURCE) | Repeated contact-loss updates now preserve the active hold node/index; reacquisition drops the hold `LOITER` suffix |
+| Phase J reobfuscated artifact | `build/libs/rdp-uav-addon-0.1.0.jar` | PASS | 570,231 bytes; SHA-256 `74C7A7BA3CA4CC9AFFCF883711B69D65DE576D0DE94206BFD4FD25BB24144EDB` |
+| Phase J artifact in active RDP instance | installed instance file inspection | NOT DEPLOYED | Current artifact remains only in the addon build directory |
+| Repeated target loss while fixed-wing hold is active | runtime missing-target scenario | PENDING_DEVELOPER_IN_GAME_TEST | Confirm the route index/timer advance instead of resetting every tick; verify a renewed leg after WingMan parks |
+| Same target returns during/after hold | runtime same-UUID reacquisition | PENDING_DEVELOPER_IN_GAME_TEST | Confirm the active route changes back to the same entity and no hold-only orbit runs before approach/attack |
+| Phase K source/test-source compilation and reobfuscated package | `.\gradlew.bat compileJava compileTestJava reobfJar --no-daemon` | PASS | Recovery accounting, accumulated distance baselines, and mission NBT schema 6 compile; test runner was not invoked |
+| Phase K reobfuscated artifact | `build/libs/rdp-uav-addon-0.1.0.jar` | PASS | 570,977 bytes; SHA-256 `895F4C37017BDEACC5EB83B792AA37CD37C1AAFB42671E6F8B97B184B018D416` |
+| Phase K artifact in active RDP instance | installed instance file inspection | NOT DEPLOYED | New artifact remains in the addon build directory |
+| Slow approach accumulates progress | loaded waypoint with measured reductions under 0.5 blocks/tick | PENDING_DEVELOPER_IN_GAME_TEST | Confirm cumulative distance improvement refreshes the progress timer and does not falsely enter `REPLAN` |
+| Genuine route stall and recovery budget | stationary aircraft with valid target/route | PENDING_DEVELOPER_IN_GAME_TEST | Confirm each timeout increments `recoveryAttempts`, accepted routes do not clear it, and only measured movement resets it |
+| Recovery exhaustion and cleanup | force more than five no-progress recovery cycles | PENDING_DEVELOPER_IN_GAME_TEST | Confirm terminal reason contains `_RECOVERY_EXHAUSTED`, lease/route are released, and mission remains persisted as `FAILED` |
+| Active mission save/load | save and reload while in SEARCHING or REPLAN | PENDING_DEVELOPER_IN_GAME_TEST | Confirm schema 6 retains `lastMeaningfulProgressTick`, route progress, and recovery budget without immediately resetting or exhausting the mission |
 
 ## Developer live handoff
 
@@ -244,3 +276,83 @@ Provide next:
 ## Remaining risk
 
 The runtime matrix is deliberately limited to what is available in this environment. The mission and guided-weapon systems are proven as source-level integrations against the local McHeliCE 1.5.1 API, but not as a live in-game autonomous flight or projectile-effects pipeline. The dedicated server now starts, but the RDP Core world-data constructor error blocks a trustworthy persisted-mission smoke test. The next runtime pass must resolve that dependency mismatch, then verify visible fixed-wing turning, moving-target tracking, orbit behavior, lock/clear feedback, native seeker acquisition, terminal approach, impact, and damage in the installed RDP instance.
+
+### Phase J developer handoff
+
+Build artifact:
+
+- `D:\Forge Modding\rdp-uav-addon\build\libs\rdp-uav-addon-0.1.0.jar`
+- SHA-256: `74C7A7BA3CA4CC9AFFCF883711B69D65DE576D0DE94206BFD4FD25BB24144EDB`
+- Size: 570,231 bytes
+
+Test in a disposable copy of the RDP instance. Keep the aircraft and route
+chunks loaded, then make the locked entity unavailable and restore that same
+entity UUID. First restore it before 40 server ticks; then repeat with a loss
+longer than 40 ticks. Confirm that the fixed-wing hold route's node/index
+continues to advance, that the mission retains the original UUID, and that
+reacquisition removes the hold-only loiter before approach resumes. Separately
+exercise terminal target loss and confirm its existing timeout still ends the
+mission. Capture the exact JAR hash, `latest.log`, and visual observations;
+server route logs do not prove the physical path.
+
+### Phase K developer handoff
+
+Build artifact:
+
+- `D:\Forge Modding\rdp-uav-addon\build\libs\rdp-uav-addon-0.1.0.jar`
+- SHA-256: `895F4C37017BDEACC5EB83B792AA37CD37C1AAFB42671E6F8B97B184B018D416`
+- Size: 570,977 bytes
+
+Install this exact JAR only in a disposable copy of the RDP instance. Keep the
+UAV, route, and target chunks loaded. First make a slow but steadily closing
+route (preferably a profile whose per-tick movement is below 0.5 blocks) and
+verify the accumulated distance baseline prevents a false stall. Then hold the
+aircraft stationary with its target still available: inspect mission telemetry
+and logs for `recoveryAttempts`, `recoveryReason`, and the transition reason
+after each 200-tick no-progress window. Confirm accepting a replacement route
+does not reset the counter. Finally repeat without restoring progress until the
+mission fails after the bounded budget, and verify the route/control lease is
+released and the failed reason persists after save/reload. Record aircraft
+profile, start/end coordinates, exact artifact hash, `latest.log`, and a short
+video. Do not infer physical movement from the server's route acceptance log.
+
+### Phase L — guided projectile outcome callbacks
+
+Build artifact:
+
+- `D:\Forge Modding\rdp-uav-addon\build\libs\rdp-uav-addon-0.1.0.jar`
+- SHA-256: `39E56DA13529C2FE24E2052E6D30629699D42C72D7D003B26DD8CDD6D343EE68`
+- Size: 578,342 bytes
+
+Use a disposable RDP instance and a guided weapon already marked as supported
+by the addon. Confirm startup logs report both `MCH_EntityBaseBullet.onImpact`
+and `MCH_Explosion` observers installed. Then fire at a loaded block and at a
+loaded entity. For each shot, record the mission/projectile UUIDs and inspect
+`native_impact_observed`, `nativeExplosionProcessed`, `explosionHitEntity`, and
+the mission transition sequence.
+
+Expected:
+
+- A server block/entity collision is recorded only after McHeliCE completes its
+  terminal `onImpact` branch.
+- A non-null native `ExplosionResult` advances the mission through
+  `IMPACT_OBSERVED` to `EFFECT_CONFIRMED`. This confirms explosion processing,
+  not that the assigned target was hit or destroyed.
+- A collision without an explosion result reaches `OUTCOME_UNKNOWN` after 100
+  ticks and does not remain pending forever.
+- A water pass-through, rejected interception, timeout, or projectile
+  disappearance without the native collision callback is not reported as an
+  impact.
+
+Compare `explosionHitEntity` with observed target health separately. That flag
+only says the native blast hit some entity. Keep all relevant chunks loaded for
+the first run. Then fly/fire a projectile across a chunk boundary and unload its
+last observed chunk while it is in flight. The expected source behavior is
+`projectile_observation_deferred` with reason
+`LAST_PROJECTILE_CHUNK_UNLOADED`, with no immediate unknown/miss classification.
+Reload the chunk: if the same projectile resumes, guidance should resume; if it
+does not exist after the chunk is loaded, the outcome should become unknown.
+Repeat while another dimension is ticking and confirm it does not prune this
+projectile's state. Saved/restarted projectile assignments remain open. Save
+the exact artifact hash, complete `latest.log`, weapon/profile, target type,
+hit/miss result, and a short clip. This matrix has not yet been run in-game.

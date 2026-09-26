@@ -37,6 +37,7 @@ public final class WingManFlightAdapter {
     private final Set<UUID> nativeAttackCompletions = new HashSet<>();
     private final Map<UUID, ContinuousTargetTracker> targetTrackers = new HashMap<>();
     private final Map<UUID, FpvFlightStateMachine> fpvStates = new HashMap<>();
+    private final Set<UUID> targetLossHoldRoutes = new HashSet<>();
     private final Map<UUID, Integer> terminalWaypointReplacements = new HashMap<>();
     private final Map<UUID, Double> terminalPreviousDistance = new HashMap<>();
     private final Map<UUID, Long> terminalLastDiagnosticTick = new HashMap<>();
@@ -150,6 +151,7 @@ public final class WingManFlightAdapter {
             return false;
         }
         UUID aircraftId = aircraft.getUniqueID();
+        targetLossHoldRoutes.remove(aircraftId);
         fpvStates.remove(aircraftId);
         WingmanEntry existing = WingmanRegistry.get(aircraftId);
         if (existing != null) {
@@ -213,9 +215,10 @@ public final class WingManFlightAdapter {
                                            double orbitRadius, boolean orbit, UUID targetId) {
         if (nativeRouteUnsupported(aircraft)) return false;
         WingmanEntry entry = WingmanRegistry.get(aircraft.getUniqueID());
+        boolean resumedHold = resumeTargetLossHold(aircraft.getUniqueID(), entry);
         if (entry == null || entry.mission == null || entry.autoState == AutonomousState.RTB
                 || entry.autoState == AutonomousState.LANDING
-                || entry.autoState == AutonomousState.PARKED) return false;
+                || (entry.autoState == AutonomousState.PARKED && !resumedHold)) return false;
         if (isFpv(aircraft)) {
             FpvFlightState state = fpvFlightState(aircraft);
             if (state == FpvFlightState.HOVER || state == FpvFlightState.TERMINAL_APPROACH) {
@@ -259,10 +262,11 @@ public final class WingManFlightAdapter {
                                         double detourDistance, UUID targetId) {
         if (nativeRouteUnsupported(aircraft)) return false;
         WingmanEntry entry = WingmanRegistry.get(aircraft.getUniqueID());
+        boolean resumedHold = resumeTargetLossHold(aircraft.getUniqueID(), entry);
         if (entry == null || entry.mission == null
                 || entry.autoState == AutonomousState.RTB
                 || entry.autoState == AutonomousState.LANDING
-                || entry.autoState == AutonomousState.PARKED) return false;
+                || (entry.autoState == AutonomousState.PARKED && !resumedHold)) return false;
         double dx = x - aircraft.posX;
         double dz = z - aircraft.posZ;
         double length = Math.sqrt(dx * dx + dz * dz);
@@ -337,6 +341,66 @@ public final class WingManFlightAdapter {
         entry.autoState = AutonomousState.ENROUTE;
     }
 
+    /**
+     * Replaces a stale target route with a short, non-attacking hold leg while
+     * preserving the mission's control lease and the aircraft's current
+     * physical momentum. Fixed-wing aircraft continue along their current
+     * heading; FPV aircraft use their hover controller unless terminal
+     * guidance has already committed a finite approach route.
+     */
+    public void holdForTargetReacquisition(MCH_EntityAircraft aircraft) {
+        if (aircraft == null || aircraft.isDead) return;
+        if (isFpv(aircraft)) {
+            targetLossHoldRoutes.remove(aircraft.getUniqueID());
+            enterFpvHover(aircraft);
+            return;
+        }
+        WingmanEntry entry = getEntry(aircraft);
+        if (entry == null || entry.mission == null) return;
+        UUID aircraftId = aircraft.getUniqueID();
+        boolean alreadyHolding = targetLossHoldRoutes.contains(aircraftId);
+        MissionNode current = entry.currentNode();
+        boolean holdRouteInProgress = alreadyHolding
+                && entry.autoState != AutonomousState.RTB
+                && entry.autoState != AutonomousState.LANDING
+                && entry.autoState != AutonomousState.PARKED
+                && current != null
+                && (current.type == MissionNode.Type.FLY_TO
+                || current.type == MissionNode.Type.LOITER);
+        if (holdRouteInProgress) return;
+        targetLossHoldRoutes.remove(aircraftId);
+        if (entry.autoState == AutonomousState.RTB
+                || entry.autoState == AutonomousState.LANDING
+                || (entry.autoState == AutonomousState.PARKED && !alreadyHolding)) return;
+
+        double yaw = Math.toRadians(aircraft.getYaw());
+        double horizontalSpeed = Math.hypot(aircraft.motionX, aircraft.motionZ);
+        double lookAhead = Math.max(24.0D, Math.min(64.0D, horizontalSpeed * 40.0D));
+        double holdX = aircraft.posX - Math.sin(yaw) * lookAhead;
+        double holdZ = aircraft.posZ + Math.cos(yaw) * lookAhead;
+        List<MissionNode> route = new ArrayList<>();
+        route.add(MissionNode.flyTo(holdX, aircraft.posY, holdZ));
+        route.add(MissionNode.loiter(40));
+        entry.mission = route;
+        entry.missionIndex = 0;
+        entry.missionNodeTimer = 0;
+        entry.attackMode = WingmanEntry.ATK_NONE;
+        entry.currentAutoTarget = null;
+        entry.autoTargetX = holdX;
+        entry.autoTargetY = aircraft.posY;
+        entry.autoTargetZ = holdZ;
+        entry.autoState = AutonomousState.ENROUTE;
+        targetLossHoldRoutes.add(aircraftId);
+    }
+
+    private boolean resumeTargetLossHold(UUID aircraftId, WingmanEntry entry) {
+        boolean resumed = targetLossHoldRoutes.remove(aircraftId);
+        if (resumed && entry != null && entry.autoState == AutonomousState.PARKED) {
+            entry.autoState = AutonomousState.ENROUTE;
+        }
+        return resumed;
+    }
+
     public FpvFlightState fpvFlightState(MCH_EntityAircraft aircraft) {
         FpvFlightStateMachine state = aircraft == null ? null
                 : fpvStates.get(aircraft.getUniqueID());
@@ -352,8 +416,10 @@ public final class WingManFlightAdapter {
                                      UUID targetId) {
         if (aircraft == null || !Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)) return;
         WingmanEntry entry = WingmanRegistry.get(aircraft.getUniqueID());
+        boolean reacquiredFromHold = resumeTargetLossHold(aircraft.getUniqueID(), entry);
         if (entry == null || entry.autoState == AutonomousState.RTB
-                || entry.autoState == AutonomousState.LANDING || entry.autoState == AutonomousState.PARKED) return;
+                || entry.autoState == AutonomousState.LANDING
+                || (entry.autoState == AutonomousState.PARKED && !reacquiredFromHold)) return;
         if (isFpv(aircraft) && fpvFlightState(aircraft) == FpvFlightState.HOVER) {
             // Reacquisition is the explicit exit request, but the hover route
             // owns this update. Pursuit may write only on the next tick.
@@ -369,6 +435,16 @@ public final class WingManFlightAdapter {
             x = entry.autoTargetX + dx * scale;
             y = entry.autoTargetY + dy * scale;
             z = entry.autoTargetZ + dz * scale;
+        }
+        if (reacquiredFromHold) {
+            // Drop the hold leg's LOITER suffix so it cannot become an
+            // accidental orbit before a later attack node is appended.
+            entry.mission = new ArrayList<>();
+            entry.mission.add(MissionNode.flyTo(x, y, z));
+            entry.missionIndex = 0;
+            entry.missionNodeTimer = 0;
+            entry.attackMode = WingmanEntry.ATK_NONE;
+            entry.autoState = AutonomousState.ENROUTE;
         }
         WingmanEntry routeEntry = WingmanRegistry.get(aircraft.getUniqueID());
         MissionNode activeNode = routeEntry == null ? null : routeEntry.currentNode();
@@ -395,6 +471,7 @@ public final class WingManFlightAdapter {
         if (nativeRouteUnsupported(aircraft)) return false;
         WingmanEntry entry = WingmanRegistry.get(aircraft.getUniqueID());
         if (entry == null || entry.mission == null) return false;
+        targetLossHoldRoutes.remove(aircraft.getUniqueID());
         entry.attackMode = WingmanEntry.ATK_AUTO;
         selectAttackWeapon(aircraft, weaponPriority);
         double safeY = normalizeHelicopterTargetY(aircraft, y);
@@ -440,6 +517,7 @@ public final class WingManFlightAdapter {
         WingmanEntry entry = WingmanRegistry.get(aircraft.getUniqueID());
         if (entry == null || entry.mission == null) return false;
         if (!hasAttackAmmunition(aircraft) && !hasSelfDestructWeaponWithAmmo(aircraft)) return false;
+        targetLossHoldRoutes.remove(aircraft.getUniqueID());
         entry.attackMode = WingmanEntry.ATK_AUTO;
         entry.currentAutoTarget = targetId;
         entry.mission.addAll(plan.createNodes());
@@ -455,6 +533,7 @@ public final class WingManFlightAdapter {
         if (weaponId < 0) return true;
         WingmanEntry entry = WingmanRegistry.get(aircraft.getUniqueID());
         if (entry == null || entry.mission == null) return true;
+        targetLossHoldRoutes.remove(aircraft.getUniqueID());
         entry.attackMode = WingmanEntry.ATK_AUTO;
         entry.currentAutoTarget = targetId;
         entry.autoTargetX = x;
@@ -490,9 +569,9 @@ public final class WingManFlightAdapter {
      * animation path so manual and AI detonation have identical effects.
      */
     public boolean detonateSelfDestructWeapon(MCH_EntityAircraft aircraft,
-                                               double x, double y, double z,
-                                               boolean requireNoseTrigger) {
-        if (aircraft == null) return false;
+                                                double x, double y, double z,
+                                                boolean requireNoseTrigger) {
+        if (aircraft == null || aircraft.world == null || aircraft.world.isRemote) return false;
         if (requireNoseTrigger && !KamikazeImpactDetector.hasNoseImpact(aircraft, KamikazeConfig.noseTriggerDistance)) {
             return false;
         }
@@ -513,14 +592,23 @@ public final class WingManFlightAdapter {
         }
         if (!weapon.canFire()) return false;
         int ammoBefore = weapon.getAmmo();
-        MCH_Explosion.newExplosion(aircraft.world, null, aircraft, x, y, z,
+        MCH_Explosion.ExplosionResult result = MCH_Explosion.newExplosion(
+                aircraft.world, null, aircraft, x, y, z,
                 weapon.getInfo().explosion, weapon.getInfo().explosionBlock,
                 true, true, weapon.getInfo().flaming, true, 0);
+        if (result == null) {
+            RdpUavDebug.debug("Kamikaze",
+                    "self-destruct rejected: native explosion produced no result aircraft={} weapon={}",
+                    aircraft.getUniqueID(), weapon.getName());
+            return false;
+        }
         weapon.setAmmo(ammoBefore - 1);
         aircraft.destruct();
         RdpUavDebug.event("Kamikaze", "PAYLOAD_DETONATED",
                 "aircraft", aircraft.getUniqueID(), "weapon", weapon.getName(),
-                "x", x, "y", y, "z", z, "ammo", weapon.getAmmo());
+                "x", x, "y", y, "z", z, "ammo", weapon.getAmmo(),
+                "nativeExplosionCreated", true, "hitEntity", result.hitEntity,
+                "targetDestroyed", false);
         return true;
     }
 
@@ -624,6 +712,7 @@ public final class WingManFlightAdapter {
             targetTrackers.remove(aircraft.getUniqueID());
             fpvStates.remove(aircraft.getUniqueID());
             terminalWaypointReplacements.remove(aircraft.getUniqueID());
+            targetLossHoldRoutes.remove(aircraft.getUniqueID());
             terminalPreviousDistance.remove(aircraft.getUniqueID());
             terminalLastDiagnosticTick.remove(aircraft.getUniqueID());
             terminalMetrics.remove(aircraft.getUniqueID());
@@ -712,9 +801,10 @@ public final class WingManFlightAdapter {
         if (!solution.isUpdated()) return;
 
         WingmanEntry entry = WingmanRegistry.get(aircraftId);
+        boolean resumedHold = resumeTargetLossHold(aircraftId, entry);
         if (entry == null || entry.autoState == AutonomousState.RTB
                 || entry.autoState == AutonomousState.LANDING
-                || entry.autoState == AutonomousState.PARKED) return;
+                || (entry.autoState == AutonomousState.PARKED && !resumedHold)) return;
         double plannedX = blendGuidance(plan.getX(), solution.getX());
         double plannedZ = blendGuidance(plan.getZ(), solution.getZ());
         double safeY = normalizeHelicopterTargetY(aircraft,
@@ -742,6 +832,14 @@ public final class WingManFlightAdapter {
                     "closingRate", metrics.getClosingRate(),
                     "minimumDistance", metrics.getMinimumDistance(),
                     "phase", phase, "controlOwner", controlOwner);
+        }
+        if (resumedHold) {
+            entry.mission = new ArrayList<>();
+            entry.mission.add(MissionNode.flyTo(plannedX, safeY, plannedZ));
+            entry.missionIndex = 0;
+            entry.missionNodeTimer = 0;
+            entry.attackMode = WingmanEntry.ATK_NONE;
+            entry.autoState = AutonomousState.ENROUTE;
         }
         int activeIndex = entry.missionIndex;
         MissionNode current = entry.currentNode();
@@ -939,6 +1037,7 @@ public final class WingManFlightAdapter {
      * intentionally a recovery-only operation; it never arms weapons.
      */
     public boolean requestReturn(MCH_EntityAircraft aircraft, String reason) {
+        if (aircraft != null) targetLossHoldRoutes.remove(aircraft.getUniqueID());
         WingmanEntry entry = getEntry(aircraft);
         if (entry == null) {
             RdpUavDebug.debug("WingMan", "return rejected: missing entry aircraft={}",

@@ -10,6 +10,7 @@ import net.minecraft.world.World;
 
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.Set;
@@ -41,14 +42,18 @@ public final class MissileGuidanceController {
             new HashMap<>();
     private static final Map<UUID, Long> LAST_CORRIDOR_LOG =
             new HashMap<>();
+    private static final Set<UUID> UNLOADED_PROJECTILES = new HashSet<>();
     private static final Map<UUID, String> UNKNOWN_OUTCOMES =
             new HashMap<>();
+    private static final Map<UUID, UUID> IMPACT_OBSERVATIONS =
+            new LinkedHashMap<>();
     private static final Map<UUID, Boolean> CONFIRMED_EFFECTS =
             new HashMap<>();
     private static final int MAX_UNKNOWN_OUTCOMES = 512;
+    private static final int MAX_RETAINED_OUTCOMES = 512;
     private static final int MAX_ROUTE_SAMPLES = 12;
     private static final int MAX_AVOIDANCE_CANDIDATES = 8;
-    private static final double AVOIDANCE_OFFSET = 6.0D;
+    private static final double AVOIDANCE_OFFSET = 8.0D;
     private static final long AVOIDANCE_PLAN_TICKS = 10L;
 
     private MissileGuidanceController() { }
@@ -204,7 +209,41 @@ public final class MissileGuidanceController {
         ProjectileGuidanceMission projectile = PROJECTILES.get(projectileId);
         if (projectile == null) return false;
         projectile.impacted();
-        UNKNOWN_OUTCOMES.remove(projectile.getObjective().getObjectiveId());
+        UUID objectiveId = projectile.getObjective().getObjectiveId();
+        UNKNOWN_OUTCOMES.remove(objectiveId);
+        IMPACT_OBSERVATIONS.put(objectiveId, projectileId);
+        trimOldest(IMPACT_OBSERVATIONS, MAX_RETAINED_OUTCOMES);
+        return true;
+    }
+
+    /**
+     * Accepts only a real native McHeliCE collision callback for an assigned
+     * projectile. Explosion processing is recorded separately from whether
+     * McHeliCE reports that any entity was hit by the blast.
+     */
+    public static synchronized boolean observeNativeImpact(MCH_EntityBaseBullet missile,
+                                                             boolean explosionProcessed,
+                                                             boolean explosionHitEntity) {
+        if (missile == null || missile.world == null || missile.world.isRemote) return false;
+        Entity shooter = missile.shootingAircraft == null
+                ? missile.shootingEntity : missile.shootingAircraft;
+        if (shooter == null) return false;
+        Assignment assignment = ASSIGNMENTS.get(shooter.getUniqueID());
+        if (assignment == null || assignment.mode != GuidanceControlMode.AI_GUIDANCE
+                || !matches(assignment.weapon, missile)) return false;
+
+        ProjectileGuidanceMission projectile = projectileMission(missile, shooter, assignment);
+        if (!markImpactObserved(projectile.getProjectileId())) return false;
+        if (explosionProcessed) markEffectConfirmed(projectile.getProjectileId());
+        RdpUavDebug.event("Guidance", "native_impact_observed",
+                "aircraft", shooter.getUniqueID(),
+                "projectile", projectile.getProjectileId(),
+                "objective", assignment.objective.getObjectiveId(),
+                "weapon", assignment.weapon,
+                "nativeExplosionProcessed", explosionProcessed,
+                "explosionHitEntity", explosionHitEntity,
+                "outcome", explosionProcessed ? "NATIVE_EFFECT_CONFIRMED"
+                        : "IMPACT_OBSERVED_EFFECT_UNCONFIRMED");
         return true;
     }
 
@@ -219,6 +258,7 @@ public final class MissileGuidanceController {
         }
         projectile.getObjective().complete();
         CONFIRMED_EFFECTS.put(projectile.getObjective().getObjectiveId(), Boolean.TRUE);
+        trimOldest(CONFIRMED_EFFECTS, MAX_RETAINED_OUTCOMES);
         return true;
     }
 
@@ -233,6 +273,9 @@ public final class MissileGuidanceController {
             if (objectiveId.equals(projectile.getObjective().getObjectiveId())) {
                 return projectile.getState();
             }
+        }
+        if (IMPACT_OBSERVATIONS.containsKey(objectiveId)) {
+            return ProjectileGuidanceState.IMPACTED;
         }
         return null;
     }
@@ -251,6 +294,7 @@ public final class MissileGuidanceController {
 
     public static void tick(World world) {
         if (world == null || world.isRemote) return;
+        int currentDimension = world.provider.getDimension();
         Set<UUID> liveProjectiles = new HashSet<>();
         for (Entity entity : world.loadedEntityList) {
             if (!(entity instanceof MCH_EntityBaseBullet)) continue;
@@ -292,14 +336,37 @@ public final class MissileGuidanceController {
             apply(world, missile, assignment);
         }
         synchronized (MissileGuidanceController.class) {
+            Set<UUID> retainedProjectiles = new HashSet<>(liveProjectiles);
             for (ProjectileGuidanceMission projectile : PROJECTILES.values()) {
                 UUID projectileId = projectile.getProjectileId();
-                if (liveProjectiles.contains(projectileId)
-                        || projectile.getState() == ProjectileGuidanceState.IMPACTED
+                if (projectile.getDimension() != currentDimension) {
+                    // This tick belongs to another World; do not prune or time
+                    // out projectile state owned by that dimension.
+                    retainedProjectiles.add(projectileId);
+                    continue;
+                }
+                if (liveProjectiles.contains(projectileId)) {
+                    UNLOADED_PROJECTILES.remove(projectileId);
+                    continue;
+                }
+                if (projectile.getState() == ProjectileGuidanceState.IMPACTED
                         || projectile.getState() == ProjectileGuidanceState.ABORTED
                         || projectile.getState() == ProjectileGuidanceState.TIMED_OUT) {
                     continue;
                 }
+                if (!projectile.wasLastChunkLoaded(world)) {
+                    retainedProjectiles.add(projectileId);
+                    if (UNLOADED_PROJECTILES.add(projectileId)) {
+                        RdpUavDebug.event("Guidance", "projectile_observation_deferred",
+                                "aircraft", projectile.getAircraftId(),
+                                "projectile", projectileId,
+                                "objective", projectile.getObjective().getObjectiveId(),
+                                "dimension", currentDimension,
+                                "reason", "LAST_PROJECTILE_CHUNK_UNLOADED");
+                    }
+                    continue;
+                }
+                UNLOADED_PROJECTILES.remove(projectileId);
                 projectile.timeout();
                 UNKNOWN_OUTCOMES.put(projectile.getObjective().getObjectiveId(),
                         "PROJECTILE_DISAPPEARED_WITHOUT_IMPACT");
@@ -310,14 +377,15 @@ public final class MissileGuidanceController {
                         "weapon", projectile.getWeapon(),
                         "reason", "PROJECTILE_DISAPPEARED_WITHOUT_IMPACT");
             }
-            PROJECTILES.keySet().retainAll(liveProjectiles);
-            AVOIDANCE_PLANS.keySet().retainAll(liveProjectiles);
-            LAST_COORDINATE_LOG.keySet().retainAll(liveProjectiles);
-            LAST_COORDINATES.keySet().retainAll(liveProjectiles);
-            LAST_APPLIED_NATIVE_TARGETS.keySet().retainAll(liveProjectiles);
-            LAST_OVERRIDE_LOG.keySet().retainAll(liveProjectiles);
-            LAST_CORRECTION_TICK.keySet().retainAll(liveProjectiles);
-            LAST_CORRIDOR_LOG.keySet().retainAll(liveProjectiles);
+            PROJECTILES.keySet().retainAll(retainedProjectiles);
+            AVOIDANCE_PLANS.keySet().retainAll(retainedProjectiles);
+            LAST_COORDINATE_LOG.keySet().retainAll(retainedProjectiles);
+            LAST_COORDINATES.keySet().retainAll(retainedProjectiles);
+            LAST_APPLIED_NATIVE_TARGETS.keySet().retainAll(retainedProjectiles);
+            LAST_OVERRIDE_LOG.keySet().retainAll(retainedProjectiles);
+            LAST_CORRECTION_TICK.keySet().retainAll(retainedProjectiles);
+            LAST_CORRIDOR_LOG.keySet().retainAll(retainedProjectiles);
+            UNLOADED_PROJECTILES.retainAll(retainedProjectiles);
             while (UNKNOWN_OUTCOMES.size() > MAX_UNKNOWN_OUTCOMES) {
                 UNKNOWN_OUTCOMES.remove(UNKNOWN_OUTCOMES.keySet().iterator().next());
             }
@@ -552,10 +620,16 @@ public final class MissileGuidanceController {
     private static synchronized ProjectileGuidanceMission projectileMission(
             MCH_EntityBaseBullet missile, Entity shooter, Assignment assignment) {
         ProjectileGuidanceMission existing = PROJECTILES.get(missile.getUniqueID());
-        if (existing != null) return existing;
+        if (existing != null) {
+            existing.observePosition(missile.world.provider.getDimension(),
+                    missile.posX, missile.posY, missile.posZ);
+            return existing;
+        }
         ProjectileGuidanceMission created = new ProjectileGuidanceMission(
                 missile.getUniqueID(), shooter.getUniqueID(), assignment.weapon,
                 behaviorFor(missile), assignment.objective);
+        created.observePosition(missile.world.provider.getDimension(),
+                missile.posX, missile.posY, missile.posZ);
         PROJECTILES.put(missile.getUniqueID(), created);
         return created;
     }
@@ -829,6 +903,15 @@ public final class MissileGuidanceController {
         Entity shooter = missile.shootingAircraft == null
                 ? missile.shootingEntity : missile.shootingAircraft;
         return shooter == null ? null : shooter.getUniqueID();
+    }
+
+    private static <K, V> void trimOldest(Map<K, V> values, int maximumSize) {
+        while (values.size() > maximumSize) {
+            java.util.Iterator<K> iterator = values.keySet().iterator();
+            if (!iterator.hasNext()) return;
+            iterator.next();
+            iterator.remove();
+        }
     }
 
     private static final class Assignment {

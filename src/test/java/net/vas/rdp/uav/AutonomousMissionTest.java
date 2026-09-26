@@ -151,7 +151,8 @@ public class AutonomousMissionTest {
 
         mission.recordProgress(350L, 0.4D, 0.4D, 22.0D, 22.0D, 41.0D, 41.0D);
         assertTrue(mission.isProgressStalled(500L, 200L));
-        assertEquals(MissionState.LOST, mission.getState());
+        assertEquals(MissionState.REPLAN, mission.getState());
+        assertEquals("ROUTE_STALLED_TARGET_RETAINED", mission.getLastTransitionReason());
     }
 
     @Test

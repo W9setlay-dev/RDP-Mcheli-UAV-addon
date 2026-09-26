@@ -570,9 +570,11 @@ public class RdpUavContractMatrixTest {
             case TAKEOFF: return next == MissionState.CRUISE;
             case CRUISE: return next == MissionState.SEARCHING;
             case SEARCHING: return next == MissionState.TARGET_ACQUIRED
-                    || next == MissionState.WAITING_FOR_TARGET;
+                    || next == MissionState.WAITING_FOR_TARGET
+                    || next == MissionState.LOST;
             case WAITING_FOR_TARGET: return next == MissionState.SEARCHING
-                    || next == MissionState.TARGET_ACQUIRED;
+                    || next == MissionState.TARGET_ACQUIRED
+                    || next == MissionState.LOST;
             case LOST: return next == MissionState.SEARCHING
                     || next == MissionState.WAITING_FOR_TARGET;
             case TARGET_ACQUIRED: return next == MissionState.TARGET_LOCKED
@@ -601,7 +603,7 @@ public class RdpUavContractMatrixTest {
                     || next == MissionState.OUTCOME_UNKNOWN;
             case ATTACK_TARGET: return next == MissionState.APPROACHING
                     || next == MissionState.ON_TARGET || next == MissionState.RETURNING
-                    || next == MissionState.KAMIKADZE_TARGET;
+                    || next == MissionState.KAMIKADZE_TARGET || next == MissionState.LOST;
             case KAMIKADZE_TARGET: return next == MissionState.ON_TARGET
                     || next == MissionState.RETURNING
                     || next == MissionState.KAMIKADZE_DETONATED
@@ -609,10 +611,11 @@ public class RdpUavContractMatrixTest {
             case APPROACHING: return next == MissionState.ON_TARGET
                     || next == MissionState.LOST;
             case ON_TARGET: return next == MissionState.ORBITING
-                    || next == MissionState.SCANNING;
-            case ORBITING: return next == MissionState.SCANNING;
+                    || next == MissionState.SCANNING || next == MissionState.LOST;
+            case ORBITING: return next == MissionState.SCANNING
+                    || next == MissionState.LOST;
             case SCANNING: return next == MissionState.DEEP_SCANNING
-                    || next == MissionState.REPORTING;
+                    || next == MissionState.REPORTING || next == MissionState.LOST;
             case DEEP_SCANNING: return next == MissionState.REPORTING;
             case REPORTING: return next == MissionState.HOLDING
                     || next == MissionState.RETURNING;
@@ -622,7 +625,8 @@ public class RdpUavContractMatrixTest {
                 return next == MissionState.SEARCHING
                         || next == MissionState.TARGET_LOCKED
                         || next == MissionState.APPROACHING
-                        || next == MissionState.ATTACK_TARGET;
+                        || next == MissionState.ATTACK_TARGET
+                        || next == MissionState.LOST;
             case RETURNING: return next == MissionState.LANDING;
             case LANDING: return next == MissionState.PARKING;
             case PARKING: return next == MissionState.COMPLETE;

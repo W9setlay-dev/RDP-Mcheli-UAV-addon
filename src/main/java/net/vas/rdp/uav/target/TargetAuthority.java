@@ -62,8 +62,8 @@ public final class TargetAuthority {
         contacts.observe(world, entity, distance, tick, lifecycle);
     }
 
-    public void markLost(UUID targetId, long tick) {
-        contacts.markLost(targetId, tick);
+    public ContactSnapshot markLost(UUID targetId, long tick) {
+        return contacts.markLost(targetId, tick);
     }
 
     public ContactSnapshot get(UUID targetId) {
