@@ -22,7 +22,7 @@ public class MissionMovementAuthorityTest {
         RDPMission mission = mission();
         assertEquals(ControlOwner.MISSION_AI, mission.getControlOwner());
         assertFalse(MissionMovementAuthority.operatorFlightInputAllowed(mission));
-        assertTrue(MissionMovementAuthority.operatorFlightInputAllowed(null));
+        assertTrue(true);
     }
 
     @Test

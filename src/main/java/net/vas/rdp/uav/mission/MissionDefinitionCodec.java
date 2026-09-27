@@ -66,7 +66,7 @@ public final class MissionDefinitionCodec {
             NBTTagList selected = tag.getTagList("selectedUavs", 10);
             for (int i = 0; i < selected.tagCount(); i++) {
                 String selectedId = selected.getCompoundTagAt(i).getString("id");
-                if (selectedId == null || selectedId.trim().isEmpty()) {
+                if (selectedId.trim().isEmpty()) {
                     throw new IllegalArgumentException("Selected UAV identity is missing");
                 }
                 definition.selectUav(java.util.UUID.fromString(selectedId));

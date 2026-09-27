@@ -594,9 +594,10 @@ public class RdpUavContractMatrixTest {
             case IMPACT_OBSERVED: return next == MissionState.EFFECT_CONFIRMED
                     || next == MissionState.OUTCOME_UNKNOWN
                     || next == MissionState.RETURNING;
-            case EFFECT_CONFIRMED: return next == MissionState.RETURNING
-                    || next == MissionState.COMPLETE;
-            case OUTCOME_UNKNOWN: return next == MissionState.RETURNING
+            case EFFECT_CONFIRMED:
+            case HOLDING:
+            case OUTCOME_UNKNOWN:
+                return next == MissionState.RETURNING
                     || next == MissionState.COMPLETE;
             case DIRECT_LAUNCH_COMPLETE: return next == MissionState.LAUNCH_ACCEPTED
                     || next == MissionState.PROJECTILE_TRACKED
@@ -619,8 +620,6 @@ public class RdpUavContractMatrixTest {
             case DEEP_SCANNING: return next == MissionState.REPORTING;
             case REPORTING: return next == MissionState.HOLDING
                     || next == MissionState.RETURNING;
-            case HOLDING: return next == MissionState.RETURNING
-                    || next == MissionState.COMPLETE;
             case REPLAN:
                 return next == MissionState.SEARCHING
                         || next == MissionState.TARGET_LOCKED

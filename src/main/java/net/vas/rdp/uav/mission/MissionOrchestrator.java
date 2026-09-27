@@ -38,12 +38,12 @@ public final class MissionOrchestrator {
         return lifecycle.cycleContact(world, aircraft, next);
     }
 
-    public boolean cycleContact(World world, MCH_EntityAircraft aircraft,
-                                EntityPlayer operator, boolean next) {
-        return lifecycle.cycleContact(world, aircraft, operator, next);
+    public void cycleContact(World world, MCH_EntityAircraft aircraft,
+                             EntityPlayer operator, boolean next) {
+        lifecycle.cycleContact(world, aircraft, operator, next);
     }
 
-    public boolean clearContact(World world, MCH_EntityAircraft aircraft) {
-        return lifecycle.clearContact(world, aircraft);
+    public void clearContact(World world, MCH_EntityAircraft aircraft) {
+        lifecycle.clearContact(world, aircraft);
     }
 }

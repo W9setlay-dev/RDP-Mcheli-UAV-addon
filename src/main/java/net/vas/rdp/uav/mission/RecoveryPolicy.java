@@ -20,8 +20,6 @@ public final class RecoveryPolicy {
             case GUIDANCE_BLOCKED:
                 return RecoveryAction.REPLAN;
             case LOW_FUEL:
-                return doctrine == MissionDoctrine.REUSABLE_STRIKE
-                        ? RecoveryAction.RETURN : RecoveryAction.ABORT;
             case TIMEOUT:
                 return doctrine == MissionDoctrine.REUSABLE_STRIKE
                         ? RecoveryAction.RETURN : RecoveryAction.ABORT;

@@ -97,7 +97,7 @@ public final class RDPUavMod {
     }
 
     private static final class ServerTickHandler {
-        @SubscribeEvent(priority = EventPriority.LOWEST)
+        @SubscribeEvent(priority = EventPriority.HIGHEST)
         public void onWorldTick(TickEvent.WorldTickEvent event) {
             if (event.world.isRemote) {
                 return;

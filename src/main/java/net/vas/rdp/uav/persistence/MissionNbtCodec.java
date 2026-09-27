@@ -192,7 +192,7 @@ public final class MissionNbtCodec {
 
     private static String requiredString(NBTTagCompound tag, String key) {
         String value = tag.getString(key);
-        if (value == null || value.trim().isEmpty()) {
+        if (value.trim().isEmpty()) {
             throw new IllegalArgumentException("Mission NBT field is required: " + key);
         }
         return value;

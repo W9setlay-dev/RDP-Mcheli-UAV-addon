@@ -24,7 +24,7 @@ public final class RouteDetourPlanner {
         if (horizontal < 1.0E-6D) {
             return new Plan(routeX, routeY, routeZ, 0.0D, false, "AT_TARGET");
         }
-        double offset = clamp(Math.abs(preferredOffset), 8.0D, 64.0D);
+        double offset = clamp(Math.abs(preferredOffset));
         double sideX = -dz / horizontal * Math.signum(offset) * offset;
         double sideZ = dx / horizontal * Math.signum(offset) * offset;
         if (!blocked) {
@@ -36,8 +36,8 @@ public final class RouteDetourPlanner {
                 offset, true, "OFFSET_DETOUR");
     }
 
-    private static double clamp(double value, double minimum, double maximum) {
-        return Math.max(minimum, Math.min(maximum, value));
+    private static double clamp(double value) {
+        return Math.max(8.0, Math.min(64.0, value));
     }
 
     public static final class Plan {

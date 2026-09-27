@@ -14,7 +14,7 @@ import static org.junit.Assert.*;
 public class FlightGuidancePlannerTest {
     @Test
     public void predictsMovingTargetWithinBoundedLead() {
-        AircraftState state = state(0.0D, 100.0D, 0.0D, 10.0D, 0.0D, 0.0D);
+        AircraftState state = state(10.0D);
         UavVehicleProfile profile = new UavVehicleProfile(
                 UavExecutionProfile.REUSABLE_UAV, 100, 40, 180, 6,
                 true, "NONE", 256, 256, 64, "", 0, 64);
@@ -30,7 +30,7 @@ public class FlightGuidancePlannerTest {
 
     @Test
     public void clampsTerminalWaypointToProfileAltitude() {
-        AircraftState state = state(0.0D, 100.0D, 0.0D, 8.0D, 0.0D, 0.0D);
+        AircraftState state = state(8.0D);
         UavVehicleProfile profile = new UavVehicleProfile(
                 UavExecutionProfile.REUSABLE_UAV, 100, 60, 120, 6,
                 true, "NONE");
@@ -42,10 +42,9 @@ public class FlightGuidancePlannerTest {
         assertTrue(plan.getLeadTicks() <= 4.0D);
     }
 
-    private static AircraftState state(double x, double y, double z,
-                                       double vx, double vy, double vz) {
+    private static AircraftState state(double vx) {
         return AircraftState.observe(UUID.randomUUID(), 0, 100,
-                x, y, z, x - vx, y - vy, z - vz,
+                0.0, 100.0, 0.0, 0.0 - vx, 100.0 - 0.0, 0.0 - 0.0,
                 0, 0, 0, 1, "ENROUTE", UUID.randomUUID(),
                 ControlOwner.MISSION_AI, true, 0, 0,
                 100, 100, 0, 100, "KNOWN");

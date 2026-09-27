@@ -32,9 +32,10 @@ public final class KamikazeImpactDetector {
         Vec3d currentNose = nosePosition(aircraft, aircraft.posX, aircraft.posY,
                 aircraft.posZ, aircraft.rotationYaw, aircraft.rotationPitch);
         Vec3d forward = forwardVector(aircraft.rotationYaw, aircraft.rotationPitch);
-        Vec3d noseEnd = currentNose.add(forward.scale(triggerDistance));
+        double predictedDistance = Math.max(triggerDistance, KamikazeConfig.lowTickDetonationSweep);
+        Vec3d noseEnd = currentNose.add(forward.scale(predictedDistance));
         AxisAlignedBB sweep = new AxisAlignedBB(previousNose, noseEnd)
-                .grow(KamikazeConfig.impactSweepPadding);
+                .grow(KamikazeConfig.impactSweepPadding + 0.25D);
 
         World world = aircraft.world;
         net.minecraft.util.math.RayTraceResult blockHit = world.rayTraceBlocks(
@@ -56,7 +57,7 @@ public final class KamikazeImpactDetector {
                 continue;
             }
             AxisAlignedBB contactBounds = entity.getEntityBoundingBox()
-                    .grow(KamikazeConfig.impactSweepPadding);
+                    .grow(KamikazeConfig.impactSweepPadding + 0.25D);
             if (contactBounds.calculateIntercept(previousNose, noseEnd) != null) {
                 if (aircraft.ticksExisted % 20 == 0) {
                     RdpUavDebug.debug("Kamikaze",

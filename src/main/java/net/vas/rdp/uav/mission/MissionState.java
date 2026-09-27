@@ -78,8 +78,10 @@ public enum MissionState {
                     || next == EFFECT_CONFIRMED || next == OUTCOME_UNKNOWN;
             case IMPACT_OBSERVED: return next == EFFECT_CONFIRMED
                     || next == OUTCOME_UNKNOWN || next == RETURNING;
-            case EFFECT_CONFIRMED: return next == RETURNING || next == COMPLETE;
-            case OUTCOME_UNKNOWN: return next == RETURNING || next == COMPLETE;
+            case EFFECT_CONFIRMED:
+            case HOLDING:
+            case OUTCOME_UNKNOWN:
+                return next == RETURNING || next == COMPLETE;
             case DIRECT_LAUNCH_COMPLETE: return next == LAUNCH_ACCEPTED
                     || next == PROJECTILE_TRACKED || next == OUTCOME_UNKNOWN;
             case KAMIKADZE_TARGET: return next == ON_TARGET || next == RETURNING
@@ -90,7 +92,6 @@ public enum MissionState {
             case SCANNING: return next == DEEP_SCANNING || next == REPORTING || next == LOST;
             case DEEP_SCANNING: return next == REPORTING;
             case REPORTING: return next == HOLDING || next == RETURNING;
-            case HOLDING: return next == RETURNING || next == COMPLETE;
             case REPLAN:
                 return next == SEARCHING || next == TARGET_LOCKED
                         || next == APPROACHING || next == ATTACK_TARGET || next == LOST;

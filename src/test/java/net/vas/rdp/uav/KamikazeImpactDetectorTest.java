@@ -23,4 +23,16 @@ public class KamikazeImpactDetectorTest {
                 0.0D, 0.0D, -1.5D,
                 KamikazeConfig.noseTriggerDistance));
     }
+
+    @Test
+    public void lowTickDetonationSweepCoversExtendedForwardImpactWindow() {
+        assertTrue(KamikazeImpactDetector.isAimedAtTargetInNoseZone(
+                0.0D, 0.0D, 0.0D, 0.0F, 0.0F,
+                0.0D, 0.0D, KamikazeConfig.lowTickDetonationSweep,
+                KamikazeConfig.lowTickDetonationSweep));
+        assertFalse(KamikazeImpactDetector.isAimedAtTargetInNoseZone(
+                0.0D, 0.0D, 0.0D, 0.0F, 0.0F,
+                0.0D, 0.0D, KamikazeConfig.lowTickDetonationSweep + 1.25D,
+                KamikazeConfig.lowTickDetonationSweep));
+    }
 }

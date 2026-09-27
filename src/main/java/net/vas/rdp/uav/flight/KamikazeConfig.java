@@ -10,6 +10,7 @@ public final class KamikazeConfig {
     public static double minimumImpactSpeed = 0.35D;
     public static double impactSweepPadding = 0.35D;
     public static double noseTriggerDistance = 2.0D;
+    public static double lowTickDetonationSweep = 1.5D;
     public static double closeFireDistance = 1.0D;
     public static double detonationRadius = 1.0D;
     public static long terminalTimeoutTicks = 600L;
@@ -32,6 +33,10 @@ public final class KamikazeConfig {
         noseTriggerDistance = config.get("kamikaze", "noseTriggerDistance",
                 noseTriggerDistance,
                 "Maximum forward distance from the aircraft nose at which a block/entity/vehicle triggers a self-destruct payload.",
+                0.5D, 8.0D).getDouble();
+        lowTickDetonationSweep = config.get("kamikaze", "lowTickDetonationSweep",
+                lowTickDetonationSweep,
+                "Extra forward predictiveness added to the kamikaze nose sweep so a low-tick server still recognizes an impact window.",
                 0.5D, 8.0D).getDouble();
         closeFireDistance = config.get("kamikaze", "closeFireDistance",
                 closeFireDistance,

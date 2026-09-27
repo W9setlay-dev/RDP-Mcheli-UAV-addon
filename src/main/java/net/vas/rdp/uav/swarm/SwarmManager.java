@@ -5,7 +5,6 @@ import net.vas.rdp.uav.persistence.RDPUavSwarmWorldData;
 import java.util.UUID;
 import net.vas.rdp.uav.mission.MissionManager;
 import net.vas.rdp.uav.mission.RDPMission;
-import net.vas.rdp.uav.mission.MissionState;
 import net.vas.rdp.uav.persistence.RDPMissionWorldData;
 import net.vas.rdp.uav.flight.WingManFlightAdapter;
 import com.norwood.mcheli.aircraft.MCH_EntityAircraft;

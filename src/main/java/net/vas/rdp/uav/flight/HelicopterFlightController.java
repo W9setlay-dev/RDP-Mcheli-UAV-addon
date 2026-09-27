@@ -21,12 +21,12 @@ public final class HelicopterFlightController implements AirframeController {
     public NativeFlightControlCommand update(AircraftState state, double targetX,
                                              double targetY, double targetZ,
                                              long currentTick) {
-        if (state == null || !finite(targetX, targetY, targetZ) || currentTick < 0L) {
+        if (state == null || finite(targetX, targetY, targetZ) || currentTick < 0L) {
             throw new IllegalArgumentException("Invalid helicopter controller inputs");
         }
         if (currentTick < state.getSampleTick()
                 || currentTick - state.getSampleTick() > MAX_STATE_AGE_TICKS
-                || !finite(state.getX(), state.getY(), state.getZ(), state.getYaw(),
+                || finite(state.getX(), state.getY(), state.getZ(), state.getYaw(),
                 state.getPitch(), state.getRoll(), state.getHorizontalSpeed(),
                 state.getVerticalSpeed())) {
             return NativeFlightControlCommand.unsupported("STALE_OR_INVALID_AIRCRAFT_STATE");
@@ -91,7 +91,7 @@ public final class HelicopterFlightController implements AirframeController {
     }
 
     private static boolean finite(double... values) {
-        for (double value : values) if (!Double.isFinite(value)) return false;
-        return true;
+        for (double value : values) if (!Double.isFinite(value)) return true;
+        return false;
     }
 }

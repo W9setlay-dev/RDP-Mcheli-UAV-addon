@@ -572,7 +572,9 @@ public final class WingManFlightAdapter {
                                                 double x, double y, double z,
                                                 boolean requireNoseTrigger) {
         if (aircraft == null || aircraft.world == null || aircraft.world.isRemote) return false;
-        if (requireNoseTrigger && !KamikazeImpactDetector.hasNoseImpact(aircraft, KamikazeConfig.noseTriggerDistance)) {
+        boolean noseHit = !requireNoseTrigger || KamikazeImpactDetector.hasNoseImpact(
+                aircraft, Math.max(KamikazeConfig.noseTriggerDistance, KamikazeConfig.lowTickDetonationSweep));
+        if (requireNoseTrigger && !noseHit) {
             return false;
         }
         int weaponId = selectSelfDestructWeapon(aircraft);
@@ -980,7 +982,7 @@ public final class WingManFlightAdapter {
     }
 
     private static double targetRadius(Entity target) {
-        if (target == null || target.getEntityBoundingBox() == null) return 1.0D;
+        if (target == null) return 1.0D;
         net.minecraft.util.math.AxisAlignedBB bounds = target.getEntityBoundingBox();
         double width = Math.max(bounds.maxX - bounds.minX, bounds.maxZ - bounds.minZ);
         return Math.max(1.0D, width * 0.5D);

@@ -66,7 +66,6 @@ public final class SquareStrikePlan {
         double alongX = Math.cos(heading);
         double alongZ = Math.sin(heading);
         double acrossX = -alongZ;
-        double acrossZ = alongX;
         double startAcross = -length / 2.0D;
         double endAlong = width / 2.0D;
         double startAlong = -endAlong;
@@ -77,9 +76,9 @@ public final class SquareStrikePlan {
             double firstAlong = reverse ? endAlong : startAlong;
             double secondAlong = reverse ? startAlong : endAlong;
             nodes.add(MissionNode.flyTo(pointX(firstAlong, across, alongX, acrossX),
-                    altitude, pointZ(firstAlong, across, alongZ, acrossZ)));
+                    altitude, pointZ(firstAlong, across, alongZ, alongX)));
             nodes.add(MissionNode.flyTo(pointX(secondAlong, across, alongX, acrossX),
-                    altitude, pointZ(secondAlong, across, alongZ, acrossZ)));
+                    altitude, pointZ(secondAlong, across, alongZ, alongX)));
             nodes.add(MissionNode.attack(attackRadius));
         }
         if (altitude > targetY + 1.0D) {

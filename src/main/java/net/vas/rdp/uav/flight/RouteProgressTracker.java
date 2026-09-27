@@ -49,17 +49,13 @@ public final class RouteProgressTracker {
         if (tick < 0L || progressThreshold < 0.0D || stallWindowTicks < 1L) {
             throw new IllegalArgumentException("Invalid progress tracking inputs");
         }
-        double previousTargetDistance = previousDistanceToTarget;
-        double currentTargetDistance = currentDistanceToTarget;
-        double previousWaypointDistance = previousDistanceToWaypoint;
-        double currentWaypointDistance = currentDistanceToWaypoint;
         double previousProgress = Double.isFinite(previousRouteProgress)
                 ? previousRouteProgress : 0.0D;
         double currentProgress = Double.isFinite(currentRouteProgress)
                 ? currentRouteProgress : previousProgress;
 
-        double targetDelta = measurableDelta(previousTargetDistance, currentTargetDistance);
-        double waypointDelta = measurableDelta(previousWaypointDistance, currentWaypointDistance);
+        double targetDelta = measurableDelta(previousDistanceToTarget, currentDistanceToTarget);
+        double waypointDelta = measurableDelta(previousDistanceToWaypoint, currentDistanceToWaypoint);
         double routeDelta = currentProgress - previousProgress;
         boolean measuredDistanceProgress = targetDelta > progressThreshold
                 || waypointDelta > progressThreshold;

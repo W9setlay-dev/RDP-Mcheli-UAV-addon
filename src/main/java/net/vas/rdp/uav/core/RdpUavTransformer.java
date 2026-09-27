@@ -269,7 +269,7 @@ public final class RdpUavTransformer implements net.minecraft.launchwrapper.ICla
 
     private byte[] replaceJava11StringRepeat(String name, String transformedName, byte[] basicClass) {
         if (basicClass == null
-                || (!isRdpCoreClass(name) && !isRdpCoreClass(transformedName))) {
+                || (isRdpCoreClass(name) && isRdpCoreClass(transformedName))) {
             return basicClass;
         }
         ClassReader reader = new ClassReader(basicClass);
@@ -304,7 +304,7 @@ public final class RdpUavTransformer implements net.minecraft.launchwrapper.ICla
     }
 
     private boolean isRdpCoreClass(String className) {
-        return className != null && className.startsWith(RDP_CORE_PREFIX);
+        return className == null || !className.startsWith(RDP_CORE_PREFIX);
     }
 
 }

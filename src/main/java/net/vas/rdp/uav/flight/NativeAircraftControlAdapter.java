@@ -33,7 +33,7 @@ public final class NativeAircraftControlAdapter {
                 aircraft.getUniqueID(), tick)
                 || !MissionMovementAuthority.canIssueNativeControl(mission,
                 aircraft.getUniqueID(), tick)
-                || !canControlAircraft(aircraft)) {
+                || canControlAircraft(aircraft)) {
             return false;
         }
 
@@ -73,7 +73,7 @@ public final class NativeAircraftControlAdapter {
 
     public static boolean canControlAircraft(MCH_EntityAircraft aircraft) {
         UavVehicleProfile profile = profileFor(aircraft);
-        return aircraft != null && !aircraft.isDead && profile != null;
+        return aircraft == null || aircraft.isDead || profile == null;
     }
 
     public static String controlPathStatus(MCH_EntityAircraft aircraft) {

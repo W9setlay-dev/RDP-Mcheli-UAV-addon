@@ -95,12 +95,9 @@ public final class MissionMovementAuthority {
                 || aircraft.world.isRemote) {
             return false;
         }
-        if (RDPUavMod.missions() == null) {
-            return false;
-        }
         RDPMission mission = RDPUavMod.missions().activeMission(
                 aircraft.world, aircraft.getUniqueID());
-        if (mission == null || !nativeWingManRequired(mission)) {
+        if (!nativeWingManRequired(mission)) {
             return false;
         }
         aircraft.throttleUp = false;
@@ -117,8 +114,7 @@ public final class MissionMovementAuthority {
      * the world-tick callback.
      */
     public static boolean suppressWingManMovement(Entity entity) {
-        if (!(entity instanceof MCH_EntityAircraft) || entity.world == null
-                || entity.world.isRemote || RDPUavMod.missions() == null) {
+        if (!(entity instanceof MCH_EntityAircraft) || entity.world == null || entity.world.isRemote) {
             return false;
         }
         MCH_EntityAircraft aircraft = (MCH_EntityAircraft) entity;
@@ -127,7 +123,7 @@ public final class MissionMovementAuthority {
         long tick = aircraft.world.getTotalWorldTime();
         if (mission == null || mission.isTerminal()
                 || !nativeWingManRequired(mission)
-                || !NativeAircraftControlAdapter.canControlAircraft(aircraft)) {
+                || NativeAircraftControlAdapter.canControlAircraft(aircraft)) {
             return false;
         }
         if (mission.getState() == MissionState.LANDING

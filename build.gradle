@@ -33,7 +33,7 @@ minecraft {
 
 // ForgeGradle 2.3 hard-codes the legacy HTTP asset endpoint. Prefetch the
 // objects over HTTPS so its getAssets task can complete without using HTTP.
-task prefetchAssetsHttps {
+tasks.register('prefetchAssetsHttps') {
     dependsOn getAssetIndex
 
     doLast {
@@ -57,7 +57,7 @@ task prefetchAssetsHttps {
             if (!valid) {
                 objectFile.parentFile.mkdirs()
                 def temporaryFile = new File(objectFile.parentFile, "${hash}.part")
-                def assetUrl = new URL("https://resources.download.minecraft.net/${hash[0..1]}/${hash}")
+                def assetUrl = new URL("https://resources.download.minecraft.net/${hash[0..1 as String]}/${hash}")
                 assetUrl.withInputStream { input ->
                     temporaryFile.withOutputStream { output ->
                         output << input

@@ -101,7 +101,7 @@ public class MissionLifecycleContractTest {
 
         assertTrue(mission.isTerminal());
         assertEquals(MissionState.AIRCRAFT_LOST, mission.getState());
-        assertFalse(mission.getState() == MissionState.KAMIKADZE_DETONATED);
+        assertNotSame(MissionState.KAMIKADZE_DETONATED, mission.getState());
     }
 
     @Test

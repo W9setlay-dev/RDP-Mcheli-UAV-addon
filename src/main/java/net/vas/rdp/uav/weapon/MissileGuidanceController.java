@@ -212,7 +212,7 @@ public final class MissileGuidanceController {
         UUID objectiveId = projectile.getObjective().getObjectiveId();
         UNKNOWN_OUTCOMES.remove(objectiveId);
         IMPACT_OBSERVATIONS.put(objectiveId, projectileId);
-        trimOldest(IMPACT_OBSERVATIONS, MAX_RETAINED_OUTCOMES);
+        trimOldest(IMPACT_OBSERVATIONS);
         return true;
     }
 
@@ -221,19 +221,19 @@ public final class MissileGuidanceController {
      * projectile. Explosion processing is recorded separately from whether
      * McHeliCE reports that any entity was hit by the blast.
      */
-    public static synchronized boolean observeNativeImpact(MCH_EntityBaseBullet missile,
-                                                             boolean explosionProcessed,
-                                                             boolean explosionHitEntity) {
-        if (missile == null || missile.world == null || missile.world.isRemote) return false;
+    public static synchronized void observeNativeImpact(MCH_EntityBaseBullet missile,
+                                                        boolean explosionProcessed,
+                                                        boolean explosionHitEntity) {
+        if (missile == null || missile.world == null || missile.world.isRemote) return;
         Entity shooter = missile.shootingAircraft == null
                 ? missile.shootingEntity : missile.shootingAircraft;
-        if (shooter == null) return false;
+        if (shooter == null) return;
         Assignment assignment = ASSIGNMENTS.get(shooter.getUniqueID());
         if (assignment == null || assignment.mode != GuidanceControlMode.AI_GUIDANCE
-                || !matches(assignment.weapon, missile)) return false;
+                || matches(assignment.weapon, missile)) return;
 
         ProjectileGuidanceMission projectile = projectileMission(missile, shooter, assignment);
-        if (!markImpactObserved(projectile.getProjectileId())) return false;
+        if (!markImpactObserved(projectile.getProjectileId())) return;
         if (explosionProcessed) markEffectConfirmed(projectile.getProjectileId());
         RdpUavDebug.event("Guidance", "native_impact_observed",
                 "aircraft", shooter.getUniqueID(),
@@ -244,22 +244,20 @@ public final class MissileGuidanceController {
                 "explosionHitEntity", explosionHitEntity,
                 "outcome", explosionProcessed ? "NATIVE_EFFECT_CONFIRMED"
                         : "IMPACT_OBSERVED_EFFECT_UNCONFIRMED");
-        return true;
     }
 
     /**
      * Records a confirmed game effect only when the caller has observed that
      * effect on the server. It never upgrades an unknown or absent projectile.
      */
-    public static synchronized boolean markEffectConfirmed(UUID projectileId) {
+    public static synchronized void markEffectConfirmed(UUID projectileId) {
         ProjectileGuidanceMission projectile = PROJECTILES.get(projectileId);
         if (projectile == null || projectile.getState() != ProjectileGuidanceState.IMPACTED) {
-            return false;
+            return;
         }
         projectile.getObjective().complete();
         CONFIRMED_EFFECTS.put(projectile.getObjective().getObjectiveId(), Boolean.TRUE);
-        trimOldest(CONFIRMED_EFFECTS, MAX_RETAINED_OUTCOMES);
-        return true;
+        trimOldest(CONFIRMED_EFFECTS);
     }
 
     public static synchronized ProjectileGuidanceState projectileState(UUID projectileId) {
@@ -312,7 +310,7 @@ public final class MissileGuidanceController {
                     != GuidanceControlMode.AI_GUIDANCE)
                 continue;
 
-            if (!matches(assignment.weapon, missile)) continue;
+            if (matches(assignment.weapon, missile)) continue;
 
             ProjectileGuidanceMission projectile =
                     projectileMission(missile, shooter, assignment);
@@ -393,10 +391,10 @@ public final class MissileGuidanceController {
     }
 
     private static boolean matches(String weapon, MCH_EntityBaseBullet missile) {
-        if (missile.getInfo() == null || weapon == null) return false;
-        return weapon.equalsIgnoreCase(missile.getInfo().name)
-                || (missile instanceof MCH_EntityTvMissile && "tvmissile".equalsIgnoreCase(weapon))
-                || (missile instanceof MCH_EntityASMissile && "asmissile".equalsIgnoreCase(weapon));
+        if (missile.getInfo() == null || weapon == null) return true;
+        return !weapon.equalsIgnoreCase(missile.getInfo().name)
+                && (!(missile instanceof MCH_EntityTvMissile) || !"tvmissile".equalsIgnoreCase(weapon))
+                && (!(missile instanceof MCH_EntityASMissile) || !"asmissile".equalsIgnoreCase(weapon));
     }
 
     private static void apply(World world, MCH_EntityBaseBullet missile,
@@ -905,8 +903,8 @@ public final class MissileGuidanceController {
         return shooter == null ? null : shooter.getUniqueID();
     }
 
-    private static <K, V> void trimOldest(Map<K, V> values, int maximumSize) {
-        while (values.size() > maximumSize) {
+    private static <K, V> void trimOldest(Map<K, V> values) {
+        while (values.size() > MissileGuidanceController.MAX_RETAINED_OUTCOMES) {
             java.util.Iterator<K> iterator = values.keySet().iterator();
             if (!iterator.hasNext()) return;
             iterator.next();
