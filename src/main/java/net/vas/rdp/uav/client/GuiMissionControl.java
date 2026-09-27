@@ -76,10 +76,11 @@ public final class GuiMissionControl extends GuiScreen {
     }
 
     static Entity capturedCrosshairTarget() {
-        if (capturedCrosshairTargetId == null || Minecraft.getMinecraft().world == null) {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.world == null || capturedCrosshairTargetId == null) {
             return null;
         }
-        for (Entity entity : Minecraft.getMinecraft().world.loadedEntityList) {
+        for (Entity entity : mc.world.loadedEntityList) {
             if (entity != null && !entity.isDead
                     && capturedCrosshairTargetId.equals(entity.getUniqueID())) {
                 return entity;
@@ -362,15 +363,14 @@ public final class GuiMissionControl extends GuiScreen {
         String normalized = row.toLowerCase(java.util.Locale.ROOT);
         String query = filterField == null ? "" : filterField.getText().trim().toLowerCase(java.util.Locale.ROOT);
         if (!query.isEmpty() && !normalized.contains(query)) return true;
+        String state = missionState(row);
         if (filterMode == 1) {
-            return MissionUiState.isTerminal(missionState(row))
-                    || "OUTCOME_UNKNOWN".equals(missionState(row));
+            return !MissionUiState.isActionable(state) || MissionUiState.isAlert(state);
         }
         if (filterMode == 2) {
-            return !MissionUiState.isTerminal(missionState(row))
-                    && !"OUTCOME_UNKNOWN".equals(missionState(row))
-                    && !normalized.contains("failed") && !normalized.contains("lost")
-                    && !normalized.contains("out");
+            return !MissionUiState.isAlert(state)
+                    && !MissionUiState.isTerminal(state)
+                    && !"OUTCOME_UNKNOWN".equals(state);
         }
         return false;
     }
@@ -520,15 +520,20 @@ public final class GuiMissionControl extends GuiScreen {
     }
 
     private void lockCrosshairTarget() {
+        if (mc == null || mc.world == null) {
+            status = "Target lock unavailable while the world is not loaded.";
+            return;
+        }
         RayTraceResult hit = mc.objectMouseOver;
         Entity target = hit == null ? null : hit.entityHit;
-        if (target == null) target = capturedCrosshairTarget();
-        if (target != null) {
+        if (target == null || target.world == null || target.isDead) target = capturedCrosshairTarget();
+        if (target != null && target.world != null && !target.isDead) {
             rememberCrosshairTarget(target);
             RdpUavNetwork.lockAiTarget(target.getUniqueID());
             status = "Target lock requested for " + target.getName() + ".";
             return;
         }
+        capturedCrosshairTargetId = null;
         status = "No crosshair contact; aim directly at a valid target.";
     }
 

@@ -185,6 +185,31 @@ public class RdpUavCoreTest {
     }
 
     @Test
+    public void customEntityFilterAcceptsHostileAndNamespacedTargets() {
+        assertTrue(net.vas.rdp.uav.target.TargetClassifier.matchesHostileNamespace(
+                "minecraft:zombie", "hostile"));
+        assertTrue(net.vas.rdp.uav.target.TargetClassifier.matchesHostileNamespace(
+                "techguns:gunner", "hostile"));
+        assertTrue(net.vas.rdp.uav.target.TargetClassifier.isMissionRelevant(
+                "mod:sentinel", "mod"));
+        assertFalse(net.vas.rdp.uav.target.TargetClassifier.isMissionRelevant(
+                "mod:sentinel", "other"));
+
+        net.vas.rdp.uav.target.TargetPolicy.Snapshot snapshot =
+                net.vas.rdp.uav.target.TargetPolicy.builder()
+                        .include("hostile")
+                        .require("mod:sentinel")
+                        .exclude("minecraft:creeper")
+                        .allowHostileVehicles(true)
+                        .snapshot();
+
+        assertEquals("hostile", snapshot.getInclude().get(0));
+        assertEquals("mod:sentinel", snapshot.getRequire().get(0));
+        assertEquals("minecraft:creeper", snapshot.getExclude().get(0));
+        assertTrue(snapshot.isAllowVehicleTargets());
+    }
+
+    @Test
     public void targetSelectionHonorsManualIdentityAndAutomaticPriority() {
         TargetSelector<String> selector = new TargetSelector<>();
         List<TargetSelector.Candidate<String>> candidates = Arrays.asList(

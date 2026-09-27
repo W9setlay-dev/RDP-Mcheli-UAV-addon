@@ -22,4 +22,14 @@ public class MissionUiStateTest {
         assertTrue(MissionUiState.isMarkerVisible("TARGET_LOCKED", "CONTACT"));
         assertFalse(MissionUiState.isMarkerVisible("TARGET_LOCKED", "HIDDEN"));
     }
+
+    @Test
+    public void alertAndToneClassificationMatchServerMissionLifecycle() {
+        assertTrue(MissionUiState.isAlert("WAITING_FOR_FUEL"));
+        assertTrue(MissionUiState.isAlert("OUTCOME_UNKNOWN"));
+        assertFalse(MissionUiState.isAlert("TARGET_LOCKED"));
+        assertEquals("ALERT", MissionUiState.stateTone("WAITING_FOR_FUEL"));
+        assertEquals("TERMINAL", MissionUiState.stateTone("FAILED"));
+        assertEquals("ACTIVE", MissionUiState.stateTone("TARGET_LOCKED"));
+    }
 }

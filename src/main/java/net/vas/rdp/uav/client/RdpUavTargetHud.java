@@ -53,8 +53,10 @@ public final class RdpUavTargetHud {
     public void render(RenderGameOverlayEvent.Post event) {
         if (event.getType() != RenderGameOverlayEvent.ElementType.ALL
                 || !RdpUavHudConfig.enabled || telemetry == null || !telemetry.active) return;
-        Minecraft mc = net.minecraftforge.fml.client.FMLClientHandler.instance().getClient();
-        if (mc.player == null || mc.world == null || System.currentTimeMillis() - receivedAt > 3000L) return;
+        Minecraft mc = net.minecraftforge.fml.client.FMLClientHandler.instance() == null
+                ? null : net.minecraftforge.fml.client.FMLClientHandler.instance().getClient();
+        if (mc == null || mc.player == null || mc.world == null
+                || System.currentTimeMillis() - receivedAt > 3000L) return;
         // Eligibility is decided on the server from McHeli's actual pilot/station
         // relationship. Repeating that lookup on the client breaks station-owned
         // UAV HUDs because the client does not always expose the controlled craft.
@@ -82,10 +84,10 @@ public final class RdpUavTargetHud {
                 || System.currentTimeMillis() - receivedAt > 3000L) return;
 
         Minecraft mc = Minecraft.getMinecraft();
-        if (mc.player == null || mc.world == null
+        if (mc == null || mc.player == null || mc.world == null
                 || telemetry.dimension != mc.world.provider.getDimension()) return;
         Entity target = resolveTarget(mc, telemetry.targetUuid);
-        if (target == null || target.isDead) return;
+        if (target == null || target.isDead || target.world == null) return;
 
         float partialTicks = event.getPartialTicks();
         double x = target.lastTickPosX + (target.posX - target.lastTickPosX) * partialTicks;
@@ -99,7 +101,7 @@ public final class RdpUavTargetHud {
         Vec3d cameraPosition = camera.getPositionEyes(partialTicks);
         box = box.offset(-cameraPosition.x, -cameraPosition.y, -cameraPosition.z);
 
-        boolean locked = "TARGET_LOCKED".equals(telemetry.targetState);
+        boolean locked = isTargetLocked(telemetry.targetState);
         GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_LINE_BIT | GL11.GL_CURRENT_BIT
                 | GL11.GL_DEPTH_BUFFER_BIT | GL11.GL_COLOR_BUFFER_BIT);
         GlStateManager.pushMatrix();
@@ -116,6 +118,9 @@ public final class RdpUavTargetHud {
     }
 
     private Entity resolveTarget(Minecraft mc, String targetUuid) {
+        if (mc == null || mc.world == null || targetUuid == null || targetUuid.trim().isEmpty()) {
+            return null;
+        }
         UUID id;
         try {
             id = UUID.fromString(targetUuid);
@@ -133,8 +138,10 @@ public final class RdpUavTargetHud {
         cachedWorld = mc.world;
         cachedTarget = null;
         nextTargetLookupAt = now + 250L;
+        if (mc.world.loadedEntityList == null) return null;
         for (Entity entity : mc.world.loadedEntityList) {
-            if (id.equals(entity.getUniqueID())) {
+            if (entity != null && id.equals(entity.getUniqueID())
+                    && !entity.isDead && entity.world == mc.world) {
                 cachedTarget = entity;
                 break;
             }
@@ -144,6 +151,10 @@ public final class RdpUavTargetHud {
 
     private static boolean same(String first, String second) {
         return first == null ? second == null : first.equals(second);
+    }
+
+    private static boolean isTargetLocked(String targetState) {
+        return "TARGET_LOCKED".equals(targetState);
     }
 
     private static void drawTargetBrackets(AxisAlignedBB box) {
@@ -178,23 +189,31 @@ public final class RdpUavTargetHud {
         FontRenderer font = mc.fontRenderer;
         int x = 8 + RdpUavHudConfig.xOffset;
         int y = 8 + RdpUavHudConfig.yOffset;
-        int color = telemetry.targetState.equals("TARGET_LOCKED") ? 0xFF66FF66 : 0xFFFFCC66;
+        String missionState = telemetry.missionState == null ? "UNKNOWN" : telemetry.missionState;
+        String targetState = telemetry.targetState == null ? "NONE" : telemetry.targetState;
+        String targetName = telemetry.registryId == null || telemetry.registryId.trim().isEmpty()
+                ? "NO TARGET" : telemetry.registryId;
+        String entityName = telemetry.entityName == null ? "" : telemetry.entityName;
+        String targetUuid = telemetry.targetUuid == null ? "" : telemetry.targetUuid;
+        String wingmanState = telemetry.wingmanState == null ? "NONE" : telemetry.wingmanState;
+        String wingmanNode = telemetry.wingmanNode == null ? "none" : telemetry.wingmanNode;
+        String markerState = telemetry.markerState == null ? "HIDDEN" : telemetry.markerState;
+        String failureReason = telemetry.failureReason == null ? "" : telemetry.failureReason;
+        int color = isTargetLocked(targetState) ? 0xFF66FF66 : 0xFFFFCC66;
         GlStateManager.pushMatrix();
         GlStateManager.scale(RdpUavHudConfig.scale, RdpUavHudConfig.scale, 1.0F);
         x = (int) (x / RdpUavHudConfig.scale);
         y = (int) (y / RdpUavHudConfig.scale);
-        String target = telemetry.registryId == null ? "NO TARGET" : telemetry.registryId;
         font.drawStringWithShadow("RDP UAV SYSTEM", x, y, 0xFFFFFFFF);
-        font.drawStringWithShadow("MISSION: " + telemetry.missionId, x, y + 10, 0xFFFFFFFF);
-        font.drawStringWithShadow("UAV: " + telemetry.aircraftType, x, y + 20, 0xFFFFFFFF);
-        font.drawStringWithShadow("STATE: " + telemetry.missionState, x, y + 30, color);
-        font.drawStringWithShadow("TARGET: " + target, x, y + 42, 0xFFFFFFFF);
-        font.drawStringWithShadow("STATUS: " + telemetry.targetState, x, y + 52, color);
-        font.drawStringWithShadow("ENTITY: " + telemetry.entityName, x, y + 62, 0xFFFFFFFF);
-        font.drawStringWithShadow("UUID: " + telemetry.targetUuid, x, y + 72, 0xFFFFFFFF);
-        font.drawStringWithShadow("PRIORITY: " + telemetry.priority, x, y + 82, 0xFFFFFFFF);
-        font.drawStringWithShadow("WINGMAN: " + telemetry.wingmanState
-                + " NODE " + telemetry.wingmanNode, x, y + 92, 0xFFFFFFFF);
+        font.drawStringWithShadow("MISSION: " + (telemetry.missionId == null ? "UNKNOWN" : telemetry.missionId), x, y + 10, 0xFFFFFFFF);
+        font.drawStringWithShadow("UAV: " + (telemetry.aircraftType == null ? "UNKNOWN" : telemetry.aircraftType), x, y + 20, 0xFFFFFFFF);
+        font.drawStringWithShadow("STATE: " + missionState, x, y + 30, color);
+        font.drawStringWithShadow("TARGET: " + targetName, x, y + 42, 0xFFFFFFFF);
+        font.drawStringWithShadow("STATUS: " + targetState, x, y + 52, color);
+        font.drawStringWithShadow("ENTITY: " + entityName, x, y + 62, 0xFFFFFFFF);
+        font.drawStringWithShadow("UUID: " + targetUuid, x, y + 72, 0xFFFFFFFF);
+        font.drawStringWithShadow("PRIORITY: " + (telemetry.priority == null ? "NONE" : telemetry.priority), x, y + 82, 0xFFFFFFFF);
+        font.drawStringWithShadow("WINGMAN: " + wingmanState + " NODE " + wingmanNode, x, y + 92, 0xFFFFFFFF);
         font.drawStringWithShadow("DISTANCE: " + String.format(java.util.Locale.ROOT, "%.1fm", telemetry.distance)
                 + (telemetry.outOfRange ? "  OUT OF RANGE" : ""), x, y + 102,
                 telemetry.outOfRange ? 0xFFFF5555 : 0xFFFFFFFF);
@@ -204,15 +223,15 @@ public final class RdpUavTargetHud {
                 telemetry.velocityX, telemetry.velocityY, telemetry.velocityZ), x, detailY, 0xFFFFFFFF);
         font.drawStringWithShadow("BEARING: " + String.format(java.util.Locale.ROOT, "%.1f", telemetry.bearing)
                 + "  ELEV: " + String.format(java.util.Locale.ROOT, "%.1f", telemetry.elevation)
-                + "  MARKER: " + telemetry.markerState, x, detailY + 10, 0xFFFFFFFF);
+                + "  MARKER: " + markerState, x, detailY + 10, 0xFFFFFFFF);
         detailY += 20;
-        if (!telemetry.failureReason.isEmpty()) {
-            font.drawStringWithShadow("FAILURE: " + telemetry.failureReason, x, detailY, 0xFFFF5555);
+        if (failureReason != null && !failureReason.isEmpty()) {
+            font.drawStringWithShadow("FAILURE: " + failureReason, x, detailY, 0xFFFF5555);
             detailY += 10;
         }
         font.drawStringWithShadow("DIMENSION: " + telemetry.dimension, x, detailY, 0xFFFFFFFF);
-        font.drawStringWithShadow("SCAN: " + telemetry.scanState
-                + "  DEEP: " + telemetry.deepScanState, x, detailY + 10, 0xFFFFFFFF);
+        font.drawStringWithShadow("SCAN: " + (telemetry.scanState == null ? "NONE" : telemetry.scanState)
+                + "  DEEP: " + (telemetry.deepScanState == null ? "NONE" : telemetry.deepScanState), x, detailY + 10, 0xFFFFFFFF);
         GlStateManager.popMatrix();
     }
 
@@ -230,7 +249,7 @@ public final class RdpUavTargetHud {
         if (screen == null) return;
         GlStateManager.pushMatrix();
         GlStateManager.disableTexture2D();
-        GlStateManager.color(0.3F, 1.0F, 0.3F, telemetry.targetState.equals("TARGET_LOCKED") ? 1.0F : 0.65F);
+        GlStateManager.color(0.3F, 1.0F, 0.3F, isTargetLocked(telemetry.targetState) ? 1.0F : 0.65F);
         GL11.glLineWidth(2.0F);
         double size = 10.0D;
         GL11.glBegin(GL11.GL_LINE_LOOP);

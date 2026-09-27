@@ -25,6 +25,30 @@ public final class MissionUiState {
                 && !"OUTCOME_UNKNOWN".equals(state);
     }
 
+    public static boolean isAlert(String state) {
+        if (state == null) return false;
+        if (isTerminal(state)) return true;
+        if ("OUTCOME_UNKNOWN".equals(state)) return true;
+        try {
+            MissionState value = MissionState.valueOf(state);
+            return value == MissionState.LOST
+                    || value == MissionState.WAITING_FOR_WORLD
+                    || value == MissionState.WAITING_FOR_FUEL
+                    || value == MissionState.EXECUTION_STALLED
+                    || value == MissionState.REPLAN
+                    || value == MissionState.RECOVERING;
+        } catch (IllegalArgumentException invalid) {
+            return false;
+        }
+    }
+
+    public static String stateTone(String state) {
+        if (state == null || state.trim().isEmpty()) return "UNKNOWN";
+        if (isTerminal(state)) return "TERMINAL";
+        if (isAlert(state)) return "ALERT";
+        return isActionable(state) ? "ACTIVE" : "UNKNOWN";
+    }
+
     public static boolean isMarkerVisible(String missionState, String markerState) {
         return isActionable(missionState) && markerState != null
                 && !"HIDDEN".equalsIgnoreCase(markerState);
