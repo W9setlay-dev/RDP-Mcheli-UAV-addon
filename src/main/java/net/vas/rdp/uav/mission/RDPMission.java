@@ -50,6 +50,9 @@ public final class RDPMission {
     private static final double PROGRESS_DISTANCE_THRESHOLD = 0.5D;
     private MissionPhase phase = MissionPhase.PLANNING;
     private ControlOwner controlOwner = ControlOwner.MISSION_AI;
+    private MissionExecutionStage executionStage = MissionExecutionStage.PLANNING;
+    private UUID parentMissionId;
+    private UUID childMissionId;
     public static final int MAX_RECOVERY_ATTEMPTS = 5;
     private String lastTransitionReason;
     private TargetPolicy.Snapshot targetPolicy = TargetPolicy.builder().snapshot();
@@ -104,6 +107,7 @@ public final class RDPMission {
         queued = false;
         phase = phaseFor(nextState);
         controlOwner = ownerFor(nextState);
+        executionStage = MissionExecutionStage.fromState(nextState, missionType);
         lastTransitionReason = reason.trim();
         RdpUavDebug.event("MissionLifecycle", "MISSION_STATE_TRANSITION",
                 "mission", missionId,
@@ -625,6 +629,7 @@ public final class RDPMission {
         mission.state = state;
         mission.phase = phaseFor(state);
         mission.controlOwner = ownerFor(state);
+        mission.executionStage = MissionExecutionStage.fromState(state, missionType);
         mission.targetId = targetId;
         mission.lastUpdateTick = lastUpdateTick;
         mission.failureReason = failureReason;
@@ -632,6 +637,28 @@ public final class RDPMission {
         mission.lastTransitionReason = failureReason == null
                 ? "RESTORED_" + state.name() : failureReason;
         return mission;
+    }
+
+    public void restoreExecutionMetadata(MissionExecutionStage stage,
+                                         UUID parentMissionId, UUID childMissionId) {
+        if (stage == null || missionId.equals(parentMissionId)
+                || missionId.equals(childMissionId)
+                || (parentMissionId != null && parentMissionId.equals(childMissionId))) {
+            throw new IllegalArgumentException("Invalid linked mission metadata");
+        }
+        this.executionStage = stage;
+        this.parentMissionId = parentMissionId;
+        this.childMissionId = childMissionId;
+    }
+
+    public void linkChildMission(RDPMission child) {
+        if (child == null || child == this || !aircraftId.equals(child.aircraftId)
+                || !ownerId.equals(child.ownerId)
+                || (child.parentMissionId != null && !missionId.equals(child.parentMissionId))) {
+            throw new IllegalArgumentException("Linked child must retain owner and aircraft");
+        }
+        childMissionId = child.missionId;
+        child.parentMissionId = missionId;
     }
 
     public UUID getMissionId() { return missionId; }
@@ -708,4 +735,7 @@ public final class RDPMission {
     public String getRecoveryPolicy() { return recoveryPolicy; }
     public int getRecoveryAttempts() { return recoveryAttempts; }
     public String getRecoveryReason() { return recoveryReason; }
+    public MissionExecutionStage getExecutionStage() { return executionStage; }
+    public UUID getParentMissionId() { return parentMissionId; }
+    public UUID getChildMissionId() { return childMissionId; }
 }

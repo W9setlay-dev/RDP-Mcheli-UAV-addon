@@ -70,6 +70,15 @@ public final class MissionMovementAuthority {
         }
     }
 
+    /** Release only the lease owned by this mission; a newer mission may already own the aircraft. */
+    public static void releaseControl(UUID aircraftId, UUID missionId) {
+        if (aircraftId == null || missionId == null) return;
+        AircraftControlLease active = ACTIVE_LEASES.get(aircraftId);
+        if (active != null && missionId.equals(active.getMissionId())) {
+            ACTIVE_LEASES.remove(aircraftId, active);
+        }
+    }
+
     public static void releaseExpiredControls(long tick) {
         if (tick < 0L) return;
         for (Map.Entry<UUID, AircraftControlLease> entry : ACTIVE_LEASES.entrySet()) {
@@ -92,7 +101,7 @@ public final class MissionMovementAuthority {
     public static boolean suppressOperatorFlightInput(MCH_EntityAircraft aircraft,
                                                        Entity operator) {
         if (aircraft == null || operator == null || aircraft.world == null
-                || aircraft.world.isRemote) {
+                || aircraft.world.isRemote || !aircraft.isPilot(operator)) {
             return false;
         }
         RDPMission mission = RDPUavMod.missions().activeMission(

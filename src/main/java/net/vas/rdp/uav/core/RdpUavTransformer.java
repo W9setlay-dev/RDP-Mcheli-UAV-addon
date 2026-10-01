@@ -114,20 +114,23 @@ public final class RdpUavTransformer implements net.minecraft.launchwrapper.ICla
                 if (isControlPacket && "handlePilotControls".equals(methodName)) {
                     return new MethodVisitor(Opcodes.ASM5, delegate) {
                         @Override
-                        public void visitCode() {
-                            super.visitCode();
-                            super.visitVarInsn(Opcodes.ALOAD, 1);
-                            super.visitVarInsn(Opcodes.ALOAD, 3);
-                            super.visitMethodInsn(Opcodes.INVOKESTATIC,
-                                    "net/vas/rdp/uav/mission/MissionMovementAuthority",
-                                    "suppressOperatorFlightInput",
-                                    "(Lcom/norwood/mcheli/aircraft/MCH_EntityAircraft;"
-                                            + "Lnet/minecraft/entity/Entity;)Z",
-                                    false);
-                            Label allowed = new Label();
-                            super.visitJumpInsn(Opcodes.IFEQ, allowed);
-                            super.visitInsn(Opcodes.RETURN);
-                            super.visitLabel(allowed);
+                        public void visitInsn(int opcode) {
+                            if (opcode == Opcodes.RETURN) {
+                                // Let native pilot-control processing finish,
+                                // then clear only its direct aircraft axes. The
+                                // caller continues with camera, weapon, GUI,
+                                // free-look, and station handling unchanged.
+                                super.visitVarInsn(Opcodes.ALOAD, 1);
+                                super.visitVarInsn(Opcodes.ALOAD, 3);
+                                super.visitMethodInsn(Opcodes.INVOKESTATIC,
+                                        "net/vas/rdp/uav/mission/MissionMovementAuthority",
+                                        "suppressOperatorFlightInput",
+                                        "(Lcom/norwood/mcheli/aircraft/MCH_EntityAircraft;"
+                                                + "Lnet/minecraft/entity/Entity;)Z",
+                                        false);
+                                super.visitInsn(Opcodes.POP);
+                            }
+                            super.visitInsn(opcode);
                         }
                     };
                 }

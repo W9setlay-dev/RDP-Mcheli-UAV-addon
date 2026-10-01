@@ -14,6 +14,7 @@ import java.nio.file.Paths;
 import java.util.jar.JarEntry;
 import java.util.jar.JarInputStream;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 public class RdpUavTransformerTest {
@@ -99,6 +100,62 @@ public class RdpUavTransformerTest {
         }, 0);
         assertTrue("control packet must consult mission movement authority",
                 hasAuthorityCall[0]);
+    }
+
+    @Test
+    public void flightAxisFilterRunsAtPilotHelperReturnsAndPreservesStationCameraProcessing()
+            throws IOException {
+        byte[] original = getBytes("com/norwood/mcheli/networking/packet/control/PacketPlayerControlBase.class");
+        byte[] transformed = new RdpUavTransformer().transform(
+                "com.norwood.mcheli.networking.packet.control.PacketPlayerControlBase",
+                "com.norwood.mcheli.networking.packet.control.PacketPlayerControlBase",
+                original);
+        final int[] filterCalls = {0};
+        final int[] helperReturns = {0};
+        final boolean[] cameraMode = {false};
+        final boolean[] freeLook = {false};
+        new ClassReader(transformed).accept(new ClassVisitor(Opcodes.ASM5) {
+            @Override
+            public MethodVisitor visitMethod(int access, String name, String descriptor,
+                                             String signature, String[] exceptions) {
+                MethodVisitor visitor = super.visitMethod(access, name,
+                        descriptor, signature, exceptions);
+                if ("process".equals(name)) {
+                    return new MethodVisitor(Opcodes.ASM5, visitor) {
+                        @Override
+                        public void visitMethodInsn(int opcode, String owner, String method,
+                                                    String methodDescriptor, boolean isInterface) {
+                            cameraMode[0] |= "handleCameraMode".equals(method);
+                            freeLook[0] |= "handleFreeLook".equals(method);
+                            super.visitMethodInsn(opcode, owner, method,
+                                    methodDescriptor, isInterface);
+                        }
+                    };
+                }
+                if (!"handlePilotControls".equals(name)) return visitor;
+                return new MethodVisitor(Opcodes.ASM5, visitor) {
+                    @Override
+                    public void visitInsn(int opcode) {
+                        if (opcode == Opcodes.RETURN) helperReturns[0]++;
+                        super.visitInsn(opcode);
+                    }
+
+                    @Override
+                    public void visitMethodInsn(int opcode, String owner, String method,
+                                                String methodDescriptor, boolean isInterface) {
+                        if (opcode == Opcodes.INVOKESTATIC
+                                && "net/vas/rdp/uav/mission/MissionMovementAuthority".equals(owner)
+                                && "suppressOperatorFlightInput".equals(method)) filterCalls[0]++;
+                        super.visitMethodInsn(opcode, owner, method,
+                                methodDescriptor, isInterface);
+                    }
+                };
+            }
+        }, 0);
+        assertEquals("each native return path is filtered after its local logic", 2, filterCalls[0]);
+        assertEquals("the filter adds no early method return", 2, helperReturns[0]);
+        assertTrue("native camera mode still runs in packet processing", cameraMode[0]);
+        assertTrue("native free-look still runs in packet processing", freeLook[0]);
     }
 
     @Test

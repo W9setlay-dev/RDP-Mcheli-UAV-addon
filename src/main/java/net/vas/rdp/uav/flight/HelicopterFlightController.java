@@ -64,8 +64,10 @@ public final class HelicopterFlightController implements AirframeController {
         }
         desiredRoll = NativeControlMath.clamp(desiredRoll, -20.0F, 20.0F);
 
-        double maxClimb = Math.max(0.05D, profile.getMaximumClimbRate());
-        double maxDescent = Math.max(0.05D, profile.getMaximumDescentRate());
+        // This controller is selected from the actual McHeli helicopter
+        // airframe as well as an explicit helicopter profile.
+        double maxClimb = Math.max(0.8D, profile.getMaximumClimbRate());
+        double maxDescent = Math.max(0.9D, profile.getMaximumDescentRate());
         double requestedVerticalSpeed = NativeControlMath.clamp(dy * 0.08D,
                 -maxDescent, maxClimb);
         double desiredVerticalSpeed = NativeControlMath.clamp(

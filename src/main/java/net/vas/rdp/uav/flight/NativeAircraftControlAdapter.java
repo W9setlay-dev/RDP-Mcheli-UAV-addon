@@ -1,12 +1,14 @@
 package net.vas.rdp.uav.flight;
 
 import com.norwood.mcheli.aircraft.MCH_EntityAircraft;
+import com.norwood.mcheli.helicopter.MCH_EntityHeli;
 import net.minecraft.world.World;
 import net.vas.rdp.uav.mission.MissionManager;
 import net.vas.rdp.uav.mission.MissionMovementAuthority;
 import net.vas.rdp.uav.mission.RDPMission;
 import net.vas.rdp.uav.profile.UavVehicleProfile;
 import net.vas.rdp.uav.profile.UavVehicleProfiles;
+import net.vas.rdp.uav.RdpUavDebug;
 
 /**
  * The single addon-owned MCheliCE movement boundary.
@@ -39,20 +41,21 @@ public final class NativeAircraftControlAdapter {
 
         UavVehicleProfile profile = profileFor(aircraft);
         if (profile == null) return false;
+        boolean helicopter = aircraft instanceof MCH_EntityHeli || profile.isHelicopterProfile();
         float maxYawStep = (float) NativeControlMath.clamp(
                 Math.toDegrees(Math.max(0.01D, aircraft.getCurrentThrottle())
                         / Math.max(8.0D, profile.getTurnRadius())),
-                profile.isHelicopterProfile() ? 1.5D : 0.8D,
-                profile.isHelicopterProfile() ? 4.0D : 3.5D);
+                helicopter ? 1.5D : 0.8D,
+                helicopter ? 4.0D : 3.5D);
 
         float yaw = NativeControlMath.approachAngle(
                 aircraft.getYaw(), command.getYaw(), maxYawStep);
         boolean terminal = mission.getControlOwner()
                 == net.vas.rdp.uav.mission.ControlOwner.TERMINAL_GUIDANCE;
         float pitchLimit = terminal
-                ? (profile.isHelicopterProfile() ? 45.0F : 60.0F)
-                : (profile.isHelicopterProfile() ? 24.0F : 22.0F);
-        float rollLimit = NativeControlMath.maximumRollDegrees(profile);
+                ? (helicopter ? 45.0F : 60.0F)
+                : (helicopter ? 24.0F : 22.0F);
+        float rollLimit = NativeControlMath.maximumRollDegrees(profile, helicopter);
         float pitchTarget = NativeControlMath.clamp(command.getPitch(), -pitchLimit, pitchLimit);
         float rollTarget = NativeControlMath.clamp(command.getRoll(), -rollLimit, rollLimit);
         float pitch = NativeControlMath.approach(aircraft.getPitch(), pitchTarget,
@@ -68,6 +71,25 @@ public final class NativeAircraftControlAdapter {
         aircraft.setRotRoll(roll);
         aircraft.setThrottle(throttle);
         aircraft.updateControl();
+        if (tick % 20L == 0L) {
+            OperatorTrimState.Snapshot trim = OperatorTrimRegistry.snapshot(
+                    aircraft.getUniqueID(), mission.getMissionId(), tick);
+            RdpUavDebug.event("FlightControl", "COMMAND_APPLIED",
+                    "mission", mission.getMissionId(), "aircraft", aircraft.getUniqueID(),
+                    "stage", mission.getExecutionStage(), "owner", mission.getControlOwner(),
+                    "profile", profile.getExecutionProfile(),
+                    "finalGuidanceYaw", command.getYaw(), "finalGuidancePitch", command.getPitch(),
+                    "finalGuidanceRoll", command.getRoll(), "finalGuidanceThrottle", command.getThrottle(),
+                    "trimYaw", trim == null ? 0.0D : trim.getYawDegrees(),
+                    "trimPitch", trim == null ? 0.0D : trim.getPitchDegrees(),
+                    "trimAge", trim == null ? -1L : tick - trim.getSampleTick(),
+                    "appliedYaw", yaw, "appliedPitch", pitch, "appliedRoll", roll,
+                    "appliedThrottle", throttle, "observedYaw", aircraft.getYaw(),
+                    "observedPitch", aircraft.getPitch(), "observedRoll", aircraft.getRoll(),
+                    "x", aircraft.posX, "y", aircraft.posY, "z", aircraft.posZ,
+                    "motionX", aircraft.motionX, "motionY", aircraft.motionY,
+                    "motionZ", aircraft.motionZ);
+        }
         return true;
     }
 

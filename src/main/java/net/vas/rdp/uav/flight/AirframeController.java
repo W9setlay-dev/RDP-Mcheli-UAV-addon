@@ -16,8 +16,16 @@ public interface AirframeController {
                                      long currentTick);
 
     static AirframeController forProfile(UavVehicleProfile profile) {
+        return forProfile(profile, false);
+    }
+
+    static AirframeController forProfile(UavVehicleProfile profile,
+                                         boolean nativeHelicopterAirframe) {
         if (profile == null) {
             throw new IllegalArgumentException("Vehicle profile is required");
+        }
+        if (nativeHelicopterAirframe || profile.isHelicopterProfile()) {
+            return new HelicopterFlightController(profile);
         }
         UavExecutionProfile executionProfile = profile.getExecutionProfile();
         switch (executionProfile) {

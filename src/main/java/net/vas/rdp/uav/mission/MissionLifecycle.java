@@ -27,6 +27,7 @@ import net.vas.rdp.uav.target.TargetResolver;
 import net.vas.rdp.uav.target.TargetClassifier;
 import net.vas.rdp.uav.flight.KamikazeImpactDetector;
 import net.vas.rdp.uav.flight.KamikazePilotOverride;
+import net.vas.rdp.uav.flight.TerrainRoutePlanner;
 import net.vas.rdp.uav.weapon.GuidedStrikeObjective;
 import net.vas.rdp.uav.weapon.GuidedWeaponAdapter;
 import net.vas.rdp.uav.weapon.GuidedWeaponDecision;
@@ -307,7 +308,7 @@ public final class MissionLifecycle {
         for (RDPMission mission : missions) {
             if (mission.isQueued() || mission.getDimension() != world.provider.getDimension()) continue;
             if (terminal(mission.getState())) {
-                MissionMovementAuthority.releaseControl(mission.getAircraftId());
+                manager.release(mission);
                 continue;
             }
             if (mission.isTimedOut(tick, MISSION_TIMEOUT)) {
@@ -382,7 +383,8 @@ public final class MissionLifecycle {
                 continue;
             }
             if (mission.isPaused()) {
-                MissionMovementAuthority.releaseControl(mission.getAircraftId());
+                MissionMovementAuthority.releaseControl(
+                        mission.getAircraftId(), mission.getMissionId());
                 flight.clearGuidance(findAircraft(world, mission.getAircraftId()));
                 continue;
             }
@@ -398,7 +400,9 @@ public final class MissionLifecycle {
                     && tick - mission.getLastUpdateTick()
                     > net.vas.rdp.uav.flight.KamikazeConfig.terminalTimeoutTicks) {
                 flight.markTerminalTimeout(mission.getAircraftId());
-                mission.fail("TERMINAL_TIMEOUT", tick);
+                // Use the shared terminal-failure path so the assignment,
+                // movement lease, and WingMan controller are released too.
+                fail(world, mission, "TERMINAL_TIMEOUT", tick);
                 RdpUavDebug.event("TerminalGuidance", "TERMINAL_TIMEOUT",
                         "mission", mission.getMissionId(), "target", mission.getTargetId(),
                         "tick", tick, "phase", mission.getPhase(),
@@ -423,7 +427,8 @@ public final class MissionLifecycle {
                             "target", mission.getTargetId(),
                             "tick", tick,
                             "reason", "EFFECT_NOT_CONFIRMED");
-                    MissionMovementAuthority.releaseControl(mission.getAircraftId());
+                    MissionMovementAuthority.releaseControl(
+                            mission.getAircraftId(), mission.getMissionId());
                     manager.release(mission);
                     dirty = true;
                     continue;
@@ -684,9 +689,10 @@ public final class MissionLifecycle {
                         describeWingman(flight.getEntry(aircraft)));
             }
             if (terminal(mission.getState())) {
-                flight.release(aircraft);
+                boolean ownsAircraft = manager.ownsAssignment(mission);
+                if (ownsAircraft) flight.release(aircraft);
                 manager.release(mission);
-                routeRefreshes.remove(aircraft.getUniqueID());
+                if (ownsAircraft) routeRefreshes.remove(aircraft.getUniqueID());
                 dirty = true;
             }
         }
@@ -1104,6 +1110,21 @@ public final class MissionLifecycle {
             case REPORTING:
                 // Reporting ends the task but does not silently land or RTB.
                 // The operator must explicitly request return-to-base.
+                UavVehicleProfile stationProfile = profile(aircraft);
+                double centerX = target == null ? aircraft.posX : target.x;
+                double centerZ = target == null ? aircraft.posZ : target.z;
+                TerrainRoutePlanner.Plan stationAltitude = TerrainRoutePlanner.planTransit(
+                        world, perception, aircraft.posX, aircraft.posY, aircraft.posZ,
+                        aircraftSpeed(aircraft), centerX, centerZ, stationProfile, tick);
+                if (!stationAltitude.isSafe()
+                        || !flight.enterStationHold(aircraft, centerX,
+                        stationAltitude.getY(), centerZ, stationProfile.getStationRadius())) {
+                    RdpUavDebug.event("MissionRuntime", "STATION_HOLD_REJECTED",
+                            "mission", mission.getMissionId(), "aircraft", aircraft.getUniqueID(),
+                            "tick", tick, "terrain", stationAltitude.getReason(),
+                            "radius", stationProfile.getStationRadius());
+                    return false;
+                }
                 mission.transitionTo(MissionState.HOLDING, tick);
                 return true;
             case RETURNING:
@@ -1492,9 +1513,13 @@ public final class MissionLifecycle {
         double dx = aircraft.posX - target.x;
         double dz = aircraft.posZ - target.z;
         if (profile.isReusable()) {
+            net.vas.rdp.uav.world.TerrainObservation terrain = perception.observeTerrain(
+                    aircraft.world, (int) Math.floor(aircraft.posX),
+                    (int) Math.floor(aircraft.posZ), aircraft.world.getTotalWorldTime());
+            if (!terrain.isKnown()) return false;
             return dx * dx + dz * dz
                     <= mission.getObservationDistance() * mission.getObservationDistance()
-                    && Math.abs(aircraft.posY - profile.getExecutionAltitude())
+                    && Math.abs((aircraft.posY - terrain.getSurfaceY()) - profile.getCruiseAgl())
                     <= profile.getAltitudeTolerance();
         }
         double dy = aircraft.posY - target.y;
@@ -1558,13 +1583,13 @@ public final class MissionLifecycle {
             if (aircraft instanceof MCH_EntityHeli || profile.isHelicopterProfile()) {
                 double minimum = profile.getMinimumExecutionAltitude() > 0D
                         ? profile.getMinimumExecutionAltitude() : 4D;
-                double standoff = Math.max(8D, minimum);
+                double standoff = Math.max(profile.getCruiseAgl(), minimum);
                 return Math.max(targetY + standoff, minimum);
             }
-            return targetY;
+            return targetY + profile.getCruiseAgl();
         }
-        return Math.max(profile.getMinimumExecutionAltitude(),
-                Math.min(profile.getMaximumExecutionAltitude(), profile.getExecutionAltitude()));
+        return targetY + Math.max(profile.getMinimumAgl(),
+                Math.min(profile.getMaximumAgl(), profile.getCruiseAgl()));
     }
 
     private double terminalRouteAltitude(MCH_EntityAircraft aircraft, Target target) {
@@ -1575,6 +1600,7 @@ public final class MissionLifecycle {
         if (world == null) return Target.point(x, requestedY, z);
         net.minecraft.util.math.BlockPos column =
                 new net.minecraft.util.math.BlockPos(x, 0, z);
+        if (!world.isBlockLoaded(column)) return Target.point(x, requestedY, z);
         int surfaceY = world.getHeight(column).getY();
         double resolvedY = Math.max(requestedY, surfaceY + 1.0D
                 + net.vas.rdp.uav.flight.SquareStrikeConfig.altitudeOffset);
@@ -1693,9 +1719,11 @@ public final class MissionLifecycle {
                     "newState", mission.getState(),
                     "reason", reason,
                     "aircraft", mission.getAircraftId());
-            MCH_EntityAircraft aircraft = findAircraft(world, mission.getAircraftId());
+            boolean ownsAircraft = manager.ownsAssignment(mission);
+            MCH_EntityAircraft aircraft = ownsAircraft
+                    ? findAircraft(world, mission.getAircraftId()) : null;
             if (aircraft != null) flight.release(aircraft);
-            routeRefreshes.remove(mission.getAircraftId());
+            if (ownsAircraft) routeRefreshes.remove(mission.getAircraftId());
             manager.release(mission);
             RDPMissionWorldData.get(world).markDirty();
         }
@@ -1706,9 +1734,11 @@ public final class MissionLifecycle {
         if (mission == null || mission.isTerminal()) return;
         boolean retained = mission.defer(reason, recoveryState, tick);
         if (!retained) {
-            MCH_EntityAircraft aircraft = findAircraft(world, mission.getAircraftId());
+            boolean ownsAircraft = manager.ownsAssignment(mission);
+            MCH_EntityAircraft aircraft = ownsAircraft
+                    ? findAircraft(world, mission.getAircraftId()) : null;
             if (aircraft != null) flight.release(aircraft);
-            routeRefreshes.remove(mission.getAircraftId());
+            if (ownsAircraft) routeRefreshes.remove(mission.getAircraftId());
             manager.release(mission);
             RDPMissionWorldData.get(world).markDirty();
         } else {

@@ -14,6 +14,9 @@ public final class UavVehicleProfile {
     private final String attackWeaponPriority;
     private final double oneWaySpeed;
     private final double attackEnvelope;
+    private final double stationRadius;
+    private final double maximumYawCorrectionDegrees;
+    private final double maximumPitchCorrectionDegrees;
 
     public UavVehicleProfile(UavExecutionProfile executionProfile, double executionAltitude,
                              double minimumExecutionAltitude, double maximumExecutionAltitude,
@@ -21,7 +24,8 @@ public final class UavVehicleProfile {
                              String terminalPayloadBehavior) {
         this(executionProfile, executionAltitude, minimumExecutionAltitude,
                 maximumExecutionAltitude, altitudeTolerance, holdingEnabled,
-                terminalPayloadBehavior, 256, 256, 64);
+                terminalPayloadBehavior, 256, 256, 64, "", 0, 64,
+                defaultStationRadius(executionProfile), 20, 10);
     }
 
     public UavVehicleProfile(UavExecutionProfile executionProfile, double executionAltitude,
@@ -32,7 +36,8 @@ public final class UavVehicleProfile {
         this(executionProfile, executionAltitude, minimumExecutionAltitude,
                 maximumExecutionAltitude, altitudeTolerance, holdingEnabled,
                 terminalPayloadBehavior, detectionRange, lockRange,
-                missionExecutionRange, "", 0, 64);
+                missionExecutionRange, "", 0, 64,
+                defaultStationRadius(executionProfile), 20, 10);
     }
 
     public UavVehicleProfile(UavExecutionProfile executionProfile, double executionAltitude,
@@ -43,7 +48,8 @@ public final class UavVehicleProfile {
                              String attackWeaponPriority) {
         this(executionProfile, executionAltitude, minimumExecutionAltitude, maximumExecutionAltitude,
                 altitudeTolerance, holdingEnabled, terminalPayloadBehavior, detectionRange, lockRange,
-                missionExecutionRange, attackWeaponPriority, 0, 64);
+                missionExecutionRange, attackWeaponPriority, 0, 64,
+                defaultStationRadius(executionProfile), 20, 10);
     }
 
     public UavVehicleProfile(UavExecutionProfile executionProfile, double executionAltitude,
@@ -53,6 +59,22 @@ public final class UavVehicleProfile {
                              double lockRange, double missionExecutionRange,
                              String attackWeaponPriority, double oneWaySpeed,
                              double attackEnvelope) {
+        this(executionProfile, executionAltitude, minimumExecutionAltitude,
+                maximumExecutionAltitude, altitudeTolerance, holdingEnabled,
+                terminalPayloadBehavior, detectionRange, lockRange, missionExecutionRange,
+                attackWeaponPriority, oneWaySpeed, attackEnvelope,
+                defaultStationRadius(executionProfile), 20, 10);
+    }
+
+    public UavVehicleProfile(UavExecutionProfile executionProfile, double executionAltitude,
+                             double minimumExecutionAltitude, double maximumExecutionAltitude,
+                             double altitudeTolerance, boolean holdingEnabled,
+                             String terminalPayloadBehavior, double detectionRange,
+                             double lockRange, double missionExecutionRange,
+                             String attackWeaponPriority, double oneWaySpeed,
+                             double attackEnvelope, double stationRadius,
+                             double maximumYawCorrectionDegrees,
+                             double maximumPitchCorrectionDegrees) {
         if (executionProfile == null || !Double.isFinite(executionAltitude)
                 || !Double.isFinite(minimumExecutionAltitude)
                 || !Double.isFinite(maximumExecutionAltitude)
@@ -62,7 +84,12 @@ public final class UavVehicleProfile {
                 || executionAltitude < minimumExecutionAltitude
                 || executionAltitude > maximumExecutionAltitude
                 || altitudeTolerance < 0 || detectionRange <= 0 || lockRange <= 0
-                || missionExecutionRange <= 0 || lockRange > detectionRange) {
+                || missionExecutionRange <= 0 || lockRange > detectionRange
+                || !Double.isFinite(stationRadius) || stationRadius < 0.0D
+                || !Double.isFinite(maximumYawCorrectionDegrees)
+                || maximumYawCorrectionDegrees < 0.0D || maximumYawCorrectionDegrees > 45.0D
+                || !Double.isFinite(maximumPitchCorrectionDegrees)
+                || maximumPitchCorrectionDegrees < 0.0D || maximumPitchCorrectionDegrees > 20.0D) {
             throw new IllegalArgumentException("Invalid UAV vehicle profile");
         }
         this.executionProfile = executionProfile;
@@ -80,6 +107,9 @@ public final class UavVehicleProfile {
         if (oneWaySpeed < 0 || attackEnvelope <= 0) throw new IllegalArgumentException("Invalid UAV envelope");
         this.oneWaySpeed = oneWaySpeed;
         this.attackEnvelope = attackEnvelope;
+        this.stationRadius = stationRadius;
+        this.maximumYawCorrectionDegrees = maximumYawCorrectionDegrees;
+        this.maximumPitchCorrectionDegrees = maximumPitchCorrectionDegrees;
     }
 
     public boolean isReusable() {
@@ -115,6 +145,20 @@ public final class UavVehicleProfile {
     @SuppressWarnings("unused")
     public double getOneWaySpeed() { return oneWaySpeed; }
     public double getAttackEnvelope() { return attackEnvelope; }
+    /** These AGL defaults are editable game tuning values, not measured performance data. */
+    public double getCruiseAgl() { return executionAltitude; }
+    public double getMinimumAgl() { return minimumExecutionAltitude; }
+    public double getMaximumAgl() { return maximumExecutionAltitude; }
+    public double getStationRadius() { return stationRadius; }
+    public double getMaximumYawCorrectionDegrees() { return maximumYawCorrectionDegrees; }
+    public double getMaximumPitchCorrectionDegrees() { return maximumPitchCorrectionDegrees; }
+
+    private static double defaultStationRadius(UavExecutionProfile profile) {
+        if (profile == UavExecutionProfile.LONG_RANGE_REUSABLE_UAV
+                || profile == UavExecutionProfile.REUSABLE_UAV) return 256.0D;
+        if (profile == UavExecutionProfile.HELICOPTER_ONE_WAY_FPV) return 0.0D;
+        return 96.0D;
+    }
 
     /** Conservative performance envelope used by the addon controller. */
     public double getCruiseSpeed() {

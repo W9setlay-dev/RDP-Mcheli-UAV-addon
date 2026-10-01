@@ -173,6 +173,55 @@ public class MissionLifecycleContractTest {
     }
 
     @Test
+    public void executionStageAndLinkedRetaskIdsSurvivePersistence() {
+        UUID owner = UUID.randomUUID();
+        UUID aircraft = UUID.randomUUID();
+        RDPMission recon = new RDPMission(UUID.randomUUID(), owner, aircraft,
+                "switchblade", MissionType.RECONNAISSANCE,
+                TargetSpec.point(0, 80, 0, TargetPriority.HIGH), false,
+                false, false, 256, 32, 0);
+        recon.transitionTo(MissionState.DISPATCHED, 1);
+        recon.transitionTo(MissionState.TAKEOFF, 2);
+        recon.transitionTo(MissionState.CRUISE, 3);
+        recon.transitionTo(MissionState.SEARCHING, 4);
+        recon.transitionTo(MissionState.TARGET_ACQUIRED, 5);
+        recon.lockPoint(6);
+        recon.transitionTo(MissionState.APPROACHING, 7);
+        recon.transitionTo(MissionState.ON_TARGET, 8);
+        recon.transitionTo(MissionState.SCANNING, 9);
+        recon.transitionTo(MissionState.REPORTING, 10);
+        recon.transitionTo(MissionState.HOLDING, 11);
+        RDPMission child = new RDPMission(UUID.randomUUID(), owner, aircraft,
+                "switchblade", MissionType.STRIKE,
+                TargetSpec.manual("minecraft:zombie", TargetPriority.HIGH), true,
+                false, false, 256, 64, 12);
+        recon.linkChildMission(child);
+
+        RDPMission restoredParent = MissionNbtCodec.read(MissionNbtCodec.write(recon));
+        RDPMission restoredChild = MissionNbtCodec.read(MissionNbtCodec.write(child));
+        assertEquals(MissionExecutionStage.STATION_HOLD, restoredParent.getExecutionStage());
+        assertEquals(child.getMissionId(), restoredParent.getChildMissionId());
+        assertEquals(recon.getMissionId(), restoredChild.getParentMissionId());
+    }
+
+    @Test
+    public void olderMissionWithoutExecutionStageMigratesFromItsState() {
+        RDPMission source = mission(0);
+        source.transitionTo(MissionState.WAITING_FOR_WORLD, 1);
+        NBTTagCompound legacy = MissionNbtCodec.write(source);
+        legacy.setInteger("schemaVersion", 6);
+        legacy.removeTag("executionStage");
+        legacy.removeTag("parentMissionId");
+        legacy.removeTag("childMissionId");
+
+        RDPMission restored = MissionNbtCodec.read(legacy);
+
+        assertEquals(MissionExecutionStage.TRANSIT, restored.getExecutionStage());
+        assertNull(restored.getParentMissionId());
+        assertNull(restored.getChildMissionId());
+    }
+
+    @Test
     public void persistenceRetainsAndValidatesControlProjection() {
         RDPMission source = mission(0);
         source.transitionTo(MissionState.WAITING_FOR_WORLD, 1);

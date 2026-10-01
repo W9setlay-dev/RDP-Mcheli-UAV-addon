@@ -53,6 +53,17 @@ public class AirframeControllerTest {
     }
 
     @Test
+    public void nativeHelicopterAirframeUsesHelicopterControllerEvenWithFixedWingProfile() {
+        UavVehicleProfile profile = new UavVehicleProfile(UavExecutionProfile.ONE_WAY,
+                32.0D, 8.0D, 128.0D, 4.0D, false, "SELF_DESTRUCT");
+
+        assertTrue(AirframeController.forProfile(profile, true)
+                instanceof HelicopterFlightController);
+        assertTrue(AirframeController.forProfile(profile, false)
+                instanceof FixedWingFlightController);
+    }
+
+    @Test
     public void staleStateFailsClosedWithoutInventingACommand() {
         UavVehicleProfile profile = new UavVehicleProfile(UavExecutionProfile.ONE_WAY,
                 50.0D, 20.0D, 200.0D, 6.0D, false, "SELF_DESTRUCT");

@@ -34,8 +34,13 @@ public final class NativeControlMath {
     }
 
     public static float maximumRollDegrees(UavVehicleProfile profile) {
+        return maximumRollDegrees(profile, profile != null && profile.isHelicopterProfile());
+    }
+
+    public static float maximumRollDegrees(UavVehicleProfile profile,
+                                          boolean nativeHelicopterAirframe) {
         if (profile == null) throw new IllegalArgumentException("Profile is required");
-        return profile.isHelicopterProfile() ? 20.0F
+        return nativeHelicopterAirframe || profile.isHelicopterProfile() ? 20.0F
                 : (float) Math.max(0.0D, profile.getMaximumBankDegrees());
     }
 }

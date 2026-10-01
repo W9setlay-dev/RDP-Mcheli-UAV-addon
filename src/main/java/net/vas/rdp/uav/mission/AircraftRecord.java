@@ -38,6 +38,13 @@ public final class AircraftRecord {
         this.status = AircraftStatus.ON_MISSION;
     }
     public void release() { missionId = null; status = operational ? AircraftStatus.READY : AircraftStatus.UNAVAILABLE; }
+    public boolean transfer(UUID expectedMission, UUID replacementMission) {
+        if (expectedMission == null || replacementMission == null
+                || !expectedMission.equals(missionId)) return false;
+        missionId = replacementMission;
+        status = AircraftStatus.ON_MISSION;
+        return true;
+    }
     public UUID getAircraftId() { return aircraftId; }
     public UUID getOwnerId() { return ownerId; }
     public int getDimension() { return dimension; }

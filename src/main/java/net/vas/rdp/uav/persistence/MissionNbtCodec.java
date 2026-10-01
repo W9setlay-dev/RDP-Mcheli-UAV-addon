@@ -7,6 +7,7 @@ import net.vas.rdp.uav.mission.MissionType;
 import net.vas.rdp.uav.mission.RDPMission;
 import net.vas.rdp.uav.mission.MissionPhase;
 import net.vas.rdp.uav.mission.ControlOwner;
+import net.vas.rdp.uav.mission.MissionExecutionStage;
 import net.vas.rdp.uav.target.TargetPriority;
 import net.vas.rdp.uav.target.TargetSelectionMode;
 import net.vas.rdp.uav.target.TargetSpec;
@@ -14,7 +15,7 @@ import net.vas.rdp.uav.target.TargetSpec;
 import java.util.UUID;
 
 public final class MissionNbtCodec {
-    private static final int CURRENT_SCHEMA = 6;
+    private static final int CURRENT_SCHEMA = 7;
     private MissionNbtCodec() {
     }
 
@@ -56,6 +57,11 @@ public final class MissionNbtCodec {
         tag.setString("state", mission.getState().name());
         tag.setString("phase", mission.getPhase().name());
         tag.setString("controlOwner", mission.getControlOwner().name());
+        tag.setString("executionStage", mission.getExecutionStage().name());
+        tag.setString("parentMissionId", mission.getParentMissionId() == null
+                ? "" : mission.getParentMissionId().toString());
+        tag.setString("childMissionId", mission.getChildMissionId() == null
+                ? "" : mission.getChildMissionId().toString());
         tag.setString("targetUuid", mission.getTargetId() == null ? "" : mission.getTargetId().toString());
         tag.setString("failureReason", mission.getFailureReason() == null ? "" : mission.getFailureReason());
         tag.setString("lastTransitionReason", mission.getLastTransitionReason() == null
@@ -110,6 +116,18 @@ public final class MissionNbtCodec {
                 targetUuid.isEmpty() ? null : parseUuid(targetUuid, "targetUuid"),
                 tag.getLong("lastUpdateTick"), failureReason.isEmpty() ? null : failureReason,
                 report.isEmpty() ? null : report);
+        MissionExecutionStage executionStage = tag.hasKey("executionStage")
+                ? enumValue(tag, "executionStage", MissionExecutionStage.class)
+                : MissionExecutionStage.fromState(restoredState, mission.getMissionType());
+        if (executionStage != MissionExecutionStage.fromState(
+                restoredState, mission.getMissionType())) {
+            throw new IllegalArgumentException("Mission execution stage does not match state");
+        }
+        String parent = tag.hasKey("parentMissionId") ? tag.getString("parentMissionId") : "";
+        String child = tag.hasKey("childMissionId") ? tag.getString("childMissionId") : "";
+        mission.restoreExecutionMetadata(executionStage,
+                parent.isEmpty() ? null : parseUuid(parent, "parentMissionId"),
+                child.isEmpty() ? null : parseUuid(child, "childMissionId"));
         mission.setDimension(tag.getInteger("dimension"));
         mission.restoreProgressState(
                 tag.hasKey("routeProgress") ? tag.getDouble("routeProgress") : 0.0D,

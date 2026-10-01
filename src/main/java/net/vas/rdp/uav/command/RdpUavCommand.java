@@ -6,8 +6,6 @@ import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.text.TextComponentString;
-import net.minecraft.util.math.RayTraceResult;
-import net.minecraft.util.math.Vec3d;
 import net.minecraft.util.math.BlockPos;
 import com.norwood.mcheli.aircraft.MCH_EntityAircraft;
 import net.vas.rdp.uav.RDPUavMod;
@@ -61,7 +59,7 @@ public final class RdpUavCommand extends CommandBase {
             return getListOfStringsMatchingLastWord(args, "on", "off", "status", "reload", "mission");
         }
         if (args.length == 2 && "mission".equalsIgnoreCase(args[0])) {
-            return getListOfStringsMatchingLastWord(args, "create", "ai", "attack-point",
+            return getListOfStringsMatchingLastWord(args, "create", "ai",
                     "square", "return", "gui", "list", "status");
         }
         return java.util.Collections.emptyList();
@@ -96,7 +94,8 @@ public final class RdpUavCommand extends CommandBase {
 
         EntityPlayer player = (EntityPlayer) sender;
         if ("attack-point".equalsIgnoreCase(args[1])) {
-            createPointAttack(player);
+            player.sendMessage(new TextComponentString(
+                    "Point attack command is no longer available because the server cannot read the active McHeli UAV camera. Use the Point Task key or mission GUI button while viewing the UAV camera."));
             return;
         }
         if ("square".equalsIgnoreCase(args[1])) {
@@ -330,7 +329,8 @@ public final class RdpUavCommand extends CommandBase {
         }
         UUID aircraftId = aircraft.getUniqueID();
         if (RDPUavMod.missions().ensureAuthorized(aircraft, player)
-                || RDPUavMod.missions().isAircraftUnavailable(aircraftId, player.getUniqueID())) {
+                || RDPUavMod.missions().isAircraftUnavailable(
+                        player.world, aircraftId, player.getUniqueID())) {
             player.sendMessage(new TextComponentString(
                     "UAV is not authorized for this player or is already assigned."));
             return;
@@ -371,7 +371,8 @@ public final class RdpUavCommand extends CommandBase {
         MCH_EntityAircraft aircraft = UavControlAccess.findControlledAircraft(player);
         if (!UavControlAccess.isOperator(aircraft, player)
                 || RDPUavMod.missions().ensureAuthorized(aircraft, player)
-                || RDPUavMod.missions().isAircraftUnavailable(aircraft.getUniqueID(), player.getUniqueID())) {
+                || RDPUavMod.missions().isAircraftUnavailable(
+                        player.world, aircraft.getUniqueID(), player.getUniqueID())) {
             player.sendMessage(new TextComponentString(
                     "AI requires an authorized, available McHeli UAV under your control."));
             return;
@@ -422,70 +423,6 @@ public final class RdpUavCommand extends CommandBase {
         }
     }
 
-    private void createPointAttack(EntityPlayer player) {
-        MCH_EntityAircraft aircraft = UavControlAccess.findControlledAircraft(player);
-        if (!UavControlAccess.isOperator(aircraft, player)
-                || RDPUavMod.missions().ensureAuthorized(aircraft, player)
-                || RDPUavMod.missions().isAircraftUnavailable(aircraft.getUniqueID(), player.getUniqueID())) {
-            player.sendMessage(new TextComponentString(
-                    "You must pilot an authorized, available McHeli aircraft."));
-            return;
-        }
-
-        Vec3d start = player.getPositionEyes(1.0F);
-        Vec3d end = start.add(player.getLookVec().scale(256.0D));
-        RayTraceResult hit = player.world.rayTraceBlocks(start, end, false, true, false);
-        if (hit == null || hit.hitVec == null) {
-            player.sendMessage(new TextComponentString("No camera point was selected."));
-            return;
-        }
-        if (aircraft.getAcInfo() == null) {
-            player.sendMessage(new TextComponentString("UAV metadata is unavailable; mission rejected."));
-            return;
-        }
-        net.vas.rdp.uav.profile.UavVehicleProfile profile =
-                net.vas.rdp.uav.profile.UavVehicleProfiles.forAircraft(aircraft.getAcInfo().name);
-        if (profile == null
-                || profile.getExecutionProfile()
-                == net.vas.rdp.uav.profile.UavExecutionProfile.UNKNOWN) {
-            player.sendMessage(new TextComponentString(
-                    "Point attack rejected: aircraft profile is unsupported."));
-            return;
-        }
-        double dx = aircraft.posX - hit.hitVec.x;
-        double dy = aircraft.posY - hit.hitVec.y;
-        double dz = aircraft.posZ - hit.hitVec.z;
-        double distanceSquared = dx * dx + dy * dy + dz * dz;
-        if (!Double.isFinite(distanceSquared)
-                || distanceSquared > profile.getDetectionRange() * profile.getDetectionRange()) {
-            player.sendMessage(new TextComponentString(
-                    "Point attack rejected: designated point is outside the aircraft profile range."));
-            return;
-        }
-        long tick = player.world.getTotalWorldTime();
-        RDPMission mission = new RDPMission(UUID.randomUUID(), player.getUniqueID(),
-                aircraft.getUniqueID(), aircraft.getAcInfo().name, MissionType.STRIKE,
-                TargetSpec.point(hit.hitVec.x, hit.hitVec.y, hit.hitVec.z, TargetPriority.HIGH),
-                true, false, false, 256.0D, 32.0D, tick);
-        mission.setDimension(player.dimension);
-        try {
-            RDPUavMod.missions().create(player.world, mission);
-            RDPMissionWorldData.get(player.world).markDirty();
-            RdpUavDebug.debug("Command", "point mission created id={} owner={} aircraft={} target=({}, {}, {})",
-                    mission.getMissionId(), player.getUniqueID(), aircraft.getUniqueID(),
-                    hit.hitVec.x, hit.hitVec.y, hit.hitVec.z);
-            player.sendMessage(new TextComponentString("Point attack mission created: "
-                    + mission.getMissionId()));
-        } catch (RuntimeException failure) {
-            RDPUavMod.missions().release(mission);
-            if (mission.getState() != net.vas.rdp.uav.mission.MissionState.FAILED) {
-                mission.fail(failure.getMessage() == null ? "POINT_ATTACK_FAILED" : failure.getMessage(), tick);
-            }
-            RDPMissionWorldData.get(player.world).markDirty();
-            player.sendMessage(new TextComponentString("Point attack rejected: " + failure.getMessage()));
-        }
-    }
-
     private void createSquareStrike(EntityPlayer player, String[] args) {
         if (args.length < 5) {
             player.sendMessage(new TextComponentString(
@@ -495,7 +432,8 @@ public final class RdpUavCommand extends CommandBase {
         MCH_EntityAircraft aircraft = UavControlAccess.findControlledAircraft(player);
         if (!UavControlAccess.isOperator(aircraft, player)
                 || RDPUavMod.missions().ensureAuthorized(aircraft, player)
-                || RDPUavMod.missions().isAircraftUnavailable(aircraft.getUniqueID(), player.getUniqueID())) {
+                || RDPUavMod.missions().isAircraftUnavailable(
+                        player.world, aircraft.getUniqueID(), player.getUniqueID())) {
             player.sendMessage(new TextComponentString(
                     "You must pilot an authorized, available McHeli UAV."));
             return;

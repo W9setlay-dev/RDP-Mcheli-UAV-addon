@@ -42,6 +42,7 @@ public final class GuiMissionControl extends GuiScreen {
     private GuiTextField swarmSizeField;
     private String status = "";
     private String pendingDangerAction;
+    private String pendingDangerMissionId;
     private boolean uavMode;
     private boolean guidedMode;
     private String guidanceSummary = "No controlled aircraft";
@@ -96,6 +97,14 @@ public final class GuiMissionControl extends GuiScreen {
     private boolean selectedMissionIsActionable() {
         return selected >= 0 && selected < missionRows.length
                 && MissionUiState.isActionable(missionState(missionRows[selected]));
+    }
+
+    private String abortButtonLabel() {
+        if ("abort".equals(pendingDangerAction)) return "Confirm abort";
+        if (selected < 0 || selected >= missionRows.length) return "Select mission";
+        return selectedMissionIsActionable()
+                ? "Abort [" + RdpUavClientKeys.abortKey() + "]"
+                : "Mission not active";
     }
 
     private static final class TargetSuggestion {
@@ -158,7 +167,25 @@ public final class GuiMissionControl extends GuiScreen {
 
     public static void abortSelected() {
         String id = selectedMissionId();
-        RdpUavNetwork.abortMission(id == null ? "" : id);
+        if (id == null || id.trim().isEmpty()) {
+            if (active != null) {
+                active.status = "Select an active mission before requesting abort.";
+                active.pendingDangerAction = null;
+                active.pendingDangerMissionId = null;
+            }
+            Minecraft mc = Minecraft.getMinecraft();
+            if (mc != null && mc.player != null) {
+                mc.player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                        "Abort not sent: select an active mission in Mission Control first."));
+            }
+            return;
+        }
+        if (active != null) {
+            active.pendingDangerAction = null;
+            active.pendingDangerMissionId = null;
+            active.status = "Abort request sent for mission " + id + ".";
+        }
+        RdpUavNetwork.abortMission(id);
     }
 
     public static void clearSelected() {
@@ -170,6 +197,19 @@ public final class GuiMissionControl extends GuiScreen {
     public static void returnSelected() {
         String id = selectedMissionId();
         if (id != null) RdpUavNetwork.returnToBase(id);
+    }
+
+    private void retaskSelectedToCrosshair() {
+        String missionId = selectedMissionId();
+        Entity target = mc == null || mc.objectMouseOver == null
+                ? null : mc.objectMouseOver.entityHit;
+        if (target == null) target = capturedCrosshairTarget();
+        if (missionId == null || target == null) {
+            status = "Select a held reconnaissance mission and aim at an entity.";
+            return;
+        }
+        RdpUavNetwork.retaskLinkedStrike(missionId, target.getUniqueID());
+        status = "Linked strike retask submitted for " + target.getName() + ".";
     }
 
     public static void createReconFromField() {
@@ -237,7 +277,7 @@ public final class GuiMissionControl extends GuiScreen {
             buttonList.add(new GuiButton(3, left, height - 54, 100, 20,
                     "Authorize [" + RdpUavClientKeys.authorizeKey() + "]"));
             buttonList.add(new GuiButton(4, left + 105, height - 54, 100, 20,
-                    "Abort [" + RdpUavClientKeys.abortKey() + "]"));
+                    abortButtonLabel()));
             buttonList.add(new GuiButton(13, right, height - 54, 100, 20,
                     "Clear lock [" + RdpUavClientKeys.clearLockKey() + "]"));
             buttonList.add(new GuiButton(8, right + 105, height - 54, 115, 20,
@@ -261,13 +301,16 @@ public final class GuiMissionControl extends GuiScreen {
                     "Assign crosshair"));
             buttonList.add(new GuiButton(22, right + 110, height - 158, 110, 20,
                     "Release target"));
+            buttonList.add(new GuiButton(31, right, height - 184, 220, 20,
+                    "Retask held recon to strike"));
             buttonList.add(new GuiButton(18, left, height - 132, 100, 20,
                     "Swarm " + (swarmParticipation ? "ON" : "OFF")));
             buttonList.add(new GuiButton(19, left + 105, height - 132, 100, 20,
                     "Duplicates " + (swarmAllowDuplicates ? "ON" : "OFF")));
         } else if (guidedMode) {
             buttonList.add(new GuiButton(3, left, height - 54, 100, 20, "Authorize mission"));
-            buttonList.add(new GuiButton(4, left + 105, height - 54, 100, 20, "Abort mission"));
+            buttonList.add(new GuiButton(4, left + 105, height - 54, 100, 20,
+                    abortButtonLabel()));
             buttonList.add(new GuiButton(10, right, height - 54, 110, 20,
                     "Entity lock [" + RdpUavClientKeys.entityLockKey() + "]"));
             buttonList.add(new GuiButton(9, right + 115, height - 54, 105, 20,
@@ -311,6 +354,8 @@ public final class GuiMissionControl extends GuiScreen {
             } else if (button.id == 14) {
                 // Terminal records can still be archived.
                 button.enabled = hasSelection;
+            } else if (button.id == 31) {
+                button.enabled = hasSelection && hasControlledAircraft;
             } else if (button.id == 9) {
                 // A new area mission is independent of the selected record.
                 button.enabled = uavMode;
@@ -451,11 +496,14 @@ public final class GuiMissionControl extends GuiScreen {
         else if (button.id == 14) confirmDangerAction("clear-selected", GuiMissionControl::clearSelected, "Archive the selected mission record? It remains in server history.");
         else if (button.id == 15) confirmDangerAction("clear-all", GuiMissionControl::clearAll, "Archive all of your mission records? They remain in server history.");
         else if (button.id == 16) confirmDangerAction("return-to-base", GuiMissionControl::returnSelected, "Request native McHeli return and landing for the selected mission?");
+        else if (button.id == 31) confirmDangerAction("linked-retask",
+                () -> retaskSelectedToCrosshair(),
+                "Transfer the held reconnaissance aircraft to a new linked strike mission?");
         else if (button.id == 5) createEntityMission(false);
         else if (button.id == 6) confirmDangerAction("attack", () -> createEntityMission(true), "Launch an autonomous hostile-target attack?");
         else if (button.id == 7) {
-            RdpUavNetwork.createPointMission();
-            status = "Point task submitted from your camera aim.";
+            RdpUavClientKeys.submitPointTask(mc);
+            status = "Camera aim submitted; waiting for server validation.";
         } else if (button.id == 8) confirmDangerAction("nosedive", () -> { armKamikazeSelected(); status = "Nose-dive request submitted; only supported UAVs will arm."; }, "Arm the kamikaze dive for the selected aircraft?");
         else if (button.id == 9) createSquareMission();
         else if (button.id == 10) lockCrosshairTarget();
@@ -510,13 +558,31 @@ public final class GuiMissionControl extends GuiScreen {
     }
 
     private void confirmDangerAction(String action, Runnable execute, String confirmText) {
-        if (pendingDangerAction != null && pendingDangerAction.equals(action)) {
+        String selectedId = "abort".equals(action) ? selectedMissionId() : null;
+        if ("abort".equals(action) && selectedId == null) {
+            status = "Select an active mission before requesting abort.";
             pendingDangerAction = null;
+            pendingDangerMissionId = null;
+            rebuildButtons();
+            return;
+        }
+        if (pendingDangerAction != null && pendingDangerAction.equals(action)) {
+            if ("abort".equals(action)
+                    && !java.util.Objects.equals(pendingDangerMissionId, selectedId)) {
+                pendingDangerMissionId = selectedId;
+                status = "Mission selection changed. Press again to confirm abort for the selected mission.";
+                rebuildButtons();
+                return;
+            }
+            pendingDangerAction = null;
+            pendingDangerMissionId = null;
             execute.run();
             return;
         }
         pendingDangerAction = action;
+        pendingDangerMissionId = selectedId;
         status = confirmText + " Press again to confirm.";
+        rebuildButtons();
     }
 
     private void lockCrosshairTarget() {

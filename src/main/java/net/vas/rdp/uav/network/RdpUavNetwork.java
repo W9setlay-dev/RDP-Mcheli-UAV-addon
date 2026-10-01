@@ -3,6 +3,8 @@ package net.vas.rdp.uav.network;
 import io.netty.buffer.ByteBuf;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.util.ResourceLocation;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Vec3d;
 import net.minecraftforge.fml.common.network.NetworkRegistry;
 import net.minecraftforge.fml.common.network.simpleimpl.IMessage;
 import net.minecraftforge.fml.common.network.simpleimpl.IMessageHandler;
@@ -67,6 +69,9 @@ public final class RdpUavNetwork {
                 AiTargetLock.RegistryTargetAssignment.class, 20, Side.SERVER);
         CHANNEL.registerMessage(ServerMissionDefinitionHandler.class,
                 CreateMission.LaunchMissionDefinition.class, 21, Side.SERVER);
+        CHANNEL.registerMessage(ServerCameraAimHandler.class, CameraAim.class, 22, Side.SERVER);
+        CHANNEL.registerMessage(ServerOperatorTrimHandler.class, OperatorTrim.class, 23, Side.SERVER);
+        CHANNEL.registerMessage(ServerLinkedRetaskHandler.class, LinkedRetask.class, 24, Side.SERVER);
         if (FMLCommonHandler.instance().getSide().isClient()) {
             CHANNEL.registerMessage(ClientMissionControlHandler.class,
                     OpenMissionControl.class, 1, Side.CLIENT);
@@ -131,8 +136,36 @@ public final class RdpUavNetwork {
         CHANNEL.sendToServer(new CreateMission(target, attack, false, priority, weapon));
     }
 
+    /** @deprecated Point tasks must include a client-camera hit designation. */
+    @Deprecated
     public static void createPointMission() {
         CHANNEL.sendToServer(new CreateMission("", false, true));
+    }
+
+    public static void submitPointAimBlock(BlockPos blockPos, Vec3d hitVec) {
+        if (blockPos == null || hitVec == null
+                || !Double.isFinite(hitVec.x) || !Double.isFinite(hitVec.y)
+                || !Double.isFinite(hitVec.z)) return;
+        CHANNEL.sendToServer(CameraAim.block(blockPos, hitVec));
+    }
+
+    public static void submitPointAimEntity(java.util.UUID targetId) {
+        if (targetId != null) CHANNEL.sendToServer(CameraAim.entity(targetId));
+    }
+
+    /** Send only camera-relative deltas; the client never supplies aircraft attitude. */
+    public static void sendOperatorTrim(java.util.UUID aircraftId, java.util.UUID missionId,
+                                        long sequence, long clientTick,
+                                        float yawDelta, float pitchDelta) {
+        if (aircraftId == null || missionId == null || sequence < 0L || clientTick < 0L
+                || !Float.isFinite(yawDelta) || !Float.isFinite(pitchDelta)) return;
+        CHANNEL.sendToServer(new OperatorTrim(aircraftId, missionId, sequence,
+                clientTick, yawDelta, pitchDelta));
+    }
+
+    public static void retaskLinkedStrike(String parentMissionId, java.util.UUID targetId) {
+        if (parentMissionId == null || targetId == null) return;
+        CHANNEL.sendToServer(new LinkedRetask(parentMissionId, targetId));
     }
 
     public static boolean launchMissionDefinition(MissionDefinition definition) {
@@ -665,6 +698,274 @@ public final class RdpUavNetwork {
             writeString(buffer, weapon);
         }
 
+    }
+
+    /** Explicit hit result from the active client render camera. */
+    public static final class CameraAim implements IMessage {
+        private static final byte BLOCK = 0;
+        private static final byte ENTITY = 1;
+        private byte kind = -1;
+        private int blockX;
+        private int blockY;
+        private int blockZ;
+        private double hitX;
+        private double hitY;
+        private double hitZ;
+        private long targetMost;
+        private long targetLeast;
+
+        public CameraAim() { }
+
+        private static CameraAim block(BlockPos pos, Vec3d hit) {
+            CameraAim message = new CameraAim();
+            message.kind = BLOCK;
+            message.blockX = pos.getX();
+            message.blockY = pos.getY();
+            message.blockZ = pos.getZ();
+            message.hitX = hit.x;
+            message.hitY = hit.y;
+            message.hitZ = hit.z;
+            return message;
+        }
+
+        private static CameraAim entity(java.util.UUID targetId) {
+            CameraAim message = new CameraAim();
+            message.kind = ENTITY;
+            message.targetMost = targetId.getMostSignificantBits();
+            message.targetLeast = targetId.getLeastSignificantBits();
+            return message;
+        }
+
+        public void fromBytes(ByteBuf buffer) {
+            kind = buffer.readByte();
+            if (kind == BLOCK) {
+                blockX = buffer.readInt();
+                blockY = buffer.readInt();
+                blockZ = buffer.readInt();
+                hitX = buffer.readDouble();
+                hitY = buffer.readDouble();
+                hitZ = buffer.readDouble();
+            } else if (kind == ENTITY) {
+                targetMost = buffer.readLong();
+                targetLeast = buffer.readLong();
+            }
+        }
+
+        public void toBytes(ByteBuf buffer) {
+            buffer.writeByte(kind);
+            if (kind == BLOCK) {
+                buffer.writeInt(blockX);
+                buffer.writeInt(blockY);
+                buffer.writeInt(blockZ);
+                buffer.writeDouble(hitX);
+                buffer.writeDouble(hitY);
+                buffer.writeDouble(hitZ);
+            } else if (kind == ENTITY) {
+                buffer.writeLong(targetMost);
+                buffer.writeLong(targetLeast);
+            }
+        }
+    }
+
+    /** Authenticated, sequenced operator look correction. */
+    public static final class OperatorTrim implements IMessage {
+        private long aircraftMost, aircraftLeast, missionMost, missionLeast;
+        private long sequence;
+        private long clientTick;
+        private float yawDelta, pitchDelta;
+
+        public OperatorTrim() { }
+        private OperatorTrim(java.util.UUID aircraftId, java.util.UUID missionId,
+                             long sequence, long clientTick, float yawDelta, float pitchDelta) {
+            this.aircraftMost = aircraftId.getMostSignificantBits();
+            this.aircraftLeast = aircraftId.getLeastSignificantBits();
+            this.missionMost = missionId.getMostSignificantBits();
+            this.missionLeast = missionId.getLeastSignificantBits();
+            this.sequence = sequence;
+            this.clientTick = clientTick;
+            this.yawDelta = yawDelta;
+            this.pitchDelta = pitchDelta;
+        }
+        public void fromBytes(ByteBuf buffer) {
+            aircraftMost = buffer.readLong(); aircraftLeast = buffer.readLong();
+            missionMost = buffer.readLong(); missionLeast = buffer.readLong();
+            sequence = buffer.readLong(); clientTick = buffer.readLong();
+            yawDelta = buffer.readFloat(); pitchDelta = buffer.readFloat();
+        }
+        public void toBytes(ByteBuf buffer) {
+            buffer.writeLong(aircraftMost); buffer.writeLong(aircraftLeast);
+            buffer.writeLong(missionMost); buffer.writeLong(missionLeast);
+            buffer.writeLong(sequence); buffer.writeLong(clientTick);
+            buffer.writeFloat(yawDelta); buffer.writeFloat(pitchDelta);
+        }
+        private java.util.UUID aircraftId() { return new java.util.UUID(aircraftMost, aircraftLeast); }
+        private java.util.UUID missionId() { return new java.util.UUID(missionMost, missionLeast); }
+    }
+
+    public static final class ServerOperatorTrimHandler
+            implements IMessageHandler<OperatorTrim, IMessage> {
+        @Override
+        public IMessage onMessage(final OperatorTrim message, MessageContext context) {
+            final EntityPlayerMP player = context.getServerHandler().player;
+            if (player == null || player.getServer() == null) return null;
+            player.getServer().addScheduledTask(() -> {
+                MCH_EntityAircraft aircraft = net.vas.rdp.uav.mission.UavControlAccess
+                        .findControlledAircraft(player);
+                if (aircraft == null || !aircraft.getUniqueID().equals(message.aircraftId())
+                        || aircraft.world != player.world
+                        || !net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, player)
+                        || RDPUavMod.missions().ensureAuthorized(aircraft, player)) return;
+                net.vas.rdp.uav.mission.RDPMission mission = RDPUavMod.missions()
+                        .activeMission(player.world, aircraft.getUniqueID());
+                if (mission == null || mission.isTerminal()
+                        || !mission.getMissionId().equals(message.missionId())
+                        || !mission.getOwnerId().equals(player.getUniqueID())
+                        || mission.getDimension() != player.dimension
+                        || !net.vas.rdp.uav.mission.MissionMovementAuthority
+                        .nativeWingManRequired(mission)
+                        || RDPUavMod.missions().assignedMission(aircraft.getUniqueID()) == null) return;
+                net.vas.rdp.uav.profile.UavVehicleProfile profile = aircraft.getAcInfo() == null
+                        ? null : net.vas.rdp.uav.profile.UavVehicleProfiles
+                        .forAircraft(aircraft.getAcInfo().name);
+                boolean accepted = net.vas.rdp.uav.flight.OperatorTrimRegistry.accept(
+                        aircraft.getUniqueID(), mission.getMissionId(), message.sequence,
+                        message.clientTick,
+                        message.yawDelta, message.pitchDelta,
+                        player.world.getTotalWorldTime(), profile);
+                if (accepted) {
+                    RdpUavDebug.event("OperatorTrim", "CAMERA_TRIM_ACCEPTED",
+                            "mission", mission.getMissionId(), "aircraft", aircraft.getUniqueID(),
+                            "operator", player.getUniqueID(), "sequence", message.sequence,
+                            "yawDelta", message.yawDelta, "pitchDelta", message.pitchDelta,
+                            "tick", player.world.getTotalWorldTime());
+                }
+            });
+            return null;
+        }
+    }
+
+    /** Retask a completed reconnaissance hold into a linked exact-entity strike. */
+    public static final class LinkedRetask implements IMessage {
+        private String parentMissionId = "";
+        private String targetId = "";
+        public LinkedRetask() { }
+        private LinkedRetask(String parentMissionId, java.util.UUID targetId) {
+            this.parentMissionId = parentMissionId;
+            this.targetId = targetId.toString();
+        }
+        public void fromBytes(ByteBuf buffer) {
+            parentMissionId = readString(buffer);
+            targetId = readString(buffer);
+        }
+        public void toBytes(ByteBuf buffer) {
+            writeString(buffer, parentMissionId);
+            writeString(buffer, targetId);
+        }
+    }
+
+    public static final class ServerLinkedRetaskHandler
+            implements IMessageHandler<LinkedRetask, IMessage> {
+        private static void reject(EntityPlayerMP player, String message) {
+            if (player != null) player.sendMessage(
+                    new net.minecraft.util.text.TextComponentString(message));
+        }
+
+        @Override
+        public IMessage onMessage(final LinkedRetask message, MessageContext context) {
+            final EntityPlayerMP player = context.getServerHandler().player;
+            if (player == null || player.getServer() == null) return null;
+            player.getServer().addScheduledTask(() -> {
+                try {
+                    java.util.UUID parentId = java.util.UUID.fromString(message.parentMissionId);
+                    java.util.UUID targetId = java.util.UUID.fromString(message.targetId);
+                    MCH_EntityAircraft aircraft = net.vas.rdp.uav.mission.UavControlAccess
+                            .findControlledAircraft(player);
+                    if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, player)
+                            || RDPUavMod.missions().ensureAuthorized(aircraft, player)) {
+                        reject(player, "Retask rejected: the controlled aircraft operator is not authorized.");
+                        return;
+                    }
+                    net.vas.rdp.uav.mission.RDPMission parent =
+                            RDPUavMod.missions().activeMission(player.world, aircraft.getUniqueID());
+                    if (parent == null || !parent.getMissionId().equals(parentId)
+                            || !parent.getOwnerId().equals(player.getUniqueID())
+                            || parent.getState() != net.vas.rdp.uav.mission.MissionState.HOLDING
+                            || parent.getReportId() == null || parent.getReportId().trim().isEmpty()
+                            || (parent.getMissionType() != net.vas.rdp.uav.mission.MissionType.RECONNAISSANCE
+                            && parent.getMissionType() != net.vas.rdp.uav.mission.MissionType.OBSERVATION)) {
+                        reject(player, "Retask rejected: select this aircraft's reconnaissance mission in station hold.");
+                        return;
+                    }
+                    net.vas.rdp.uav.profile.UavVehicleProfile profile = aircraft.getAcInfo() == null
+                            ? null : net.vas.rdp.uav.profile.UavVehicleProfiles
+                            .forAircraft(aircraft.getAcInfo().name);
+                    net.minecraft.entity.Entity target = new net.vas.rdp.uav.target.TargetResolver()
+                            .findLoaded(player.world, targetId);
+                    if (profile == null || target == null || target == aircraft || target == player
+                            || !target.canBeCollidedWith()
+                            || target.dimension != player.dimension
+                            || !profile.supportsTargetLock()
+                            || target.getDistance(aircraft) > profile.getLockRange()
+                            || !net.vas.rdp.uav.target.TargetPolicy.isSelectableExactContact(
+                            player.world, target, player)) {
+                        reject(player, "Retask rejected: target is unavailable or outside aircraft policy/range.");
+                        return;
+                    }
+                    if (profile.isReusable()) {
+                        boolean armed = false;
+                        if (aircraft.getWeapons() != null) {
+                            for (MCH_WeaponSet weapon : aircraft.getWeapons()) {
+                                if (weapon == null || weapon.getInfo() == null
+                                        || weapon.getAmmo() + weapon.getAmmoReserve() <= 0) continue;
+                                net.vas.rdp.uav.weapon.GuidedWeaponCapability capability =
+                                        net.vas.rdp.uav.weapon.GuidedWeaponRegistry.find(
+                                                weapon.getName(), weapon.getInfo().type);
+                                if (capability != null && capability.getBehavior()
+                                        != net.vas.rdp.uav.weapon.GuidedNativeBehavior.UNSUPPORTED) {
+                                    armed = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (!armed) {
+                            reject(player, "Retask rejected: reusable aircraft has no executable, loaded weapon.");
+                            return;
+                        }
+                    } else if (!FLIGHT_ADAPTER.supportsKamikaze(aircraft)
+                            && !FLIGHT_ADAPTER.hasSelfDestructWeaponWithAmmo(aircraft)) {
+                        reject(player, "Retask rejected: one-way aircraft has no executable terminal payload.");
+                        return;
+                    }
+                    net.minecraft.util.ResourceLocation registry = net.minecraft.entity.EntityList.getKey(target);
+                    if (registry == null) {
+                        reject(player, "Retask rejected: target has no registry identity.");
+                        return;
+                    }
+                    long tick = player.world.getTotalWorldTime();
+                    net.vas.rdp.uav.mission.RDPMission child = new net.vas.rdp.uav.mission.RDPMission(
+                            java.util.UUID.randomUUID(), player.getUniqueID(), aircraft.getUniqueID(),
+                            aircraft.getAcInfo().name, net.vas.rdp.uav.mission.MissionType.STRIKE,
+                            net.vas.rdp.uav.target.TargetSpec.manual(registry.toString(),
+                                    net.vas.rdp.uav.target.TargetPriority.HIGH),
+                            true, false, false, profile.getDetectionRange(),
+                            profile.getMissionExecutionRange(), tick);
+                    child.setDimension(player.dimension);
+                    child.reacquireTarget(targetId, tick);
+                    if (!RDPUavMod.missions().transferToLinkedStrike(player.world,
+                            parent, child, tick)) {
+                        reject(player, "Retask rejected: assignment transfer failed; reconnaissance hold remains active.");
+                        return;
+                    }
+                    net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world).markDirty();
+                    player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                            "Linked strike accepted; aircraft assignment transferred atomically."));
+                    RdpUavNetwork.syncTargetTelemetry(player);
+                } catch (IllegalArgumentException invalid) {
+                    reject(player, "Retask rejected: mission or target identity is invalid.");
+                }
+            });
+            return null;
+        }
     }
 
     public static final class AdoptProjectile implements IMessage {
@@ -1242,42 +1543,70 @@ public final class RdpUavNetwork {
                         net.vas.rdp.uav.mission.RDPMission mission =
                                 net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
                                         .getRepository().find(id);
-                        if (mission == null || !player.getUniqueID().equals(mission.getOwnerId())
-                                || mission.isTerminal()) {
+                        if (mission == null) {
                                 player.sendMessage(new net.minecraft.util.text.TextComponentString(
-                                        "Abort rejected: mission is missing, unauthorized, or already terminal."));
-                                RdpUavDebug.debug("Network", "abort rejected player={} mission={}",
-                                        player.getUniqueID(), message.missionId);
+                                        "Abort rejected: mission was not found in this world."));
+                                RdpUavDebug.event("MissionControl", "ABORT_REJECTED",
+                                        "player", player.getUniqueID(), "mission", id,
+                                        "reason", "MISSION_NOT_FOUND");
+                                return;
+                        }
+                        if (!player.getUniqueID().equals(mission.getOwnerId())) {
+                                player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                        "Abort rejected: you do not own this mission."));
+                                RdpUavDebug.event("MissionControl", "ABORT_REJECTED",
+                                        "player", player.getUniqueID(), "mission", id,
+                                        "reason", "NOT_MISSION_OWNER");
+                                return;
+                        }
+                        if (mission.isTerminal()) {
+                                player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                        "Abort rejected: mission is already " + mission.getState() + "."));
+                                RdpUavDebug.event("MissionControl", "ABORT_REJECTED",
+                                        "player", player.getUniqueID(), "mission", id,
+                                        "reason", "MISSION_ALREADY_TERMINAL",
+                                        "state", mission.getState());
                                 return;
                         }
                         try {
                             mission.abort("OPERATOR_ABORT", player.world.getTotalWorldTime());
                         } catch (IllegalStateException impossible) {
                             player.sendMessage(new net.minecraft.util.text.TextComponentString(
-                                    "Abort rejected: ABORT_IMPOSSIBLE_AFTER_TERMINAL_COMMIT."));
+                                    "Abort impossible: terminal guidance is already committed."));
+                            RdpUavDebug.event("MissionControl", "ABORT_REJECTED",
+                                    "player", player.getUniqueID(), "mission", id,
+                                    "reason", "ABORT_IMPOSSIBLE_AFTER_TERMINAL_COMMIT",
+                                    "state", mission.getState());
                             sendMissionData(player);
                             return;
                         }
-                        net.vas.rdp.uav.weapon.MissileGuidanceController.abort(mission.getAircraftId());
-                        for (net.minecraft.entity.Entity entity : player.world.loadedEntityList) {
-                            if (entity instanceof MCH_EntityAircraft
-                                    && mission.getAircraftId().equals(entity.getUniqueID())) {
-                                net.vas.rdp.uav.weapon.MissileGuidanceController.abort(
-                                        mission.getAircraftId());
-                                FLIGHT_ADAPTER.release((MCH_EntityAircraft) entity);
-                                break;
+                        boolean ownsAircraft = RDPUavMod.missions().ownsAssignment(mission);
+                        if (ownsAircraft) {
+                            net.vas.rdp.uav.weapon.MissileGuidanceController.abort(
+                                    mission.getAircraftId());
+                            for (net.minecraft.entity.Entity entity : player.world.loadedEntityList) {
+                                if (entity instanceof MCH_EntityAircraft
+                                        && mission.getAircraftId().equals(entity.getUniqueID())) {
+                                    FLIGHT_ADAPTER.release((MCH_EntityAircraft) entity);
+                                    break;
+                                }
                             }
                         }
                         RDPUavMod.missions().release(mission);
                         net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world).markDirty();
+                        player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                "Mission " + id + " aborted; AI movement control released."));
                         sendMissionData(player);
-                        RdpUavDebug.debug("Network", "abort accepted player={} mission={}",
-                                player.getUniqueID(), message.missionId);
+                        RdpUavDebug.event("MissionControl", "ABORT_ACCEPTED",
+                                "player", player.getUniqueID(), "mission", id,
+                                "aircraft", mission.getAircraftId(),
+                                "tick", player.world.getTotalWorldTime());
                     } catch (IllegalArgumentException invalid) {
                         player.sendMessage(new net.minecraft.util.text.TextComponentString(
                                 "Abort rejected: invalid mission identifier."));
-                        RdpUavDebug.debug("Network", "abort rejected invalid UUID player={} value={}",
-                                player.getUniqueID(), message.missionId);
+                        RdpUavDebug.event("MissionControl", "ABORT_REJECTED",
+                                "player", player.getUniqueID(), "mission", message.missionId,
+                                "reason", "INVALID_MISSION_IDENTIFIER");
                     }
                 });
                 return null;
@@ -1304,11 +1633,14 @@ public final class RdpUavNetwork {
                                 "Archive rejected: ABORT_IMPOSSIBLE_AFTER_TERMINAL_COMMIT."));
                         continue;
                     }
-                    for (net.minecraft.entity.Entity entity : player.world.loadedEntityList) {
-                        if (entity instanceof MCH_EntityAircraft
-                                && mission.getAircraftId().equals(entity.getUniqueID())) {
-                            FLIGHT_ADAPTER.release((MCH_EntityAircraft) entity);
-                            break;
+                    boolean ownsAircraft = RDPUavMod.missions().ownsAssignment(mission);
+                    if (ownsAircraft) {
+                        for (net.minecraft.entity.Entity entity : player.world.loadedEntityList) {
+                            if (entity instanceof MCH_EntityAircraft
+                                    && mission.getAircraftId().equals(entity.getUniqueID())) {
+                                FLIGHT_ADAPTER.release((MCH_EntityAircraft) entity);
+                                break;
+                            }
                         }
                     }
                     if (!mission.isTerminal()) {
@@ -1488,7 +1820,8 @@ public final class RdpUavNetwork {
                     // Reusable and long-range airframes may only enter a
                     // destructive route through this operator-authenticated request.
                     mission.authorizeDestructiveAction();
-                    KamikazePilotOverride.lock(aircraft.getUniqueID(), mission.getTargetId());
+                    KamikazePilotOverride.lock(aircraft.getUniqueID(), mission.getTargetId(),
+                            mission.getMissionId());
                     mission.transitionTo(net.vas.rdp.uav.mission.MissionState.KAMIKADZE_TARGET,
                             player.world.getTotalWorldTime());
                     net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world).markDirty();
@@ -1529,6 +1862,11 @@ public final class RdpUavNetwork {
         public IMessage onMessage(final CreateMission message, MessageContext context) {
             final EntityPlayerMP player = context.getServerHandler().player;
             Objects.requireNonNull(player.getServer()).addScheduledTask(() -> {
+                if (message.point) {
+                    player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                            "Point task rejected: camera hit data is required. Use the updated point-task key."));
+                    return;
+                }
                 if (!message.point && (message.target == null
                         || !message.target.matches(
                         "(?i)(mod=[A-Za-z0-9_.-]+|[A-Za-z0-9_.-]+:[A-Za-z0-9_./-]+)"))) {
@@ -1545,11 +1883,9 @@ public final class RdpUavNetwork {
                             "Mission rejected: selected guided weapon is unavailable or unsupported."));
                     return;
                 }
-                String command = message.point
-                        ? "rdpuav mission attack-point"
-                        : "rdpuav mission create " + message.target
-                                + (message.attack ? " attack" : "")
-                                + " " + priorityName(message.priority);
+                String command = "rdpuav mission create " + message.target
+                        + (message.attack ? " attack" : "")
+                        + " " + priorityName(message.priority);
                 java.util.Set<java.util.UUID> existingMissionIds = new java.util.HashSet<>();
                 for (net.vas.rdp.uav.mission.RDPMission mission :
                         net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
@@ -1727,6 +2063,42 @@ public final class RdpUavNetwork {
                         weapon.getName(), weapon.getInfo().type) != null;
             }
             return false;
+        }
+    }
+
+    public static final class ServerCameraAimHandler
+            implements IMessageHandler<CameraAim, IMessage> {
+        @Override
+        public IMessage onMessage(final CameraAim message, MessageContext context) {
+            final EntityPlayerMP player = context.getServerHandler().player;
+            Objects.requireNonNull(player.getServer()).addScheduledTask(() -> {
+                net.vas.rdp.uav.mission.OperatorAimMissionService.Result result;
+                if (message.kind == CameraAim.BLOCK) {
+                    result = net.vas.rdp.uav.mission.OperatorAimMissionService
+                            .createPointMission(player,
+                                    new BlockPos(message.blockX, message.blockY, message.blockZ),
+                                    message.hitX, message.hitY, message.hitZ);
+                } else if (message.kind == CameraAim.ENTITY) {
+                    java.util.UUID targetId = new java.util.UUID(
+                            message.targetMost, message.targetLeast);
+                    result = net.vas.rdp.uav.mission.OperatorAimMissionService
+                            .createEntityMission(player, targetId);
+                } else {
+                    result = null;
+                }
+
+                if (result == null) {
+                    player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                            "Point task rejected: invalid camera hit type."));
+                    return;
+                }
+                String response = result.isAccepted()
+                        ? result.getMessage() + " Mission " + result.getMissionId() + "."
+                        : "Point task rejected: " + result.getMessage();
+                player.sendMessage(new net.minecraft.util.text.TextComponentString(response));
+                if (result.isAccepted()) sendMissionData(player);
+            });
+            return null;
         }
     }
 

@@ -19,6 +19,8 @@ import net.vas.rdp.uav.mission.RDPMission;
 import net.vas.rdp.uav.profile.UavExecutionProfile;
 import net.vas.rdp.uav.profile.UavVehicleProfile;
 import net.vas.rdp.uav.profile.UavVehicleProfiles;
+import net.vas.rdp.uav.world.MinecraftWorldPerceptionAdapter;
+import net.vas.rdp.uav.world.WorldPerceptionAdapter;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -33,6 +35,7 @@ import java.util.HashMap;
  * The boundary between WingMan route sequencing and the RDP flight computer.
  */
 public final class WingManFlightAdapter {
+    private final WorldPerceptionAdapter terrainPerception = new MinecraftWorldPerceptionAdapter();
     private final AircraftStateEstimator aircraftStates = new AircraftStateEstimator();
     private final Set<UUID> nativeAttackCompletions = new HashSet<>();
     private final Map<UUID, ContinuousTargetTracker> targetTrackers = new HashMap<>();
@@ -41,6 +44,7 @@ public final class WingManFlightAdapter {
     private final Map<UUID, Integer> terminalWaypointReplacements = new HashMap<>();
     private final Map<UUID, Double> terminalPreviousDistance = new HashMap<>();
     private final Map<UUID, Long> terminalLastDiagnosticTick = new HashMap<>();
+    private final Map<UUID, CachedTerrainPlan> terrainPlans = new HashMap<>();
     private final Map<UUID, TerminalGuidanceMetrics> terminalMetrics = new HashMap<>();
     private final Map<UUID, TerminalGuidanceMetrics.Classification> terminalLastClassification
             = new HashMap<>();
@@ -57,10 +61,11 @@ public final class WingManFlightAdapter {
     }
 
     /**
-     * Runs the addon flight computer after WingMan's world-tick callbacks and
-     * before MCheliCE updates aircraft physics. WingMan supplies the active
-     * route node; the profile controller owns the final attitude/throttle
-     * setpoints for this mission tick.
+     * Runs at world-tick START before native WingMan's normal-priority handler
+     * and before the aircraft entity update. The mission lease causes the
+     * transformer guards to skip WingMan's later movement writers, while this
+     * profile controller supplies the setpoints consumed by MCheliCE physics.
+     * WingMan supplies route intent only.
      */
     public void applyNativeControl(World world,
                                    MissionManager missions,
@@ -94,8 +99,43 @@ public final class WingManFlightAdapter {
             return;
         }
         AircraftState state = aircraftStates.observe(aircraft, entry, mission, tick);
-        NativeFlightControlCommand command = AirframeController.forProfile(profile)
-                .update(state, targetX, targetY, targetZ, tick);
+        double baseTargetX = targetX;
+        double baseTargetY = targetY;
+        double baseTargetZ = targetZ;
+        AirframeController controller = AirframeController.forProfile(profile,
+                usesHelicopterFlightModel(aircraft));
+        NativeFlightControlCommand baseCommand = controller.update(state,
+                baseTargetX, baseTargetY, baseTargetZ, tick);
+        net.vas.rdp.uav.flight.OperatorTrimState.Snapshot trim =
+                OperatorTrimRegistry.snapshot(aircraft.getUniqueID(), mission.getMissionId(), tick);
+        if (trim != null) {
+            OperatorTrimState.Target mixed = OperatorTrimState.mixTarget(targetX, targetY, targetZ,
+                    state.getX(), state.getY(), state.getZ(), trim, profile,
+                    0.0D, Math.max(1.0D, world.getHeight() - 2.0D));
+            targetX = mixed.x;
+            targetZ = mixed.z;
+        }
+        double horizontalDistance = Math.hypot(targetX - state.getX(), targetZ - state.getZ());
+        boolean terminalCommit = mission.getExecutionStage()
+                == net.vas.rdp.uav.mission.MissionExecutionStage.TERMINAL
+                && horizontalDistance <= Math.max(48.0D, state.getHorizontalSpeed() * 40.0D);
+        double trimPitch = trim == null ? 0.0D : trim.getPitchDegrees();
+        TerrainRoutePlanner.Plan terrainPlan = cachedTerrainPlan(world, aircraft,
+                mission, state, targetX, targetY, targetZ, profile, trimPitch,
+                terminalCommit, tick);
+        targetX = terrainPlan.getX();
+        targetY = terrainPlan.getY();
+        targetZ = terrainPlan.getZ();
+        if (!terrainPlan.isSafe()) {
+            RdpUavDebug.event("FlightControl", "TERRAIN_HOLD",
+                    "mission", mission.getMissionId(), "aircraft", aircraft.getUniqueID(),
+                    "tick", tick, "reason", terrainPlan.getReason(),
+                    "position", state.getX() + "," + state.getY() + "," + state.getZ(),
+                    "safeNode", targetX + "," + targetY + "," + targetZ,
+                    "operatorTrimYaw", trim == null ? 0.0D : trim.getYawDegrees(),
+                    "operatorTrimPitch", trim == null ? 0.0D : trim.getPitchDegrees());
+        }
+        NativeFlightControlCommand command = controller.update(state, targetX, targetY, targetZ, tick);
         if (!command.isSupported()) {
             RdpUavDebug.debug("FlightControl", "control held aircraft={} reason={} sampleTick={}",
                     aircraft.getUniqueID(), command.getReason(), state.getSampleTick());
@@ -107,14 +147,25 @@ public final class WingManFlightAdapter {
             RdpUavDebug.debug("FlightControl",
                     "controller=RDP_FLIGHT_COMPUTER controlOwner={} aircraft={} profile={} node={} pos=({},{},{}) "
                             + "motion=({},{},{}) yaw={} track={} desiredTrack={} courseError={} "
-                            + "pitch={} roll={} throttle={} desiredVerticalSpeed={}",
+                            + "pitch={} roll={} throttle={} desiredVerticalSpeed={} terrain={} AGL={} "
+                            + "trimYaw={} trimPitch={} trimAge={} baseCommand=({},{},{},{}) "
+                            + "finalCommand=({},{},{},{})",
                     state.getControlOwner(), aircraft.getUniqueID(),
                     profile.getExecutionProfile(), state.getRouteNode(),
                     state.getX(), state.getY(), state.getZ(), state.getMotionX(),
                     state.getMotionY(), state.getMotionZ(), state.getYaw(),
                     state.getGroundTrackYaw(), command.getDesiredTrack(),
                     command.getCourseError(), aircraft.getPitch(), aircraft.getRoll(),
-                    aircraft.getThrottle(), command.getDesiredVerticalSpeed());
+                    aircraft.getThrottle(), command.getDesiredVerticalSpeed(),
+                    terrainPlan.getReason(), terrainPlan.getCurrentAgl(),
+                    trim == null ? 0.0D : trim.getYawDegrees(),
+                    trim == null ? 0.0D : trim.getPitchDegrees(),
+                    trim == null ? -1L : tick - trim.getSampleTick(),
+                    baseCommand.isSupported() ? baseCommand.getYaw() : Float.NaN,
+                    baseCommand.isSupported() ? baseCommand.getPitch() : Float.NaN,
+                    baseCommand.isSupported() ? baseCommand.getRoll() : Float.NaN,
+                    baseCommand.isSupported() ? baseCommand.getThrottle() : Double.NaN,
+                    command.getYaw(), command.getPitch(), command.getRoll(), command.getThrottle());
         }
     }
 
@@ -122,6 +173,49 @@ public final class WingManFlightAdapter {
         if (aircraft == null || aircraft.getAcInfo() == null) return aircraft instanceof MCH_EntityHeli;
         UavVehicleProfile profile = UavVehicleProfiles.forAircraft(aircraft.getAcInfo().name);
         return aircraft instanceof MCH_EntityHeli || profile.isHelicopterProfile();
+    }
+
+    private TerrainRoutePlanner.Plan cachedTerrainPlan(World world,
+                                                       MCH_EntityAircraft aircraft,
+                                                       RDPMission mission,
+                                                       AircraftState state,
+                                                       double targetX, double targetY,
+                                                       double targetZ,
+                                                       UavVehicleProfile profile,
+                                                       double pitchTrim,
+                                                       boolean terminalCommit,
+                                                       long tick) {
+        UUID id = aircraft.getUniqueID();
+        CachedTerrainPlan cached = terrainPlans.get(id);
+        if (cached != null && cached.missionId.equals(mission.getMissionId())
+                && tick >= cached.tick && tick - cached.tick < 5L
+                && Math.abs(cached.requestX - targetX) < 2.0D
+                && Math.abs(cached.requestY - targetY) < 2.0D
+                && Math.abs(cached.requestZ - targetZ) < 2.0D
+                && Math.abs(cached.pitchTrim - pitchTrim) < 0.25D
+                && cached.terminal == terminalCommit) return cached.plan;
+        TerrainRoutePlanner.Plan plan = TerrainRoutePlanner.planTransit(world,
+                terrainPerception, state.getX(), state.getY(), state.getZ(),
+                state.getHorizontalSpeed(), targetX, targetY, targetZ, profile,
+                tick, pitchTrim, terminalCommit);
+        terrainPlans.put(id, new CachedTerrainPlan(mission.getMissionId(), tick,
+                targetX, targetY, targetZ, pitchTrim, terminalCommit, plan));
+        return plan;
+    }
+
+    private static final class CachedTerrainPlan {
+        private final UUID missionId;
+        private final long tick;
+        private final double requestX, requestY, requestZ, pitchTrim;
+        private final boolean terminal;
+        private final TerrainRoutePlanner.Plan plan;
+        private CachedTerrainPlan(UUID missionId, long tick, double requestX,
+                                  double requestY, double requestZ, double pitchTrim,
+                                  boolean terminal, TerrainRoutePlanner.Plan plan) {
+            this.missionId = missionId; this.tick = tick;
+            this.requestX = requestX; this.requestY = requestY; this.requestZ = requestZ;
+            this.pitchTrim = pitchTrim; this.terminal = terminal; this.plan = plan;
+        }
     }
 
     private static double normalizeHelicopterTargetY(MCH_EntityAircraft aircraft, double targetY) {
@@ -316,29 +410,83 @@ public final class WingManFlightAdapter {
      */
     @SuppressWarnings("unused")
     public void enterFpvHover(MCH_EntityAircraft aircraft) {
-        if (!isFpv(aircraft)) return;
+        if (aircraft == null) return;
+        enterFpvHover(aircraft, aircraft.posX, aircraft.posY, aircraft.posZ);
+    }
+
+    private boolean enterFpvHover(MCH_EntityAircraft aircraft, double targetX,
+                                  double targetY, double targetZ) {
+        if (!usesHelicopterFlightModel(aircraft)) return false;
         WingmanEntry entry = WingmanRegistry.get(aircraft.getUniqueID());
         if (entry == null || entry.mission == null
                 || entry.autoState == AutonomousState.RTB
                 || entry.autoState == AutonomousState.LANDING
-                || entry.autoState == AutonomousState.PARKED) return;
+                || entry.autoState == AutonomousState.PARKED) return false;
         FpvFlightStateMachine state = fpvStates.get(aircraft.getUniqueID());
         if (state == null) {
             state = new FpvFlightStateMachine();
             fpvStates.put(aircraft.getUniqueID(), state);
         }
-        if (state.getState() == FpvFlightState.HOVER) return;
-        if (state.getState() == FpvFlightState.TERMINAL_APPROACH) return;
+        if (state.getState() == FpvFlightState.HOVER
+                && Math.abs(entry.autoTargetX - targetX) < 1.0D
+                && Math.abs(entry.autoTargetY - targetY) < 1.0D
+                && Math.abs(entry.autoTargetZ - targetZ) < 1.0D) return true;
+        if (state.getState() == FpvFlightState.TERMINAL_APPROACH) return false;
         state.hover();
         entry.mission = new ArrayList<>();
-        entry.mission.add(MissionNode.flyTo(aircraft.posX, aircraft.posY, aircraft.posZ));
+        entry.mission.add(MissionNode.flyTo(targetX, targetY, targetZ));
         entry.mission.add(MissionNode.loiter(40));
         entry.missionIndex = 0;
         entry.missionNodeTimer = 0;
-        entry.autoTargetX = aircraft.posX;
-        entry.autoTargetY = aircraft.posY;
-        entry.autoTargetZ = aircraft.posZ;
+        entry.autoTargetX = targetX;
+        entry.autoTargetY = targetY;
+        entry.autoTargetZ = targetZ;
         entry.autoState = AutonomousState.ENROUTE;
+        return true;
+    }
+
+    /** Profile-specific post-recon station: rotorcraft native hover, fixed-wing forward orbit. */
+    public boolean enterStationHold(MCH_EntityAircraft aircraft, double centerX,
+                                    double altitude, double centerZ, double radius) {
+        if (aircraft == null || aircraft.isDead
+                || !Double.isFinite(centerX) || !Double.isFinite(altitude)
+                || !Double.isFinite(centerZ) || !Double.isFinite(radius)) return false;
+        UavVehicleProfile profile = aircraft.getAcInfo() == null ? null
+                : UavVehicleProfiles.forAircraft(aircraft.getAcInfo().name);
+        if (profile == null || profile.getExecutionProfile() == UavExecutionProfile.UNKNOWN) return false;
+        if (usesHelicopterFlightModel(aircraft)) {
+            return enterFpvHover(aircraft, centerX, altitude, centerZ);
+        }
+        WingmanEntry entry = getEntry(aircraft);
+        if (entry == null || entry.mission == null || radius < 16.0D) return false;
+        double dx = aircraft.posX - centerX;
+        double dz = aircraft.posZ - centerZ;
+        double radial = Math.hypot(dx, dz);
+        double angle = radial < 2.0D
+                ? Math.toRadians(aircraft.getYaw())
+                : Math.atan2(dz, dx);
+        double tangentX = Math.sin(angle);
+        double tangentZ = -Math.cos(angle);
+        double direction = aircraft.motionX * tangentX + aircraft.motionZ * tangentZ >= 0.0D
+                ? 1.0D : -1.0D;
+        List<MissionNode> route = new ArrayList<>();
+        // Eight connected forward waypoints approximate a continuous circle
+        // while keeping each native waypoint short and deterministic.
+        for (int i = 1; i <= 8; i++) {
+            double pointAngle = angle + direction * Math.PI * 2.0D * i / 8.0D;
+            route.add(MissionNode.flyTo(centerX + Math.cos(pointAngle) * radius,
+                    altitude, centerZ + Math.sin(pointAngle) * radius));
+        }
+        entry.mission = route;
+        entry.missionIndex = 0;
+        entry.missionNodeTimer = 0;
+        entry.attackMode = WingmanEntry.ATK_NONE;
+        entry.currentAutoTarget = null;
+        entry.autoTargetX = route.get(0).x;
+        entry.autoTargetY = route.get(0).y;
+        entry.autoTargetZ = route.get(0).z;
+        entry.autoState = AutonomousState.ENROUTE;
+        return true;
     }
 
     /**

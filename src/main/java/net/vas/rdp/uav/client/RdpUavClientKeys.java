@@ -3,6 +3,8 @@ package net.vas.rdp.uav.client;
 import com.norwood.mcheli.aircraft.MCH_EntityAircraft;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.settings.KeyBinding;
+import net.minecraft.entity.Entity;
+import net.minecraft.util.text.TextComponentString;
 import net.minecraftforge.fml.client.registry.ClientRegistry;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.InputEvent;
@@ -80,6 +82,7 @@ public final class RdpUavClientKeys {
         ClientRegistry.registerKeyBinding(NEXT_CONTACT);
         ClientRegistry.registerKeyBinding(PREVIOUS_CONTACT);
         net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(new RdpUavClientKeys());
+        net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(new OperatorTrimClientHandler());
     }
 
     @SubscribeEvent
@@ -94,6 +97,7 @@ public final class RdpUavClientKeys {
         if (ABORT_SELECTED.isPressed()) {
             GuiMissionControl.abortSelected();
         }
+        if (POINT_TASK.isPressed()) submitPointTask(minecraft);
         MCH_EntityAircraft aircraft = net.vas.rdp.uav.mission.UavControlAccess
                 .findControlledAircraft(minecraft.player);
         if (aircraft == null) return;
@@ -101,7 +105,6 @@ public final class RdpUavClientKeys {
             minecraft.displayGuiScreen(new GuiMissionControl());
             RdpUavNetwork.requestMissionData();
         }
-        if (POINT_TASK.isPressed()) RdpUavNetwork.createPointMission();
         if (RECON_TASK.isPressed()) GuiMissionControl.createReconFromField();
         if (AUTO_ATTACK_TASK.isPressed()) GuiMissionControl.createAutoAttackFromField();
         if (REFRESH_MISSIONS.isPressed()) GuiMissionControl.requestRefresh();
@@ -110,6 +113,30 @@ public final class RdpUavClientKeys {
         if (FIRE_SELF_DESTRUCT.isPressed()) RdpUavNetwork.fireSelfDestruct();
         if (NEXT_CONTACT.isPressed()) RdpUavNetwork.cycleContact(true);
         if (PREVIOUS_CONTACT.isPressed()) RdpUavNetwork.cycleContact(false);
+    }
+
+    /** Shared by the point-task key and the mission-control button. */
+    public static void submitPointTask(Minecraft minecraft) {
+        if (minecraft == null || minecraft.player == null || minecraft.world == null) return;
+        MCH_EntityAircraft aircraft = net.vas.rdp.uav.mission.UavControlAccess
+                .findControlledAircraft(minecraft.player);
+        if (aircraft == null) {
+            minecraft.player.sendMessage(new TextComponentString(
+                    "Point task unavailable: no controlled McHeli aircraft."));
+            return;
+        }
+
+        ClientAimRayTracer.AimTarget aim = ClientAimRayTracer.trace(
+                minecraft, minecraft.getRenderPartialTicks(), minecraft.player, aircraft);
+        if (aim.isBlock()) {
+            RdpUavNetwork.submitPointAimBlock(aim.getBlockPos(), aim.getHitVec());
+        } else if (aim.isEntity()) {
+            Entity target = aim.getEntity();
+            RdpUavNetwork.submitPointAimEntity(target.getUniqueID());
+        } else {
+            minecraft.player.sendMessage(new TextComponentString(
+                    "Point task not sent: no block or entity on the camera ray within 500 blocks."));
+        }
     }
 
     private void lockAiTarget(Minecraft minecraft) {

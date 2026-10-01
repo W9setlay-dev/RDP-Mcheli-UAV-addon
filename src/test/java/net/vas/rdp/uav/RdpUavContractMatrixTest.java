@@ -4,6 +4,7 @@ import com.norwood.mcheli.wingman.mission.MissionNode;
 import io.netty.buffer.Unpooled;
 import net.minecraft.nbt.NBTTagCompound;
 import net.vas.rdp.uav.mission.AircraftAssignmentRegistry;
+import net.vas.rdp.uav.mission.AircraftRecord;
 import net.vas.rdp.uav.mission.MissionQueue;
 import net.vas.rdp.uav.mission.MissionCoordinator;
 import net.vas.rdp.uav.mission.MissionState;
@@ -171,6 +172,37 @@ public class RdpUavContractMatrixTest {
         assertEquals(first, assignments.missionFor(aircraft));
         assignments.release(aircraft, first);
         assertNull(assignments.missionFor(aircraft));
+    }
+
+    @Test
+    public void linkedRetaskAssignmentTransferCanBeRejectedAndRolledBack() {
+        UUID aircraftId = UUID.randomUUID();
+        UUID parentMission = UUID.randomUUID();
+        UUID childMission = UUID.randomUUID();
+        UUID unrelatedMission = UUID.randomUUID();
+        UUID ownerId = UUID.randomUUID();
+        AircraftAssignmentRegistry assignments = new AircraftAssignmentRegistry();
+        AircraftRecord record = new AircraftRecord(aircraftId, ownerId, 0,
+                "switchblade", true, true);
+        assertTrue(assignments.reserve(aircraftId, parentMission));
+        record.assign(parentMission);
+
+        assertFalse(assignments.transfer(aircraftId, unrelatedMission, childMission));
+        assertFalse(record.transfer(unrelatedMission, childMission));
+        assertEquals(parentMission, assignments.missionFor(aircraftId));
+        assertEquals(parentMission, record.getMissionId());
+
+        assertTrue(assignments.transfer(aircraftId, parentMission, childMission));
+        assertTrue(record.transfer(parentMission, childMission));
+        assertEquals(childMission, assignments.missionFor(aircraftId));
+        assertEquals(childMission, record.getMissionId());
+
+        // Simulate rollback after one transfer participant rejects the commit.
+        assertFalse(record.transfer(unrelatedMission, parentMission));
+        assertTrue(assignments.transfer(aircraftId, childMission, parentMission));
+        assertTrue(record.transfer(childMission, parentMission));
+        assertEquals(parentMission, assignments.missionFor(aircraftId));
+        assertEquals(parentMission, record.getMissionId());
     }
 
     @Test

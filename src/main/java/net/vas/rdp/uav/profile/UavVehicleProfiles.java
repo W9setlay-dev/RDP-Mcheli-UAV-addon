@@ -36,6 +36,9 @@ public final class UavVehicleProfiles {
                     || executionProfile == UavExecutionProfile.LONG_RANGE_REUSABLE_UAV;
             boolean helicopterOneWay =
                     executionProfile == UavExecutionProfile.HELICOPTER_ONE_WAY_FPV;
+            double defaultCruiseAgl = reusable ? 128F : helicopterOneWay ? 8F : 32F;
+            double defaultMinimumAgl = reusable ? 64F : helicopterOneWay ? 4F : 8F;
+            double defaultMaximumAgl = reusable ? 192F : helicopterOneWay ? 32F : 128F;
             double altitude = number(config.getFloat("executionAltitude", category,
                     reusable ? 250F : helicopterOneWay ? 8F : 0F,
                     0F, 4096F, "Preferred execution altitude."));
@@ -53,6 +56,20 @@ public final class UavVehicleProfiles {
                 minimum = 4.0D;
                 maximum = 32.0D;
                 tolerance = 6.0D;
+            }
+            // Migrate the exact legacy defaults to terrain-relative game defaults,
+            // while preserving any values an operator has already customized.
+            if (executionProfile == UavExecutionProfile.ONE_WAY
+                    && altitude == 0.0D && minimum == 0.0D && maximum >= 4096.0D) {
+                altitude = defaultCruiseAgl;
+                minimum = defaultMinimumAgl;
+                maximum = defaultMaximumAgl;
+                tolerance = 4.0D;
+            } else if (reusable && altitude == 250.0D && minimum == 200.0D
+                    && maximum == 320.0D) {
+                altitude = defaultCruiseAgl;
+                minimum = defaultMinimumAgl;
+                maximum = defaultMaximumAgl;
             }
             double detectionRange = number(config.getFloat("detectionRange", category,
                     executionProfile == UavExecutionProfile.LONG_RANGE_REUSABLE_UAV ? 2048F : 256F,
@@ -75,10 +92,18 @@ public final class UavVehicleProfiles {
                     "Optional native WingMan speed envelope; zero keeps the aircraft definition default."));
             double attackEnvelope = number(config.getFloat("attackEnvelope", category, 64F, 1F, 4096F,
                     "Maximum attack-node envelope passed to native WingMan."));
+            double stationRadius = number(config.getFloat("stationRadius", category,
+                    helicopterOneWay ? 0F : reusable ? 256F : 96F, 0F, 2048F,
+                    "Profile-specific station/orbit radius; zero selects native helicopter hold."));
+            double maxYawCorrection = number(config.getFloat("maximumYawCorrectionDegrees",
+                    category, 20F, 0F, 45F, "Maximum accumulated operator yaw trim in degrees."));
+            double maxPitchCorrection = number(config.getFloat("maximumPitchCorrectionDegrees",
+                    category, 10F, 0F, 20F, "Maximum accumulated operator pitch trim in degrees."));
             UavVehicleProfile profile = new UavVehicleProfile(executionProfile, altitude,
                     minimum, maximum, tolerance, holding, terminalPayload,
                     detectionRange, lockRange, missionExecutionRange, attackWeaponPriority,
-                    oneWaySpeed, attackEnvelope);
+                    oneWaySpeed, attackEnvelope, stationRadius,
+                    maxYawCorrection, maxPitchCorrection);
             profiles.put(definition, profile);
             String aliases = config.getString("aliases", category, "",
                     "Comma-separated McHeli definition names using this profile.");
@@ -100,13 +125,13 @@ public final class UavVehicleProfiles {
                     "RDP execution profile: ONE_WAY, HELICOPTER_ONE_WAY_FPV, or REUSABLE_UAV.");
             config.getString("aliases", category, aliases[i],
                     "Comma-separated McHeli definition names using this profile.");
-            config.getFloat("executionAltitude", category, i == 3 ? 250F : 0F,
+            config.getFloat("executionAltitude", category, i == 3 ? 128F : i == 2 ? 8F : 32F,
                     0F, 4096F, "Preferred execution altitude.");
-            config.getFloat("minimumExecutionAltitude", category, i == 3 ? 200F : 0F,
+            config.getFloat("minimumExecutionAltitude", category, i == 3 ? 64F : i == 2 ? 4F : 8F,
                     0F, 4096F, "Minimum reusable-UAV altitude.");
-            config.getFloat("maximumExecutionAltitude", category, i == 3 ? 320F : 4096F,
+            config.getFloat("maximumExecutionAltitude", category, i == 3 ? 192F : i == 2 ? 32F : 128F,
                     0F, 4096F, "Maximum execution altitude.");
-            config.getFloat("altitudeTolerance", category, i == 3 ? 15F : 4F,
+            config.getFloat("altitudeTolerance", category, i == 3 ? 15F : i == 2 ? 6F : 4F,
                     0F, 512F, "Execution-altitude tolerance.");
             config.getBoolean("holdingEnabled", category, i == 3,
                     "Allow reusable UAV holding/orbit behavior.");
@@ -124,6 +149,12 @@ public final class UavVehicleProfiles {
                     1F, 4096F, "Authoritative target-lock range.");
             config.getFloat("missionExecutionRange", category, 64F,
                     1F, 4096F, "Mission execution range.");
+            config.getFloat("stationRadius", category, i == 3 ? 256F : i == 2 ? 0F : 96F,
+                    0F, 2048F, "Profile-specific station/orbit radius; zero selects native helicopter hold.");
+            config.getFloat("maximumYawCorrectionDegrees", category, 20F,
+                    0F, 45F, "Maximum accumulated operator yaw trim in degrees.");
+            config.getFloat("maximumPitchCorrectionDegrees", category, 10F,
+                    0F, 20F, "Maximum accumulated operator pitch trim in degrees.");
         }
     }
 
@@ -136,7 +167,7 @@ public final class UavVehicleProfiles {
         }
         if (profile == null && (normalized.contains("shahed")
                 || normalized.contains("switchblade"))) {
-            return new UavVehicleProfile(UavExecutionProfile.ONE_WAY, 0, 0, 4096,
+            return new UavVehicleProfile(UavExecutionProfile.ONE_WAY, 32, 8, 128,
                     4, false, "SELF_DESTRUCT");
         }
         return profile == null ? UNKNOWN : profile;
