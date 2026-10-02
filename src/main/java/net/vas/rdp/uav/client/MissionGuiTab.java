@@ -10,6 +10,7 @@ public enum MissionGuiTab {
     GUIDANCE,
     EXECUTION,
     RECOVERY,
+    PATROL,
     VALIDATION,
     MONITOR
 }

@@ -73,9 +73,41 @@ public final class RDPUavSwarmWorldData extends WorldSavedData {
             if (value.hasKey("sharedTarget")) {
                 try {
                     UUID target = UUID.fromString(value.getString("sharedTarget"));
-                    swarm.getTargetRegistry().lock(target, value.getLong("sharedTargetTick"));
-                    swarm.getTargetRegistry().markLost();
+                    if (value.hasKey("sharedTargetDimension")
+                            && value.hasKey("sharedTargetX")
+                            && value.hasKey("sharedTargetY")
+                            && value.hasKey("sharedTargetZ")) {
+                        swarm.getTargetRegistry().lock(target,
+                                value.getInteger("sharedTargetDimension"),
+                                value.getDouble("sharedTargetX"),
+                                value.getDouble("sharedTargetY"),
+                                value.getDouble("sharedTargetZ"),
+                                value.getLong("sharedTargetTick"));
+                    } else {
+                        swarm.getTargetRegistry().lock(target, value.getLong("sharedTargetTick"));
+                        swarm.getTargetRegistry().markLost();
+                    }
+                    String targetState = value.getString("sharedTargetState");
+                    if ("TRACKING".equals(targetState)
+                            && value.hasKey("sharedTargetDimension")
+                            && value.hasKey("sharedTargetX")
+                            && value.hasKey("sharedTargetY")
+                            && value.hasKey("sharedTargetZ")) {
+                        swarm.getTargetRegistry().observe(target,
+                                value.getInteger("sharedTargetDimension"),
+                                value.getDouble("sharedTargetX"),
+                                value.getDouble("sharedTargetY"),
+                                value.getDouble("sharedTargetZ"),
+                                value.getLong("sharedTargetTick"));
+                    } else if ("LOST".equals(targetState)) {
+                        swarm.getTargetRegistry().markLost();
+                    }
+                    if (value.hasKey("sharedTargetSearchDispatched")) {
+                        swarm.getTargetRegistry().setSearchDispatched(
+                                value.getBoolean("sharedTargetSearchDispatched"));
+                    }
                 } catch (IllegalArgumentException ignored) { }
+                catch (IllegalStateException ignored) { }
             }
             if (value.hasKey("leader")) swarm.setDesignatedLeader(UUID.fromString(value.getString("leader")));
             if (value.hasKey("commander")) {
@@ -138,6 +170,20 @@ public final class RDPUavSwarmWorldData extends WorldSavedData {
             if (swarm.getTargetRegistry().getTargetId() != null) {
                 value.setString("sharedTarget", swarm.getTargetRegistry().getTargetId().toString());
                 value.setLong("sharedTargetTick", swarm.getTargetRegistry().getLastSeenTick());
+                value.setString("sharedTargetState",
+                        swarm.getTargetRegistry().getState().name());
+                value.setBoolean("sharedTargetSearchDispatched",
+                        swarm.getTargetRegistry().isSearchDispatched());
+                if (swarm.getTargetRegistry().getDimension() != Integer.MIN_VALUE
+                        && Double.isFinite(swarm.getTargetRegistry().getLastX())
+                        && Double.isFinite(swarm.getTargetRegistry().getLastY())
+                        && Double.isFinite(swarm.getTargetRegistry().getLastZ())) {
+                    value.setInteger("sharedTargetDimension",
+                            swarm.getTargetRegistry().getDimension());
+                    value.setDouble("sharedTargetX", swarm.getTargetRegistry().getLastX());
+                    value.setDouble("sharedTargetY", swarm.getTargetRegistry().getLastY());
+                    value.setDouble("sharedTargetZ", swarm.getTargetRegistry().getLastZ());
+                }
             }
             if (swarm.getCommanderId() != null) {
                 value.setString("commander", swarm.getCommanderId().toString());

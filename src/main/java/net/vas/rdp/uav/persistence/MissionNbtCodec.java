@@ -5,6 +5,8 @@ import net.minecraft.nbt.NBTTagList;
 import net.vas.rdp.uav.mission.MissionState;
 import net.vas.rdp.uav.mission.MissionType;
 import net.vas.rdp.uav.mission.RDPMission;
+import net.vas.rdp.uav.mission.MissionWaypoint;
+import net.vas.rdp.uav.mission.MissionType;
 import net.vas.rdp.uav.mission.MissionPhase;
 import net.vas.rdp.uav.mission.ControlOwner;
 import net.vas.rdp.uav.mission.MissionExecutionStage;
@@ -78,6 +80,17 @@ public final class MissionNbtCodec {
         tag.setString("recoveryReason", mission.getRecoveryReason() == null ? "" : mission.getRecoveryReason());
         tag.setDouble("squareWidth", mission.getSquareWidth());
         tag.setDouble("squareDepth", mission.getSquareDepth());
+        if (!mission.getPatrolRoute().isEmpty()) {
+            NBTTagList route = new NBTTagList();
+            for (MissionWaypoint waypoint : mission.getPatrolRoute()) {
+                NBTTagCompound point = new NBTTagCompound();
+                point.setDouble("x", waypoint.getX());
+                point.setDouble("z", waypoint.getZ());
+                point.setInteger("loiterTicks", waypoint.getLoiterTicks());
+                route.appendTag(point);
+            }
+            tag.setTag("patrolRoute", route);
+        }
         return tag;
     }
 
@@ -129,6 +142,19 @@ public final class MissionNbtCodec {
                 parent.isEmpty() ? null : parseUuid(parent, "parentMissionId"),
                 child.isEmpty() ? null : parseUuid(child, "childMissionId"));
         mission.setDimension(tag.getInteger("dimension"));
+        if (mission.getMissionType() == MissionType.PATROL && tag.hasKey("patrolRoute")) {
+            NBTTagList routeTag = tag.getTagList("patrolRoute", 10);
+            if (routeTag.tagCount() > net.vas.rdp.uav.mission.PatrolRouteCodec.MAX_WAYPOINTS) {
+                throw new IllegalArgumentException("Patrol route exceeds waypoint limit");
+            }
+            java.util.List<MissionWaypoint> route = new java.util.ArrayList<>();
+            for (int i = 0; i < routeTag.tagCount(); i++) {
+                NBTTagCompound point = routeTag.getCompoundTagAt(i);
+                route.add(new MissionWaypoint(finiteDouble(point, "x"),
+                        finiteDouble(point, "z"), point.getInteger("loiterTicks")));
+            }
+            mission.setPatrolRoute(route);
+        }
         mission.restoreProgressState(
                 tag.hasKey("routeProgress") ? tag.getDouble("routeProgress") : 0.0D,
                 tag.hasKey("lastMeaningfulProgressTick")

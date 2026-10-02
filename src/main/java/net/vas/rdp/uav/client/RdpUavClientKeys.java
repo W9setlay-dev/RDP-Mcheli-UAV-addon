@@ -43,6 +43,8 @@ public final class RdpUavClientKeys {
             "key.rdpuav.next_contact", Keyboard.KEY_6, "key.categories.rdpuav");
     private static final KeyBinding PREVIOUS_CONTACT = new KeyBinding(
             "key.rdpuav.previous_contact", Keyboard.KEY_7, "key.categories.rdpuav");
+    private static final KeyBinding FLIR_TOGGLE = new KeyBinding(
+            "key.rdpuav.flir_toggle", Keyboard.KEY_F8, "key.categories.rdpuav");
 
     private RdpUavClientKeys() { }
 
@@ -65,6 +67,7 @@ public final class RdpUavClientKeys {
     public static String entityLockKey() { return label(AI_TARGET_LOCK); }
     public static String areaLockKey() { return label(SIGHT_STABILIZATION); }
     public static String clearLockKey() { return label(CLEAR_TARGET_LOCK); }
+    public static String flirKey() { return label(FLIR_TOGGLE); }
 
     public static void register() {
         ClientRegistry.registerKeyBinding(OPEN_MISSION_CONTROL);
@@ -81,6 +84,7 @@ public final class RdpUavClientKeys {
         ClientRegistry.registerKeyBinding(CLEAR_TARGET_LOCK);
         ClientRegistry.registerKeyBinding(NEXT_CONTACT);
         ClientRegistry.registerKeyBinding(PREVIOUS_CONTACT);
+        ClientRegistry.registerKeyBinding(FLIR_TOGGLE);
         net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(new RdpUavClientKeys());
         net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(new OperatorTrimClientHandler());
     }
@@ -88,6 +92,14 @@ public final class RdpUavClientKeys {
     @SubscribeEvent
     public void onKeyInput(InputEvent.KeyInputEvent event) {
         Minecraft minecraft = net.minecraftforge.fml.client.FMLClientHandler.instance().getClient();
+        boolean flirPressed = FLIR_TOGGLE.isPressed();
+        if (minecraft.currentScreen == null && flirPressed) {
+            boolean enabled = RdpUavHudConfig.toggleFlir();
+            if (minecraft.player != null) {
+                minecraft.player.sendMessage(new TextComponentString(
+                        "FLIR target display " + (enabled ? "enabled" : "disabled") + "."));
+            }
+        }
         if (minecraft.player == null) return;
         boolean lockPressed = Keyboard.getEventKeyState()
                 && Keyboard.getEventKey() == AI_TARGET_LOCK.getKeyCode();

@@ -115,10 +115,11 @@ public final class UavVehicleProfiles {
     }
 
     private static void ensureDefaults(Configuration config) {
-        String[] names = {"switchblade", "shahed136", "fpvdrone", "mq9"};
+        String[] names = {"switchblade", "shahed136", "fpvdrone", "mq9", "zala421"};
         String[] profile = {"ONE_WAY", "ONE_WAY", "HELICOPTER_ONE_WAY_FPV",
-                "LONG_RANGE_REUSABLE_UAV"};
-        String[] aliases = {"switchblade", "shahed136,shahed-136", "fpv,fpv-drone,fpv_drone", "mq-9,mq_9,reaper,predator"};
+                "LONG_RANGE_REUSABLE_UAV", "ONE_WAY"};
+        String[] aliases = {"switchblade", "shahed136,shahed-136", "fpv,fpv-drone,fpv_drone",
+                "mq-9,mq_9,reaper,predator", "zala421"};
         for (int i = 0; i < names.length; i++) {
             String category = "vehicle." + names[i];
             config.getString("profile", category, profile[i],
@@ -166,7 +167,7 @@ public final class UavVehicleProfiles {
                     6, false, "SELF_DESTRUCT");
         }
         if (profile == null && (normalized.contains("shahed")
-                || normalized.contains("switchblade"))) {
+                || normalized.contains("switchblade") || normalized.equals("zala421"))) {
             return new UavVehicleProfile(UavExecutionProfile.ONE_WAY, 32, 8, 128,
                     4, false, "SELF_DESTRUCT");
         }

@@ -31,6 +31,8 @@ import net.vas.rdp.uav.profile.UavVehicleProfiles;
 import net.vas.rdp.uav.swarm.*;
 import org.junit.Test;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
@@ -39,6 +41,15 @@ import java.util.UUID;
 import static org.junit.Assert.*;
 
 public class RdpUavContractMatrixTest {
+    @Test
+    public void zalaIsGeneratedAsOneWaySelfDestructVehicleProfile() throws Exception {
+        UavVehicleProfile profile = UavVehicleProfiles.forAircraft("zala421");
+        assertEquals(UavExecutionProfile.ONE_WAY, profile.getExecutionProfile());
+        assertEquals("SELF_DESTRUCT", profile.getTerminalPayloadBehavior());
+        assertFalse(profile.isReusable());
+        assertTrue(profile.supportsTargetLock());
+    }
+
     @Test
     public void fpvHoverIsExplicitAndTerminalApproachCannotResumeMovement() {
         FpvFlightStateMachine states = new FpvFlightStateMachine();
@@ -652,6 +663,7 @@ public class RdpUavContractMatrixTest {
             case DEEP_SCANNING: return next == MissionState.REPORTING;
             case REPORTING: return next == MissionState.HOLDING
                     || next == MissionState.RETURNING;
+            case RECOVERING: return next == MissionState.RETURNING;
             case REPLAN:
                 return next == MissionState.SEARCHING
                         || next == MissionState.TARGET_LOCKED

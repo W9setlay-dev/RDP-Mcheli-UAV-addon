@@ -26,6 +26,7 @@ public final class MissionDefinitionCodec {
         tag.setString("guidanceMode", definition.getGuidanceMode());
         tag.setString("executionMode", definition.getExecutionMode());
         tag.setString("recoveryMode", definition.getRecoveryMode());
+        tag.setString("patrolRoute", PatrolRouteCodec.encodeOrEmpty(definition.getWaypoints()));
         NBTTagList selected = new NBTTagList();
         for (java.util.UUID id : definition.getSelectedUavs()) {
             NBTTagCompound value = new NBTTagCompound();
@@ -63,6 +64,9 @@ public final class MissionDefinitionCodec {
             if (tag.hasKey("guidanceMode")) definition.setGuidanceMode(tag.getString("guidanceMode"));
             if (tag.hasKey("executionMode")) definition.setExecutionMode(tag.getString("executionMode"));
             if (tag.hasKey("recoveryMode")) definition.setRecoveryMode(tag.getString("recoveryMode"));
+            if (tag.hasKey("patrolRoute")) {
+                definition.setWaypoints(PatrolRouteCodec.decode(tag.getString("patrolRoute")));
+            }
             NBTTagList selected = tag.getTagList("selectedUavs", 10);
             for (int i = 0; i < selected.tagCount(); i++) {
                 String selectedId = selected.getCompoundTagAt(i).getString("id");

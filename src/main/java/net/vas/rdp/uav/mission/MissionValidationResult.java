@@ -15,7 +15,14 @@ public final class MissionValidationResult {
         if (definition == null) return new MissionValidationResult(
                 Collections.singletonList("Mission definition is required"));
         List<String> errors = new ArrayList<>();
-        if (definition.getTarget().isEmpty()) {
+        if (definition.getMissionType() == MissionType.PATROL) {
+            if (definition.isAttack()) errors.add("Patrol routes cannot authorize attack execution");
+            try {
+                PatrolRouteCodec.validate(definition.getWaypoints());
+            } catch (IllegalArgumentException invalid) {
+                errors.add(invalid.getMessage());
+            }
+        } else if (definition.getTarget().isEmpty()) {
             errors.add("Target is required");
         } else if (definition.getMissionType() == MissionType.SQUARE_STRIKE) {
             String[] values = definition.getTarget().trim().split("\\s+");

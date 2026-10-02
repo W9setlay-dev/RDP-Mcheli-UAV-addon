@@ -6,6 +6,41 @@ import java.util.List;
 
 /** Deterministic capability filter; mission creation remains MissionManager-owned. */
 public final class SwarmTaskAllocator {
+    /** Assigns deterministic observer roles without authorizing a strike. */
+    public void assignAutonomyRoles(SwarmRecord swarm) {
+        if (swarm == null) throw new IllegalArgumentException("Swarm is required");
+        for (SwarmMember member : swarm.getMembers()) {
+            if (member.getRole() == SwarmRole.SEARCHER
+                    && (!member.isAvailable() || member.isOperatorControlled())) {
+                member.setRole(SwarmRole.RESERVE);
+            }
+        }
+        boolean searcherAssigned = false;
+        for (SwarmMember member : swarm.getMembers()) {
+            if (member.isAvailable() && !member.isOperatorControlled()
+                    && member.getRole() == SwarmRole.SEARCHER) {
+                searcherAssigned = true;
+                break;
+            }
+        }
+        for (SwarmMember member : swarm.getMembers()) {
+            if (!member.isAvailable() || member.isOperatorControlled()
+                    || member.getRole() != SwarmRole.RESERVE) {
+                continue;
+            }
+            SwarmRole role;
+            if (!searcherAssigned) {
+                role = SwarmRole.SEARCHER;
+                searcherAssigned = true;
+            } else if (member.supportsLongRange()) {
+                role = SwarmRole.TRACKER;
+            } else {
+                role = SwarmRole.RESERVE;
+            }
+            swarm.getAssignmentManager().assign(swarm, member.getAircraftId(), role);
+        }
+    }
+
     public List<SwarmMember> suitable(SwarmRecord swarm, SwarmTask task, int limit) {
         if (swarm == null || task == null || limit < 0) {
             throw new IllegalArgumentException("Swarm, task, and limit are required");

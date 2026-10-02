@@ -178,7 +178,8 @@ public final class RdpUavNetwork {
             createSquareStrike(definition.getTarget(), definition.getGuidedWeapon());
             return true;
         }
-        if (isLaunchSupported(definition)) return false;
+        if (definition.getMissionType() != net.vas.rdp.uav.mission.MissionType.PATROL
+                && isLaunchSupported(definition)) return false;
         CHANNEL.sendToServer(new CreateMission.LaunchMissionDefinition(definition));
         return true;
     }
@@ -600,7 +601,7 @@ public final class RdpUavNetwork {
         }
 
         public static final class LaunchMissionDefinition implements IMessage {
-            private int version = 2;
+            private int version = 3;
             private String type = "";
             private String target = "";
             private boolean attack;
@@ -615,6 +616,7 @@ public final class RdpUavNetwork {
             private boolean policyRejectEmbedded = true;
             private boolean policyAllowVehicles = true;
             private double policyMinimumConfidence;
+            private String patrolRoute = "";
 
             public LaunchMissionDefinition() { }
 
@@ -633,6 +635,8 @@ public final class RdpUavNetwork {
                 this.policyRejectEmbedded = definition.getTargetPolicy().isRejectEmbedded();
                 this.policyAllowVehicles = definition.getTargetPolicy().isAllowVehicleTargets();
                 this.policyMinimumConfidence = definition.getTargetPolicy().getMinimumConfidence();
+                this.patrolRoute = net.vas.rdp.uav.mission.PatrolRouteCodec
+                        .encodeOrEmpty(definition.getWaypoints());
             }
 
             public void fromBytes(ByteBuf buffer) {
@@ -651,6 +655,7 @@ public final class RdpUavNetwork {
                 policyRejectEmbedded = buffer.readBoolean();
                 policyAllowVehicles = buffer.readBoolean();
                 policyMinimumConfidence = buffer.readDouble();
+                patrolRoute = readString(buffer);
             }
 
             public void toBytes(ByteBuf buffer) {
@@ -669,6 +674,7 @@ public final class RdpUavNetwork {
                 buffer.writeBoolean(policyRejectEmbedded);
                 buffer.writeBoolean(policyAllowVehicles);
                 buffer.writeDouble(policyMinimumConfidence);
+                writeString(buffer, patrolRoute);
             }
 
             private static String joinPolicy(java.util.List<String> values) {
@@ -1954,10 +1960,11 @@ public final class RdpUavNetwork {
         public IMessage onMessage(final CreateMission.LaunchMissionDefinition message, MessageContext context) {
             final EntityPlayerMP player = context.getServerHandler().player;
             Objects.requireNonNull(player.getServer()).addScheduledTask(() -> {
-                if (message.version != 2 || message.unsupportedConfiguration
-                        || message.target == null
-                        || !message.target.matches(
-                        "(?i)(mod=[A-Za-z0-9_.-]+|[A-Za-z0-9_.-]+:[A-Za-z0-9_./-]+)")) {
+                boolean patrol = "PATROL".equals(message.type);
+                if (message.version != 3 || message.unsupportedConfiguration
+                        || (patrol ? message.patrolRoute == null || message.patrolRoute.trim().isEmpty()
+                        : message.target == null || !message.target.matches(
+                        "(?i)(mod=[A-Za-z0-9_.-]+|[A-Za-z0-9_.-]+:[A-Za-z0-9_./-]+)"))) {
                     reject(player, "Mission definition rejected: unsupported version or target.");
                     return;
                 }
@@ -1969,6 +1976,10 @@ public final class RdpUavNetwork {
                 }
                 if (message.swarmMaximumMembers < 1 || message.swarmMaximumMembers > 64) {
                     reject(player, "Mission definition rejected: invalid swarm size.");
+                    return;
+                }
+                if (patrol) {
+                    createPatrol(player, message, aircraft);
                     return;
                 }
                 if (!message.type.equals("RECONNAISSANCE")
@@ -2031,6 +2042,63 @@ public final class RdpUavNetwork {
 
         private static void reject(EntityPlayerMP player, String message) {
             player.sendMessage(new net.minecraft.util.text.TextComponentString(message));
+        }
+
+        private static void createPatrol(EntityPlayerMP player,
+                                         CreateMission.LaunchMissionDefinition message,
+                                         MCH_EntityAircraft aircraft) {
+            if (message.attack || message.swarmEnabled || !message.weapon.trim().isEmpty()) {
+                reject(player, "Patrol rejected: route patrol does not authorize payload execution or swarm fan-out.");
+                return;
+            }
+            if (!aircraft.isUAV() || aircraft.getAcInfo() == null) {
+                reject(player, "Patrol rejected: an autonomous UAV airframe is required.");
+                return;
+            }
+            net.vas.rdp.uav.profile.UavVehicleProfile profile =
+                    net.vas.rdp.uav.profile.UavVehicleProfiles.forAircraft(aircraft.getAcInfo().name);
+            if (!profile.isReusable()) {
+                reject(player, "Patrol rejected: this profile has no reusable native recovery capability.");
+                return;
+            }
+            java.util.List<net.vas.rdp.uav.mission.MissionWaypoint> route;
+            try {
+                route = net.vas.rdp.uav.mission.PatrolRouteCodec.decode(message.patrolRoute);
+                net.vas.rdp.uav.mission.PatrolRouteCodec.validate(route);
+            } catch (IllegalArgumentException invalid) {
+                reject(player, "Patrol rejected: " + invalid.getMessage());
+                return;
+            }
+            long tick = player.world.getTotalWorldTime();
+            net.vas.rdp.uav.mission.PatrolRoutePlanner.Plan plan =
+                    net.vas.rdp.uav.mission.PatrolRoutePlanner.plan(
+                            player.world, aircraft, route, profile, tick);
+            if (!plan.isAccepted()) {
+                reject(player, "Patrol rejected: terrain/route validation failed (" + plan.getReason() + ").");
+                return;
+            }
+            net.vas.rdp.uav.mission.MissionWaypoint first = route.get(0);
+            net.vas.rdp.uav.mission.RDPMission mission =
+                    new net.vas.rdp.uav.mission.RDPMission(java.util.UUID.randomUUID(),
+                            player.getUniqueID(), aircraft.getUniqueID(), aircraft.getAcInfo().name,
+                            net.vas.rdp.uav.mission.MissionType.PATROL,
+                            net.vas.rdp.uav.target.TargetSpec.point(first.getX(), aircraft.posY,
+                                    first.getZ(), net.vas.rdp.uav.target.TargetPriority.NORMAL),
+                            false, false, false, Math.max(1.0D, profile.getDetectionRange()),
+                            8.0D, tick);
+            mission.setDimension(player.dimension);
+            mission.setPatrolRoute(route);
+            try {
+                RDPUavMod.missions().create(player.world, mission);
+            } catch (IllegalStateException unavailable) {
+                reject(player, "Patrol rejected: aircraft assignment unavailable ("
+                        + unavailable.getMessage() + ").");
+                return;
+            }
+            net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world).markDirty();
+            player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                    "Terrain-checked patrol accepted; native recovery will return the UAV to its configured home."));
+            sendMissionData(player);
         }
 
         private static String[] splitPolicy(String value) {

@@ -33,6 +33,7 @@ The architecture and audit notes for this rework are recorded in `docs/`:
 - `docs/ai-lock-movement-validation.md`
 - `docs/ai-flight-control-ownership.md`
 - `docs/UAV_AI_FRAMEWORK_REWORK_REPORT.md`
+- `docs/superb-warfare-reference-design.md`
 - `docs/changelog.md`
 
 This keeps the project grounded in the actual McHeliCE/WingMan mission boundary and makes the hostile-world utility case explicit rather than relying on unsupported AI rhetoric.
@@ -535,7 +536,7 @@ The addon does not derive mission behavior from McHeliCE's technical
 `Type: helicopter` value or from display names. On startup it creates
 `config/rdp-uav-vehicles.cfg`, where each exact McHeli aircraft definition can
 be mapped to `ONE_WAY`, `HELICOPTER_ONE_WAY_FPV`, or `REUSABLE_UAV` and aliases can be listed. The default
-mapping covers Switchblade/Shahed-style one-way payload vehicles and an MQ-9
+mapping covers Switchblade/Shahed/Zala-style one-way payload vehicles and an MQ-9
 profile. Reusable profiles use the configured execution altitude, altitude
 tolerance, and horizontal target guidance; they do not dive toward target Y or
 automatically self-destruct. SelfDestruct remains a McHeliCE weapon capability,

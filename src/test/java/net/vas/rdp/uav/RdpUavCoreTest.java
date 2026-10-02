@@ -10,6 +10,7 @@ import net.vas.rdp.uav.mission.MissionState;
 import net.vas.rdp.uav.mission.MissionType;
 import net.vas.rdp.uav.mission.MissionManager;
 import net.vas.rdp.uav.mission.RDPMission;
+import net.vas.rdp.uav.mission.MissionWaypoint;
 import net.vas.rdp.uav.persistence.MissionNbtCodec;
 import net.vas.rdp.uav.profile.UavExecutionProfile;
 import net.vas.rdp.uav.profile.UavVehicleProfile;
@@ -112,6 +113,24 @@ public class RdpUavCoreTest {
         assertTrue(restored.hasSquareArea());
         assertEquals(64.0D, restored.getSquareWidth(), 0.0D);
         assertEquals(48.0D, restored.getSquareDepth(), 0.0D);
+    }
+
+    @Test
+    public void patrolRouteSurvivesMissionPersistence() {
+        RDPMission mission = new RDPMission(UUID.randomUUID(), UUID.randomUUID(),
+                UUID.randomUUID(), "reusable", MissionType.PATROL,
+                TargetSpec.point(20, 80, 30, TargetPriority.NORMAL),
+                false, false, false, 64, 8, 1);
+        mission.setPatrolRoute(Arrays.asList(
+                new MissionWaypoint(20, 30, 200),
+                new MissionWaypoint(40, 50, 0)));
+
+        RDPMission restored = MissionNbtCodec.read(MissionNbtCodec.write(mission));
+
+        assertEquals(2, restored.getPatrolRoute().size());
+        assertEquals(20.0D, restored.getPatrolRoute().get(0).getX(), 0.0D);
+        assertEquals(200, restored.getPatrolRoute().get(0).getLoiterTicks());
+        assertEquals(0, restored.getPatrolRoute().get(1).getLoiterTicks());
     }
 
     @Test

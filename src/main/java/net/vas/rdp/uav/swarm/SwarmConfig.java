@@ -15,6 +15,8 @@ public final class SwarmConfig {
     public static double minimumVerticalSeparation = 6D;
     public static int memberTimeoutTicks = 100;
     public static int degradedThreshold = 1;
+    public static int targetLossTimeoutTicks = 800;
+    public static double targetLossSearchRadius = 24.0D;
     private static final Map<String, Integer> profileLimits = new HashMap<>();
     private SwarmConfig() { }
     public static void load(File dir) {
@@ -30,6 +32,12 @@ public final class SwarmConfig {
         minimumVerticalSeparation = c.getFloat("minimumVerticalSeparation", "safety", (float) minimumVerticalSeparation, 1, 512, "Minimum vertical separation.");
         memberTimeoutTicks = c.getInt("memberTimeoutTicks", "swarm", memberTimeoutTicks, 20, 1200, "Member timeout.");
         degradedThreshold = c.getInt("degradedThreshold", "swarm", degradedThreshold, 0, 64, "Unavailable members before degraded state.");
+        targetLossTimeoutTicks = c.getInt("targetLossTimeoutTicks", "recovery",
+                targetLossTimeoutTicks, 20, 12000,
+                "Ticks to search for the same shared target identity before returning to patrol.");
+        targetLossSearchRadius = c.getFloat("targetLossSearchRadius", "recovery",
+                (float) targetLossSearchRadius, 4, 128,
+                "Maximum horizontal search radius around the last server-observed target position.");
         profileLimits.clear();
         for (String profile : new String[] {"ONE_WAY", "REUSABLE_UAV", "LONG_RANGE_REUSABLE_UAV"}) {
             profileLimits.put(profile, c.getInt(profile + "MaximumSize", "profiles",

@@ -99,6 +99,7 @@ public enum MissionState {
                 return next == APPROACHING || next == ON_TARGET || next == RETURNING
                         || next == KAMIKADZE_TARGET || next == LOST;
             case RETURNING: return next == LANDING;
+            case RECOVERING: return next == RETURNING;
             case LANDING: return next == PARKING;
             case PARKING: return next == COMPLETE;
             default: return false;

@@ -24,6 +24,7 @@ public final class MissionDefinition {
     private String guidanceMode = "AI_APPROACH";
     private String executionMode = "MISSION_DEFINED";
     private String recoveryMode = "RETURN_TO_BASE";
+    private List<MissionWaypoint> waypoints = Collections.emptyList();
 
     public MissionType getMissionType() { return missionType; }
     public String getTarget() { return target; }
@@ -40,6 +41,7 @@ public final class MissionDefinition {
     public String getGuidanceMode() { return guidanceMode; }
     public String getExecutionMode() { return executionMode; }
     public String getRecoveryMode() { return recoveryMode; }
+    public List<MissionWaypoint> getWaypoints() { return waypoints; }
 
     public MissionDefinition setMissionType(MissionType value) {
         if (value == null) throw new IllegalArgumentException("Mission type is required");
@@ -79,6 +81,12 @@ public final class MissionDefinition {
     public void setExecutionMode(String value) { executionMode = normalizeMode(value);
     }
     public void setRecoveryMode(String value) { recoveryMode = normalizeMode(value);
+    }
+    public MissionDefinition setWaypoints(List<MissionWaypoint> value) {
+        if (value == null) throw new IllegalArgumentException("Patrol route is required");
+        if (!value.isEmpty()) PatrolRouteCodec.validate(value);
+        waypoints = Collections.unmodifiableList(new ArrayList<>(value));
+        return this;
     }
 
     public boolean isDefaultTargetPolicy() {

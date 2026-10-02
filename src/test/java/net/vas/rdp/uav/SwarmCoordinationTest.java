@@ -7,6 +7,8 @@ import net.vas.rdp.uav.swarm.SwarmMember;
 import net.vas.rdp.uav.swarm.SwarmRecord;
 import net.vas.rdp.uav.swarm.SwarmState;
 import net.vas.rdp.uav.swarm.SwarmStatus;
+import net.vas.rdp.uav.swarm.SwarmRole;
+import net.vas.rdp.uav.swarm.SwarmTaskAllocator;
 import org.junit.Test;
 
 import java.util.Arrays;
@@ -14,6 +16,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 
 public class SwarmCoordinationTest {
     @Test
@@ -56,5 +59,46 @@ public class SwarmCoordinationTest {
         assertEquals(1, status.getMembers());
         assertEquals(1, status.getAvailableMembers());
         assertEquals(SwarmState.READY, status.getState());
+    }
+
+    @Test
+    public void autonomousRoleAllocationIsDeterministicAndDoesNotAssignStrikeRoles() {
+        SwarmRecord swarm = new SwarmRecord(UUID.randomUUID(), UUID.randomUUID(), "roles");
+        SwarmMember searcher = new SwarmMember(
+                UUID.fromString("00000000-0000-0000-0000-000000000001"),
+                "SEARCHER", false, false);
+        SwarmMember tracker = new SwarmMember(
+                UUID.fromString("00000000-0000-0000-0000-000000000002"),
+                "LONG_RANGE_REUSABLE_UAV", true, true);
+        swarm.add(tracker);
+        swarm.add(searcher);
+
+        new SwarmTaskAllocator().assignAutonomyRoles(swarm);
+
+        assertEquals(SwarmRole.SEARCHER, searcher.getRole());
+        assertEquals(SwarmRole.TRACKER, tracker.getRole());
+        assertFalse(searcher.getRole() == SwarmRole.EXECUTOR);
+        assertFalse(tracker.getRole() == SwarmRole.EXECUTOR);
+    }
+
+    @Test
+    public void unavailableSearcherIsReplacedWithoutAssigningAnExecutor() {
+        SwarmRecord swarm = new SwarmRecord(UUID.randomUUID(), UUID.randomUUID(), "recovery");
+        SwarmMember unavailable = new SwarmMember(
+                UUID.fromString("00000000-0000-0000-0000-000000000001"),
+                "REUSABLE_UAV", false, false);
+        SwarmMember replacement = new SwarmMember(
+                UUID.fromString("00000000-0000-0000-0000-000000000002"),
+                "REUSABLE_UAV", false, false);
+        swarm.add(unavailable);
+        swarm.add(replacement);
+        unavailable.setRole(SwarmRole.SEARCHER);
+        unavailable.setAvailable(false);
+
+        new SwarmTaskAllocator().assignAutonomyRoles(swarm);
+
+        assertEquals(SwarmRole.RESERVE, unavailable.getRole());
+        assertEquals(SwarmRole.SEARCHER, replacement.getRole());
+        assertFalse(replacement.getRole() == SwarmRole.EXECUTOR);
     }
 }

@@ -8,6 +8,7 @@ public final class RdpUavHudConfig {
     public static boolean enabled = true;
     public static boolean markerVisible = true;
     public static boolean telemetryVisible = true;
+    public static boolean flirEnabled;
     public static boolean anomalyAlertEnabled = true;
     public static float scale = 1.0F;
     public static double anomalyAlertThreshold = 0.55D;
@@ -19,17 +20,21 @@ public final class RdpUavHudConfig {
     };
     public static int xOffset;
     public static int yOffset;
+    private static Configuration configuration;
 
     private RdpUavHudConfig() { }
 
     public static void load(File configDir) {
-        Configuration config = new Configuration(new File(configDir, "rdp-uav-hud.cfg"));
+        configuration = new Configuration(new File(configDir, "rdp-uav-hud.cfg"));
         try {
+            Configuration config = configuration;
             enabled = config.getBoolean("enabled", "hud", true, "Show the authoritative UAV target HUD.");
             markerVisible = config.getBoolean("markerVisible", "hud", true,
                     "Show the target reticle when a target position is available.");
             telemetryVisible = config.getBoolean("telemetryVisible", "hud", true,
                     "Show target and mission telemetry.");
+            flirEnabled = config.getBoolean("flirEnabled", "hud", false,
+                    "Use a monochrome presentation for the existing mission target bracket only.");
             anomalyAlertEnabled = config.getBoolean("anomalyAlertEnabled", "hud", true,
                     "Show a compact red RDP anomaly warning when the environment becomes unsafe.");
             anomalyAlertThreshold = config.getFloat("anomalyAlertThreshold", "hud", 0.55F, 0.0F, 1.0F,
@@ -49,7 +54,23 @@ public final class RdpUavHudConfig {
             yOffset = config.getInt("yOffset", "hud", 12, -500, 500,
                     "Vertical HUD offset from the top edge.");
         } finally {
-            if (config.hasChanged()) config.save();
+            if (configuration.hasChanged()) configuration.save();
         }
+    }
+
+    public static boolean setFlirEnabled(boolean value) {
+        if (flirEnabled == value) return flirEnabled;
+        flirEnabled = value;
+        if (configuration != null) {
+            configuration.get("hud", "flirEnabled", false,
+                    "Use a monochrome presentation for the existing mission target bracket only.")
+                    .set(value);
+            configuration.save();
+        }
+        return flirEnabled;
+    }
+
+    public static boolean toggleFlir() {
+        return setFlirEnabled(!flirEnabled);
     }
 }

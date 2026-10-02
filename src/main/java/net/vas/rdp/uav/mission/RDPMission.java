@@ -8,6 +8,9 @@ import net.vas.rdp.uav.target.TargetSpec;
 import net.vas.rdp.uav.target.TargetLock;
 import net.vas.rdp.uav.target.TargetPolicy;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.UUID;
 
 public final class RDPMission {
@@ -56,6 +59,7 @@ public final class RDPMission {
     public static final int MAX_RECOVERY_ATTEMPTS = 5;
     private String lastTransitionReason;
     private TargetPolicy.Snapshot targetPolicy = TargetPolicy.builder().snapshot();
+    private List<MissionWaypoint> patrolRoute = Collections.emptyList();
 
     public RDPMission(UUID missionId, UUID ownerId, UUID aircraftId, String aircraftType,
                       MissionType missionType, TargetSpec targetSpec, boolean attack,
@@ -614,6 +618,14 @@ public final class RDPMission {
         }
         this.recoveryPolicy = recoveryPolicy;
     }
+    public void setPatrolRoute(List<MissionWaypoint> route) {
+        if (missionType != MissionType.PATROL) {
+            throw new IllegalStateException("Only patrol missions accept route waypoints");
+        }
+        PatrolRouteCodec.validate(route);
+        patrolRoute = Collections.unmodifiableList(new ArrayList<>(route));
+    }
+    public List<MissionWaypoint> getPatrolRoute() { return patrolRoute; }
 
     public static RDPMission restore(UUID missionId, UUID ownerId, UUID aircraftId,
                                      String aircraftType, MissionType missionType,

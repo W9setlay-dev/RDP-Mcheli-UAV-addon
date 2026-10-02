@@ -4,6 +4,7 @@ import net.minecraft.nbt.NBTTagCompound;
 import net.vas.rdp.uav.mission.MissionDefinition;
 import net.vas.rdp.uav.mission.MissionDefinitionCodec;
 import net.vas.rdp.uav.mission.MissionPresets;
+import net.vas.rdp.uav.mission.MissionWaypoint;
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
@@ -39,6 +40,22 @@ public class MissionDefinitionCodecTest {
                 decoded.getTargetPolicy().isAllowVehicleTargets());
         assertEquals(source.getTargetPolicy().getMinimumConfidence(),
                 decoded.getTargetPolicy().getMinimumConfidence(), 0.0D);
+    }
+
+    @Test
+    public void patrolRouteRoundTripsGuiConfiguration() {
+        MissionDefinition definition = new MissionDefinition()
+                .setMissionType(net.vas.rdp.uav.mission.MissionType.PATROL)
+                .setTarget("")
+                .setWaypoints(java.util.Arrays.asList(
+                        new MissionWaypoint(12.0D, 34.0D, 40),
+                        new MissionWaypoint(-56.0D, 78.0D, 0)));
+
+        MissionDefinition restored = MissionDefinitionCodec.read(MissionDefinitionCodec.write(definition));
+
+        assertEquals(2, restored.getWaypoints().size());
+        assertEquals(12.0D, restored.getWaypoints().get(0).getX(), 0.0D);
+        assertEquals(40, restored.getWaypoints().get(0).getLoiterTicks());
     }
 
     @Test

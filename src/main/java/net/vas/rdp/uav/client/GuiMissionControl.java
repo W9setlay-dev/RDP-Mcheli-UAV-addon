@@ -40,6 +40,7 @@ public final class GuiMissionControl extends GuiScreen {
     private GuiTextField policyField;
     private GuiTextField swarmIdField;
     private GuiTextField swarmSizeField;
+    private GuiTextField patrolRouteField;
     private String status = "";
     private String pendingDangerAction;
     private String pendingDangerMissionId;
@@ -243,6 +244,10 @@ public final class GuiMissionControl extends GuiScreen {
             swarmSizeField.setMaxStringLength(2);
             swarmSizeField.setText("1");
         }
+        if (patrolRouteField == null) {
+            patrolRouteField = new GuiTextField(15, fontRenderer, left, 42, 425, 18);
+            patrolRouteField.setMaxStringLength(512);
+        }
         rebuildButtons();
         requestRefresh();
     }
@@ -273,7 +278,14 @@ public final class GuiMissionControl extends GuiScreen {
             buttonList.add(new GuiButton(28, right, height - 54, 100, 20, "Load"));
             buttonList.add(new GuiButton(29, right + 105, height - 54, 115, 20, "Launch mission"));
         }
-        if (uavMode) {
+        if (activeTab == MissionGuiTab.MONITOR) {
+            buttonList.add(new GuiButton(32, right, 128, 220, 20,
+                    flirButtonLabel()));
+        }
+        if (activeTab == MissionGuiTab.PATROL && uavMode) {
+            buttonList.add(new GuiButton(33, right, 84, 220, 20, "Launch terrain-checked patrol"));
+        }
+        if (uavMode && activeTab != MissionGuiTab.PATROL) {
             buttonList.add(new GuiButton(3, left, height - 54, 100, 20,
                     "Authorize [" + RdpUavClientKeys.authorizeKey() + "]"));
             buttonList.add(new GuiButton(4, left + 105, height - 54, 100, 20,
@@ -403,6 +415,11 @@ public final class GuiMissionControl extends GuiScreen {
         return filterMode == 0 ? "Filter: ALL" : filterMode == 1 ? "Filter: ACTIVE" : "Filter: ALERTS";
     }
 
+    private String flirButtonLabel() {
+        return "FLIR target bracket: " + (RdpUavHudConfig.flirEnabled ? "ON" : "OFF")
+                + " [" + RdpUavClientKeys.flirKey() + "]";
+    }
+
     private boolean matchesFilter(String row) {
         if (row == null) return true;
         String normalized = row.toLowerCase(java.util.Locale.ROOT);
@@ -437,6 +454,7 @@ public final class GuiMissionControl extends GuiScreen {
             rebuildButtons();
         } else if (button.id >= 300 && button.id < 300 + MissionGuiTab.values().length) {
             activeTab = MissionGuiTab.values()[button.id - 300];
+            if (patrolRouteField != null) patrolRouteField.setFocused(false);
             rebuildButtons();
         } else if (button.id == 0) requestData();
         else if (button.id == 26) {
@@ -489,6 +507,13 @@ public final class GuiMissionControl extends GuiScreen {
         else if (button.id == 30) {
             applyTargetPolicy();
         }
+        else if (button.id == 32) {
+            boolean enabled = RdpUavHudConfig.toggleFlir();
+            status = "FLIR target display " + (enabled ? "enabled" : "disabled")
+                    + "; target bracket only.";
+            rebuildButtons();
+        }
+        else if (button.id == 33) createPatrolMission();
         else if (button.id == 1) { help = !help; rebuildButtons(); }
         else if (button.id == 2) mc.displayGuiScreen(null);
         else if (button.id == 3) confirmDangerAction("authorize", GuiMissionControl::authorizeSelected, "Authorizing the selected mission will arm server-side controls.");
@@ -626,6 +651,33 @@ public final class GuiMissionControl extends GuiScreen {
                     : "Versioned reconnaissance mission submitted for server validation.";
         } else {
             status = "Mission definition rejected before submission.";
+        }
+    }
+
+    private void createPatrolMission() {
+        try {
+            definition.setMissionType(MissionType.PATROL)
+                    .setTarget("")
+                    .setAttack(false)
+                    .setSwarmEnabled(false)
+                    .setSwarmMaximumMembers(1)
+                    .setWaypoints(net.vas.rdp.uav.mission.PatrolRouteCodec.parse(
+                            patrolRouteField == null ? "" : patrolRouteField.getText()));
+            MissionValidationResult validation = MissionValidationResult.validate(definition);
+            if (!validation.isValid()) {
+                status = validation.getErrors().get(0);
+                activeTab = MissionGuiTab.PATROL;
+                rebuildButtons();
+                return;
+            }
+            definition.setGuidedWeapon("");
+            if (RdpUavNetwork.launchMissionDefinition(definition)) {
+                status = "Terrain-checked patrol submitted for server validation.";
+            } else {
+                status = "Patrol definition rejected before submission.";
+            }
+        } catch (IllegalArgumentException invalid) {
+            status = "Patrol route rejected: " + invalid.getMessage();
         }
     }
 
@@ -775,6 +827,12 @@ public final class GuiMissionControl extends GuiScreen {
     }
 
     protected void keyTyped(char typedChar, int keyCode) throws IOException {
+        if (activeTab == MissionGuiTab.PATROL) {
+            if (patrolRouteField != null
+                    && patrolRouteField.textboxKeyTyped(typedChar, keyCode)) return;
+            super.keyTyped(typedChar, keyCode);
+            return;
+        }
         if (targetField != null && targetField.textboxKeyTyped(typedChar, keyCode)) return;
         if (filterField != null && filterField.textboxKeyTyped(typedChar, keyCode)) {
             rebuildButtons();
@@ -783,16 +841,22 @@ public final class GuiMissionControl extends GuiScreen {
         if (policyField != null && policyField.textboxKeyTyped(typedChar, keyCode)) return;
         if (swarmIdField != null && swarmIdField.textboxKeyTyped(typedChar, keyCode)) return;
         if (swarmSizeField != null && swarmSizeField.textboxKeyTyped(typedChar, keyCode)) return;
+        if (patrolRouteField != null && patrolRouteField.textboxKeyTyped(typedChar, keyCode)) return;
         super.keyTyped(typedChar, keyCode);
     }
 
     protected void mouseClicked(int mouseX, int mouseY, int mouseButton) throws IOException {
         super.mouseClicked(mouseX, mouseY, mouseButton);
+        if (activeTab == MissionGuiTab.PATROL) {
+            if (patrolRouteField != null) patrolRouteField.mouseClicked(mouseX, mouseY, mouseButton);
+            return;
+        }
         if (targetField != null) targetField.mouseClicked(mouseX, mouseY, mouseButton);
         if (filterField != null) filterField.mouseClicked(mouseX, mouseY, mouseButton);
         if (policyField != null) policyField.mouseClicked(mouseX, mouseY, mouseButton);
         if (swarmIdField != null) swarmIdField.mouseClicked(mouseX, mouseY, mouseButton);
         if (swarmSizeField != null) swarmSizeField.mouseClicked(mouseX, mouseY, mouseButton);
+        if (patrolRouteField != null) patrolRouteField.mouseClicked(mouseX, mouseY, mouseButton);
     }
 
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
@@ -813,7 +877,9 @@ public final class GuiMissionControl extends GuiScreen {
             int left = width / 2 - 220;
             int right = width / 2 + 15;
             drawString(fontRenderer, "SECTION: " + activeTab.name(), left, 30, 0xB0D8FF);
-            drawString(fontRenderer, "ENTITY ID FILTER (namespace:path)", left, 42, 0xB0D8FF);
+            drawString(fontRenderer, activeTab == MissionGuiTab.PATROL
+                    ? "PATROL WAYPOINTS (x z [loiter-seconds]; ...)"
+                    : "ENTITY ID FILTER (namespace:path)", left, 42, 0xB0D8FF);
             if (activeTab == MissionGuiTab.VALIDATION) {
                 MissionValidationResult validation = MissionValidationResult.validate(definition);
                 drawString(fontRenderer, validation.isValid() ? "VALID" : "INVALID",
@@ -825,17 +891,28 @@ public final class GuiMissionControl extends GuiScreen {
                 }
 
             }
-            if (targetField != null) targetField.drawTextBox();
+            if (activeTab == MissionGuiTab.PATROL) {
+                if (patrolRouteField != null) patrolRouteField.drawTextBox();
+                drawString(fontRenderer, "1-16 points; each leg <= 384 blocks; AGL follows terrain.",
+                        left, 64, 0xAAAAAA);
+                drawString(fontRenderer, "No attacks. Native WingMan returns to its configured home after route completion.",
+                        right, 64, 0xAAAAAA);
+                drawString(fontRenderer, "Example: 120 80 30; 160 80 0; 160 120 15",
+                        left, 96, 0xFFFFFF);
+            } else if (targetField != null) targetField.drawTextBox();
             drawString(fontRenderer, "MISSION FILTER", right, 30, 0xB0D8FF);
-            if (filterField != null) filterField.drawTextBox();
-            drawString(fontRenderer, "TARGET POLICY (include=...,require=...,exclude=...)", left, 73, 0xB0D8FF);
-            if (policyField != null) policyField.drawTextBox();
-            drawString(fontRenderer, "SWARM ID", right, 51, 0xB0D8FF);
-            if (swarmIdField != null) swarmIdField.drawTextBox();
-            drawString(fontRenderer, "SWARM MAX", left, 51, 0xB0D8FF);
-            if (swarmSizeField != null) swarmSizeField.drawTextBox();
+            if (activeTab != MissionGuiTab.PATROL) {
+                if (filterField != null) filterField.drawTextBox();
+                drawString(fontRenderer, "TARGET POLICY (include=...,require=...,exclude=...)", left, 73, 0xB0D8FF);
+                if (policyField != null) policyField.drawTextBox();
+                drawString(fontRenderer, "SWARM ID", right, 51, 0xB0D8FF);
+                if (swarmIdField != null) swarmIdField.drawTextBox();
+                drawString(fontRenderer, "SWARM MAX", left, 51, 0xB0D8FF);
+                if (swarmSizeField != null) swarmSizeField.drawTextBox();
+            }
             if (!status.isEmpty()) drawString(fontRenderer, status, left, 64, 0xFFCC66);
-            drawString(fontRenderer, uavMode ? "UAV MISSIONS" : "GUIDED WEAPON MODE",
+            drawString(fontRenderer, activeTab == MissionGuiTab.PATROL ? "PATROL / LOITER ROUTE"
+                    : uavMode ? "UAV MISSIONS" : "GUIDED WEAPON MODE",
                     left, 80, 0x88FFAA);
             if (guidedMode) drawString(fontRenderer, "PAYLOAD: " + guidanceSummary,
                     right, 80, 0x88FFAA);
@@ -866,17 +943,25 @@ public final class GuiMissionControl extends GuiScreen {
                 if (y > height - 124) break;
             }
         }
-        drawString(fontRenderer, "SELECTED MISSION", right, panelTop + 2, 0xB0D8FF);
-        if (selected >= 0 && selected < missionRows.length) {
-            drawString(fontRenderer, fontRenderer.trimStringToWidth(missionRows[selected], 220),
-                    right, panelTop + 20, 0xFFFFFF);
-            drawString(fontRenderer, fontRenderer.trimStringToWidth(
-                    "ID: " + missionIds[selected], 220), right, panelTop + 35, 0xAAAAAA);
+        drawString(fontRenderer, activeTab == MissionGuiTab.MONITOR
+                        ? "HUD PRESENTATION" : "SELECTED MISSION",
+                right, panelTop + 2, 0xB0D8FF);
+        if (activeTab == MissionGuiTab.MONITOR) {
+            drawString(fontRenderer, "FLIR is presentation only; it adds no sensing.",
+                    right, panelTop + 52, 0xAAAAAA);
+            drawTelemetry(right, panelTop + 72);
         } else {
-            drawString(fontRenderer, "Select a mission to inspect.", right, panelTop + 20, 0xAAAAAA);
+            if (selected >= 0 && selected < missionRows.length) {
+                drawString(fontRenderer, fontRenderer.trimStringToWidth(missionRows[selected], 220),
+                        right, panelTop + 20, 0xFFFFFF);
+                drawString(fontRenderer, fontRenderer.trimStringToWidth(
+                        "ID: " + missionIds[selected], 220), right, panelTop + 35, 0xAAAAAA);
+            } else {
+                drawString(fontRenderer, "Select a mission to inspect.", right, panelTop + 20, 0xAAAAAA);
+            }
+            drawThreatSuggestions(right, panelTop + 56);
+            drawTelemetry(right, panelTop + 140);
         }
-        drawThreatSuggestions(right, panelTop + 56);
-        drawTelemetry(right, panelTop + 140);
     }
 
     private void drawThreatSuggestions(int x, int y) {
@@ -938,6 +1023,8 @@ public final class GuiMissionControl extends GuiScreen {
         drawString(fontRenderer, "Dangerous actions require a second press to confirm before execution.", x, 104, 0xFFCC66);
         drawString(fontRenderer, "Threat suggestions are derived from loaded hostile entities and target classification.", x, 118, 0xFFFFFF);
         drawString(fontRenderer, "Square strike uses: centerX centerY centerZ [size].", x, 132, 0xFFFFFF);
+        drawString(fontRenderer, "FLIR toggles only the current target bracket; it does not add sensing.",
+                x, 146, 0xFFFFFF);
         drawString(fontRenderer, "Command fallback: /rdpuav mission list", x, 150, 0xAAAAAA);
     }
 

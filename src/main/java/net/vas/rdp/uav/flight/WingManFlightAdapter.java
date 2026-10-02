@@ -16,6 +16,7 @@ import net.vas.rdp.uav.energy.UavEnergyHandler;
 import net.vas.rdp.uav.mission.MissionManager;
 import net.vas.rdp.uav.mission.MissionMovementAuthority;
 import net.vas.rdp.uav.mission.RDPMission;
+import net.vas.rdp.uav.mission.PatrolRoutePlanner;
 import net.vas.rdp.uav.profile.UavExecutionProfile;
 import net.vas.rdp.uav.profile.UavVehicleProfile;
 import net.vas.rdp.uav.profile.UavVehicleProfiles;
@@ -299,6 +300,53 @@ public final class WingManFlightAdapter {
                 "dispatch accepted aircraft={} target=({}, {}, {}) nodes={} attack={} targetId={}",
                 aircraftId, x, y, z, nodes.size(), attack, targetId);
         return true;
+    }
+
+    /** Installs a finite patrol route as native WingMan nodes; never writes flight motion. */
+    public boolean dispatchPatrolRoute(MCH_EntityAircraft aircraft,
+                                       List<PatrolRoutePlanner.FlightWaypoint> waypoints) {
+        if (nativeRouteUnsupported(aircraft) || waypoints == null || waypoints.isEmpty()
+                || waypoints.size() > 16) return false;
+        UUID aircraftId = aircraft.getUniqueID();
+        WingmanEntry existing = WingmanRegistry.get(aircraftId);
+        boolean inert = existing != null && existing.mission == null && !existing.hasOrder()
+                && (existing.autoState == AutonomousState.NONE
+                || existing.autoState == AutonomousState.PARKED);
+        if (existing != null && !inert) return false;
+        if (inert) WingmanRegistry.remove(aircraftId);
+
+        List<MissionNode> nodes = new ArrayList<>(waypoints.size() * 2);
+        for (PatrolRoutePlanner.FlightWaypoint waypoint : waypoints) {
+            if (waypoint == null || !Double.isFinite(waypoint.getX())
+                    || !Double.isFinite(waypoint.getY()) || !Double.isFinite(waypoint.getZ())
+                    || waypoint.getLoiterTicks() < 0
+                    || waypoint.getLoiterTicks() > net.vas.rdp.uav.mission.MissionWaypoint.MAX_LOITER_TICKS) {
+                return false;
+            }
+            nodes.add(MissionNode.flyTo(waypoint.getX(),
+                    normalizeHelicopterTargetY(aircraft, waypoint.getY()), waypoint.getZ()));
+            if (waypoint.getLoiterTicks() > 0) {
+                nodes.add(MissionNode.loiter(waypoint.getLoiterTicks()));
+            }
+        }
+        if (nodes.isEmpty()) return false;
+        WingmanEntry entry = new WingmanEntry(aircraft, WingmanEntry.ATK_NONE);
+        PatrolRoutePlanner.FlightWaypoint first = waypoints.get(0);
+        entry.autoTargetX = first.getX();
+        entry.autoTargetY = normalizeHelicopterTargetY(aircraft, first.getY());
+        entry.autoTargetZ = first.getZ();
+        entry.mission = nodes;
+        entry.missionIndex = 0;
+        entry.missionNodeTimer = 0;
+        entry.autoState = AutonomousState.ENROUTE;
+        WingmanRegistry.put(aircraftId, entry);
+        return true;
+    }
+
+    public boolean hasCompletedRoute(MCH_EntityAircraft aircraft) {
+        WingmanEntry entry = getEntry(aircraft);
+        return entry != null && entry.mission != null
+                && entry.missionIndex >= entry.mission.size();
     }
 
     /**

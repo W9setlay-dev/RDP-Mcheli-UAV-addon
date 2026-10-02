@@ -185,6 +185,10 @@ public final class MissionLifecycle {
             fail(world, mission, "NO_ATTACK_AMMUNITION", tick);
             return;
         }
+        if (mission.getMissionType() == MissionType.PATROL) {
+            dispatchPatrol(world, mission, aircraft, tick);
+            return;
+        }
 
         Target target = locateTarget(world, aircraft, mission);
         if (tick % 5L == 0L) {
@@ -734,6 +738,9 @@ public final class MissionLifecycle {
     private boolean updateMission(World world, RDPMission mission, MCH_EntityAircraft aircraft,
                                   Target target, long tick) {
         if (mission.isTerminal()) return false;
+        if (mission.getMissionType() == MissionType.PATROL) {
+            return updatePatrol(world, mission, aircraft, tick);
+        }
         if (mission.getState() == MissionState.REPLAN && target != null
                 && isDirectNativeWeaponMission(mission, aircraft)) {
             if (tick - mission.getLastUpdateTick() < GUIDANCE_RETRY_INTERVAL) {
@@ -1284,6 +1291,9 @@ public final class MissionLifecycle {
         net.minecraft.util.ResourceLocation key = EntityList.getKey(target);
         mission.updateTargetLock(key == null ? "rdpuav:unknown" : key.toString(),
                 world.provider.getDimension(), target.posX, target.posY, target.posZ, tick);
+        net.vas.rdp.uav.RDPUavMod.swarms().publishValidatedObservation(world,
+                mission.getAircraftId(), target.getUniqueID(), world.provider.getDimension(),
+                target.posX, target.posY, target.posZ, tick);
     }
 
     public ContactSnapshot contact(UUID targetId) {
@@ -1471,6 +1481,7 @@ public final class MissionLifecycle {
         if (refreshed) {
             routeRefreshes.put(aircraftId, new RouteRefresh(tick, target.x, guidanceY, target.z));
         }
+
         WingmanEntry entry = flight.getEntry(aircraft);
         RdpUavDebug.event("MissionRuntime", "ROUTE_REFRESH",
                 "mission", mission.getMissionId(), "aircraft", aircraftId, "tick", tick,
@@ -1479,6 +1490,90 @@ public final class MissionLifecycle {
                 "missionIndex", entry == null ? -1 : entry.missionIndex,
                 "nodeTimer", entry == null ? -1 : entry.missionNodeTimer,
                 "target", formatTarget(target));
+    }
+
+    private void dispatchPatrol(World world, RDPMission mission,
+                                MCH_EntityAircraft aircraft, long tick) {
+        PatrolRoutePlanner.Plan plan = PatrolRoutePlanner.plan(world, aircraft,
+                mission.getPatrolRoute(), profile(aircraft), tick);
+        if (!plan.isAccepted()) {
+            if (plan.getReason().contains("UNLOADED") || plan.getReason().contains("UNKNOWN")) {
+                defer(world, mission, plan.getReason(), MissionState.WAITING_FOR_WORLD, tick);
+            } else {
+                fail(world, mission, "PATROL_ROUTE_REJECTED_" + plan.getReason(), tick);
+            }
+            return;
+        }
+        if (!MissionMovementAuthority.claimControl(mission, aircraft.getUniqueID(), tick)) {
+            defer(world, mission, "PATROL_CONTROL_LEASE_REJECTED",
+                    MissionState.EXECUTION_STALLED, tick);
+            return;
+        }
+        if (!flight.dispatchPatrolRoute(aircraft, plan.getWaypoints())) {
+            defer(world, mission, "PATROL_WINGMAN_DISPATCH_REJECTED",
+                    MissionState.EXECUTION_STALLED, tick);
+            return;
+        }
+        if (mission.getState() == MissionState.PLANNED) {
+            mission.transitionTo(MissionState.DISPATCHED, tick);
+            mission.transitionTo(MissionState.TAKEOFF, tick);
+            mission.transitionTo(MissionState.CRUISE, tick);
+            mission.transitionTo(MissionState.SEARCHING, tick);
+        } else if (mission.getState() != MissionState.SEARCHING) {
+            if (!mission.getState().canTransitionTo(MissionState.SEARCHING)) {
+                fail(world, mission, "PATROL_REPLAN_STATE_REJECTED", tick);
+                return;
+            }
+            mission.transitionTo(MissionState.SEARCHING, tick, "PATROL_ROUTE_RESTORED");
+        }
+        mission.beginRouteProgressWindow(tick);
+        mission.setQueued(false);
+        RdpUavDebug.event("MissionRuntime", "PATROL_ROUTE_DISPATCH",
+                "mission", mission.getMissionId(), "aircraft", aircraft.getUniqueID(),
+                "waypoints", plan.getWaypoints().size(), "tick", tick, "accepted", true);
+        RDPMissionWorldData.get(world).markDirty();
+    }
+
+    private boolean updatePatrol(World world, RDPMission mission,
+                                 MCH_EntityAircraft aircraft, long tick) {
+        if (mission.getState() == MissionState.RETURNING) {
+            if (!flight.isParked(aircraft)) return false;
+            mission.transitionTo(MissionState.LANDING, tick);
+            mission.transitionTo(MissionState.PARKING, tick);
+            mission.complete(tick);
+            flight.release(aircraft);
+            manager.release(mission);
+            RDPMissionWorldData.get(world).markDirty();
+            return true;
+        }
+        if (flight.isReturning(aircraft)) {
+            if (mission.getState() != MissionState.RETURNING) {
+                if (!mission.getState().canTransitionTo(MissionState.RETURNING)) {
+                    fail(world, mission, "PATROL_RETURN_STATE_REJECTED", tick);
+                    return true;
+                }
+                mission.transitionTo(MissionState.RETURNING, tick, "PATROL_ROUTE_COMPLETE");
+                RDPMissionWorldData.get(world).markDirty();
+            }
+            return false;
+        }
+        WingmanEntry entry = flight.getEntry(aircraft);
+        if (entry == null || entry.mission == null || entry.mission.isEmpty()) {
+            dispatchPatrol(world, mission, aircraft, tick);
+            return true;
+        }
+        if (!flight.hasCompletedRoute(aircraft) && !flight.isParked(aircraft)) return false;
+
+        if (mission.getState().canTransitionTo(MissionState.RECOVERING)) {
+            mission.transitionTo(MissionState.RECOVERING, tick, "PATROL_ROUTE_COMPLETE");
+        }
+        flight.requestReturn(aircraft, "RDP_PATROL_COMPLETE");
+        if (!flight.isReturning(aircraft)) {
+            fail(world, mission, "PATROL_NATIVE_RETURN_REJECTED", tick);
+            return true;
+        }
+        RDPMissionWorldData.get(world).markDirty();
+        return true;
     }
 
     private void emitMissionSnapshot(RDPMission mission, MCH_EntityAircraft aircraft,

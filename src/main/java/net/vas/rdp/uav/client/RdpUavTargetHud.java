@@ -105,16 +105,23 @@ public final class RdpUavTargetHud {
         GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_LINE_BIT | GL11.GL_CURRENT_BIT
                 | GL11.GL_DEPTH_BUFFER_BIT | GL11.GL_COLOR_BUFFER_BIT);
         GlStateManager.pushMatrix();
-        GlStateManager.disableTexture2D();
-        GlStateManager.enableBlend();
-        GlStateManager.tryBlendFuncSeparate(770, 771, 1, 0);
-        GlStateManager.depthMask(false);
-        GL11.glLineWidth(2.0F);
-        if (locked) GlStateManager.color(1.0F, 0.12F, 0.12F, 0.95F);
-        else GlStateManager.color(1.0F, 0.72F, 0.12F, 0.8F);
-        drawTargetBrackets(box);
-        GlStateManager.popMatrix();
-        GL11.glPopAttrib();
+        try {
+            GlStateManager.disableTexture2D();
+            GlStateManager.enableBlend();
+            GlStateManager.tryBlendFuncSeparate(770, 771, 1, 0);
+            GlStateManager.depthMask(false);
+            GL11.glLineWidth(FlirHudStyle.lineWidth(RdpUavHudConfig.flirEnabled, locked));
+            int color = FlirHudStyle.bracketColor(RdpUavHudConfig.flirEnabled, locked);
+            GlStateManager.color(
+                    ((color >> 16) & 0xFF) / 255.0F,
+                    ((color >> 8) & 0xFF) / 255.0F,
+                    (color & 0xFF) / 255.0F,
+                    ((color >>> 24) & 0xFF) / 255.0F);
+            drawTargetBrackets(box);
+        } finally {
+            GlStateManager.popMatrix();
+            GL11.glPopAttrib();
+        }
     }
 
     private Entity resolveTarget(Minecraft mc, String targetUuid) {
