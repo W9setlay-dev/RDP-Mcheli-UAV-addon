@@ -94,6 +94,12 @@ server remained alive, but this is a runtime integration blocker for claiming
 persistent mission execution. No aircraft was spawned and no flight,
 payload, impact, or damage result was observed.
 
+This is a historical runtime record, not evidence for the current checkout.
+The saved 2026-09-27 client log fails during McHeliCE model initialization
+before a world is opened; no current server-ready mission run is available.
+The historical constructor report therefore remains unverified against a
+successful current world-load run.
+
 ## Guided weapon boundary
 
 `GuidedWeaponRegistry` is configuration-driven and keyed by the McHeli
@@ -119,3 +125,44 @@ rejected according to `rdp-uav-targets.cfg`. The policy only rejects a
 contact; it never teleports or otherwise mutates entities. One-way attack
 missions terminate with `ONE_WAY_TARGET_MISSED` when their locked contact
 disappears rather than retaining a native loiter route indefinitely.
+
+## McHeli fixed-wing and VTOL API audit — 2026-10-03
+
+Inspected the bundled `libs/mcheli-ce-1.5.1.jar` with Java 8 `javap`.
+SHA-256: `740B4DF7C6AE8FF66C2E54ADD422AF4F4495EEEF45DDF5815AF7FDF7FF49015B`.
+
+Verified signatures and type relationships:
+
+- `MCH_EntityPlane` extends `MCH_EntityAircraft`.
+- `MCH_EntityPlane` exposes `getMaxSpeed()`, `getPlaneInfo()`,
+  `canSwitchVtol()`, `getVtolMode()`, and the native method spelled
+  `swithVtolMode(boolean)`. It overrides the yaw/pitch/roll factor and update
+  methods used by its native control path.
+- `MCH_PlaneInfo` exposes `isEnableVtol`, `isDefaultVtol`, `vtolYaw`, and
+  `vtolPitch`. The `canSwitchVtol` bytecode checks plane information and native
+  transition preconditions. The inspected `swithVtolMode` bytecode shows
+  server-side nozzle-part status handling. This establishes an API surface,
+  not safe autonomous transition timing or successful hovering.
+- `MCH_EntityAircraft` exposes `setRotYaw(float)`, `setRotPitch(float)`,
+  `setRotRoll(float)`, `setThrottle(double)`, and `updateControl()`; the
+  current addon adapter uses these generic controls.
+
+Current addon mapping:
+
+- `AirframeController.forProfile` selects `HelicopterFlightController` for a
+  native `MCH_EntityHeli` or `HELICOPTER_ONE_WAY_FPV` profile. It selects
+  `FixedWingFlightController` for `ONE_WAY`, `REUSABLE_UAV`, and
+  `LONG_RANGE_REUSABLE_UAV` profiles.
+- The current profile enum distinguishes mission/execution policies, not
+  fixed-wing, VTOL, or rotary vehicle geometry. Controller selection does not
+  inspect `MCH_PlaneInfo.isEnableVtol` or current `getVtolMode`. The addon
+  adapter does not issue an explicit VTOL transition.
+- Built-in profile aliases include `mq9`/`reaper`, `switchblade`, `shahed136`,
+  `fpvdrone`, and `zala421`; those aliases do not establish that the matching
+  runtime McHeli definitions are planes or whether VTOL is enabled.
+
+Unknown: the exact aircraft definition files loaded with the gameplay
+content, their VTOL configuration, and their observed transition/flight
+behavior. The bundled jar inspection found the plane implementation classes,
+not the deployment's vehicle definitions. Any VTOL controller policy requires
+an explicit architecture choice and later live trajectory validation.

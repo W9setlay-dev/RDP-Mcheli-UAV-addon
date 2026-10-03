@@ -46,8 +46,21 @@ public final class MissionCoordinator {
             throw new IllegalArgumentException("Aircraft and target are required");
         }
         UUID assignedAircraft = aircraftByTarget.get(targetId);
-        if (assignedAircraft != null && !assignedAircraft.equals(aircraftId)) {
-            return force && assignedAircraft.equals(aircraftId);
+        if (assignedAircraft != null) {
+            if (assignedAircraft.equals(aircraftId)) {
+                if (role != null && !role.trim().isEmpty()) {
+                    rolesByAircraft.put(aircraftId, role.trim());
+                }
+                if (coverageZone != null && !coverageZone.trim().isEmpty()) {
+                    coverageByAircraft.put(aircraftId, coverageZone.trim());
+                    coverageByTarget.put(targetId, coverageZone.trim());
+                }
+                return true;
+            }
+            if (!force) {
+                return false;
+            }
+            release(assignedAircraft, targetId);
         }
         if (role != null && !role.trim().isEmpty()) {
             rolesByAircraft.put(aircraftId, role.trim());

@@ -2,6 +2,7 @@ package net.vas.rdp.uav.mission;
 
 import net.vas.rdp.uav.target.TargetPriority;
 import net.vas.rdp.uav.target.TargetPolicy;
+import net.vas.rdp.uav.swarm.SwarmConfiguration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -16,7 +17,9 @@ public final class MissionDefinition {
     private TargetPriority priority = TargetPriority.NORMAL;
     private boolean attack;
     private boolean swarmEnabled;
-    private int swarmMaximumMembers = 1;
+    private java.util.UUID swarmId;
+    private SwarmConfiguration swarmConfiguration = SwarmConfiguration.builder()
+            .maximumMembers(1).build();
     private final List<UUID> selectedUavs = new ArrayList<>();
     private TargetPolicy.Snapshot targetPolicy = TargetPolicy.builder().snapshot();
     private String searchMode = "DEFAULT";
@@ -33,7 +36,9 @@ public final class MissionDefinition {
     public TargetPriority getPriority() { return priority; }
     public boolean isAttack() { return attack; }
     public boolean isSwarmEnabled() { return swarmEnabled; }
-    public int getSwarmMaximumMembers() { return swarmMaximumMembers; }
+    public int getSwarmMaximumMembers() { return swarmConfiguration.getMaximumMembers(); }
+    public java.util.UUID getSwarmId() { return swarmId; }
+    public SwarmConfiguration getSwarmConfiguration() { return swarmConfiguration; }
     public List<UUID> getSelectedUavs() { return Collections.unmodifiableList(selectedUavs); }
     public TargetPolicy.Snapshot getTargetPolicy() { return targetPolicy; }
     public String getSearchMode() { return searchMode; }
@@ -58,7 +63,14 @@ public final class MissionDefinition {
     public MissionDefinition setSwarmEnabled(boolean value) { swarmEnabled = value; return this; }
     public MissionDefinition setSwarmMaximumMembers(int value) {
         if (value < 1 || value > 64) throw new IllegalArgumentException("Swarm size must be 1..64");
-        swarmMaximumMembers = value; return this;
+        swarmConfiguration = swarmConfiguration.toBuilder().maximumMembers(value).build();
+        return this;
+    }
+    public MissionDefinition setSwarmId(java.util.UUID value) { swarmId = value; return this; }
+    public MissionDefinition setSwarmConfiguration(SwarmConfiguration value) {
+        if (value == null) throw new IllegalArgumentException("Swarm configuration is required");
+        swarmConfiguration = value;
+        return this;
     }
     public MissionDefinition selectUav(UUID value) {
         if (value != null && !selectedUavs.contains(value)) selectedUavs.add(value);

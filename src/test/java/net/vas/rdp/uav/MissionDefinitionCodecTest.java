@@ -10,14 +10,25 @@ import org.junit.Test;
 import static org.junit.Assert.assertEquals;
 import java.util.UUID;
 import net.vas.rdp.uav.target.TargetPolicy;
+import net.vas.rdp.uav.swarm.SwarmConfiguration;
+import net.vas.rdp.uav.swarm.SwarmFormation;
+import net.vas.rdp.uav.swarm.SearchPattern;
+import net.vas.rdp.uav.swarm.SwarmLeadership;
 
 public class MissionDefinitionCodecTest {
     @Test
     public void definitionRoundTripsConfigurationOnlyFields() {
+        UUID swarmId = UUID.randomUUID();
         MissionDefinition source = new MissionDefinition()
                 .setTarget("minecraft:zombie")
                 .setSwarmEnabled(true)
                 .setSwarmMaximumMembers(3)
+                .setSwarmId(swarmId)
+                .setSwarmConfiguration(SwarmConfiguration.builder().maximumMembers(3)
+                        .horizontalSpacing(27D).verticalSpacing(13D)
+                        .formation(SwarmFormation.WEDGE).searchPattern(SearchPattern.SPIRAL)
+                        .leadership(SwarmLeadership.DESIGNATED_LEADER)
+                        .allowDuplicateTargets(true).allowCommanderFailover(false).build())
                 .setSearchMode("sector")
                 .selectUav(UUID.randomUUID())
                 .setTargetPolicy(TargetPolicy.builder()
@@ -33,6 +44,15 @@ public class MissionDefinitionCodecTest {
         assertEquals(source.isSwarmEnabled(), decoded.isSwarmEnabled());
         assertEquals(source.getSearchMode(), decoded.getSearchMode());
         assertEquals(source.getSelectedUavs(), decoded.getSelectedUavs());
+        assertEquals(swarmId, decoded.getSwarmId());
+        assertEquals(SwarmFormation.WEDGE, decoded.getSwarmConfiguration().getFormation());
+        assertEquals(SearchPattern.SPIRAL, decoded.getSwarmConfiguration().getSearchPattern());
+        assertEquals(SwarmLeadership.DESIGNATED_LEADER,
+                decoded.getSwarmConfiguration().getLeadership());
+        assertEquals(27D, decoded.getSwarmConfiguration().getHorizontalSpacing(), 0D);
+        assertEquals(13D, decoded.getSwarmConfiguration().getVerticalSpacing(), 0D);
+        assertEquals(true, decoded.getSwarmConfiguration().isAllowDuplicateTargets());
+        assertEquals(false, decoded.getSwarmConfiguration().isAllowCommanderFailover());
         assertEquals(source.getTargetPolicy().getInclude(), decoded.getTargetPolicy().getInclude());
         assertEquals(source.getTargetPolicy().isRejectEmbedded(),
                 decoded.getTargetPolicy().isRejectEmbedded());

@@ -56,6 +56,7 @@ public final class RDPMission {
     private MissionExecutionStage executionStage = MissionExecutionStage.PLANNING;
     private UUID parentMissionId;
     private UUID childMissionId;
+    private UUID swarmId;
     public static final int MAX_RECOVERY_ATTEMPTS = 5;
     private String lastTransitionReason;
     private TargetPolicy.Snapshot targetPolicy = TargetPolicy.builder().snapshot();
@@ -113,6 +114,7 @@ public final class RDPMission {
         controlOwner = ownerFor(nextState);
         executionStage = MissionExecutionStage.fromState(nextState, missionType);
         lastTransitionReason = reason.trim();
+        validateStateConsistency();
         RdpUavDebug.event("MissionLifecycle", "MISSION_STATE_TRANSITION",
                 "mission", missionId,
                 "aircraft", aircraftId,
@@ -123,6 +125,22 @@ public final class RDPMission {
                 "tick", tick,
                 "target", targetId,
                 "reason", lastTransitionReason);
+    }
+
+    public void validateStateConsistency() {
+        if (state == null) {
+            throw new IllegalStateException("Mission state is required for " + missionId);
+        }
+        MissionPhase expectedPhase = phaseFor(state);
+        if (phase != expectedPhase) {
+            throw new IllegalStateException("Mission phase does not match state for "
+                    + missionId + ": " + phase + " != " + expectedPhase + " for " + state);
+        }
+        ControlOwner expectedOwner = ownerFor(state);
+        if (controlOwner != expectedOwner) {
+            throw new IllegalStateException("Mission control owner does not match state for "
+                    + missionId + ": " + controlOwner + " != " + expectedOwner + " for " + state);
+        }
     }
 
     public boolean isTerminal() {
@@ -170,6 +188,10 @@ public final class RDPMission {
         if (targetId == null) {
             throw new IllegalArgumentException("Target UUID is required");
         }
+        if (state == MissionState.KAMIKADZE_TARGET && this.targetId != null
+                && !this.targetId.equals(targetId)) {
+            throw new IllegalStateException("Terminal target cannot be replaced");
+        }
         this.targetId = targetId;
         this.targetLock = new TargetLock(targetId, "rdpuav:unknown", dimension,
                 0.0D, 0.0D, 0.0D, tick, ownerId, missionId);
@@ -179,6 +201,9 @@ public final class RDPMission {
     }
 
     public void lockPoint(long tick) {
+        if (state == MissionState.KAMIKADZE_TARGET && targetId != null) {
+            throw new IllegalStateException("Terminal target cannot be replaced");
+        }
         targetId = null;
         targetLock = null;
         transitionTo(MissionState.TARGET_LOCKED, tick);
@@ -310,6 +335,9 @@ public final class RDPMission {
     public void applyOperatorAreaLock(double x, double y, double z, long tick) {
         if (!Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)) {
             throw new IllegalArgumentException("Area lock coordinates must be finite");
+        }
+        if (state == MissionState.KAMIKADZE_TARGET && targetId != null) {
+            throw new IllegalStateException("Terminal target cannot be replaced");
         }
         this.targetSpec = TargetSpec.point(x, y, z, targetSpec.getPriority());
         this.targetId = null;
@@ -648,6 +676,7 @@ public final class RDPMission {
         mission.reportId = reportId;
         mission.lastTransitionReason = failureReason == null
                 ? "RESTORED_" + state.name() : failureReason;
+        mission.validateStateConsistency();
         return mission;
     }
 
@@ -673,7 +702,22 @@ public final class RDPMission {
         child.parentMissionId = missionId;
     }
 
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj) return true;
+        if (!(obj instanceof RDPMission)) return false;
+        RDPMission other = (RDPMission) obj;
+        return missionId.equals(other.missionId);
+    }
+
+    @Override
+    public int hashCode() {
+        return missionId.hashCode();
+    }
+
     public UUID getMissionId() { return missionId; }
+    public UUID getSwarmId() { return swarmId; }
+    public void setSwarmId(UUID value) { swarmId = value; }
     public UUID getOwnerId() { return ownerId; }
     public UUID getAircraftId() { return aircraftId; }
     public String getAircraftType() { return aircraftType; }

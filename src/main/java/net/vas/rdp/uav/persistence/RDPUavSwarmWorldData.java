@@ -55,20 +55,38 @@ public final class RDPUavSwarmWorldData extends WorldSavedData {
             if (value.hasKey("missionParticipation")) {
                 swarm.setMissionParticipation(value.getBoolean("missionParticipation"));
             }
-            if (value.hasKey("missionMaximumMembers")) {
-                swarm.setMissionMaximumMembers(value.getInteger("missionMaximumMembers"));
-            }
             if (value.hasKey("allowDuplicateTargets")) {
                 swarm.setAllowDuplicateTargets(value.getBoolean("allowDuplicateTargets"));
             }
             if (value.hasKey("configurationMaximumMembers")) {
+                SwarmConfiguration previous = swarm.getConfiguration();
                 swarm.setConfiguration(SwarmConfiguration.builder()
                         .maximumMembers(value.getInteger("configurationMaximumMembers"))
-                        .horizontalSpacing(value.getDouble("configurationHorizontalSpacing"))
-                        .verticalSpacing(value.getDouble("configurationVerticalSpacing"))
-                        .allowDuplicateTargets(value.getBoolean("configurationAllowDuplicates"))
-                        .allowCommanderFailover(value.getBoolean("configurationCommanderFailover"))
+                        .horizontalSpacing(value.hasKey("configurationHorizontalSpacing")
+                                ? value.getDouble("configurationHorizontalSpacing")
+                                : previous.getHorizontalSpacing())
+                        .verticalSpacing(value.hasKey("configurationVerticalSpacing")
+                                ? value.getDouble("configurationVerticalSpacing")
+                                : previous.getVerticalSpacing())
+                        .allowDuplicateTargets(value.hasKey("configurationAllowDuplicates")
+                                ? value.getBoolean("configurationAllowDuplicates")
+                                : swarm.isAllowDuplicateTargets())
+                        .allowCommanderFailover(value.hasKey("configurationCommanderFailover")
+                                ? value.getBoolean("configurationCommanderFailover")
+                                : previous.isAllowCommanderFailover())
+                        .formation(value.hasKey("configurationFormation")
+                                ? SwarmFormation.valueOf(value.getString("configurationFormation"))
+                                : swarm.getFormation())
+                        .searchPattern(value.hasKey("configurationSearchPattern")
+                                ? SearchPattern.valueOf(value.getString("configurationSearchPattern"))
+                                : swarm.getSearchPattern())
+                        .leadership(value.hasKey("configurationLeadership")
+                                ? SwarmLeadership.valueOf(value.getString("configurationLeadership"))
+                                : swarm.getLeadership())
                         .build());
+            }
+            if (value.hasKey("missionMaximumMembers")) {
+                swarm.setMissionMaximumMembers(value.getInteger("missionMaximumMembers"));
             }
             if (value.hasKey("sharedTarget")) {
                 try {
@@ -164,6 +182,9 @@ public final class RDPUavSwarmWorldData extends WorldSavedData {
             value.setDouble("configurationVerticalSpacing", configuration.getVerticalSpacing());
             value.setBoolean("configurationAllowDuplicates", configuration.isAllowDuplicateTargets());
             value.setBoolean("configurationCommanderFailover", configuration.isAllowCommanderFailover());
+            value.setString("configurationFormation", configuration.getFormation().name());
+            value.setString("configurationSearchPattern", configuration.getSearchPattern().name());
+            value.setString("configurationLeadership", configuration.getLeadership().name());
             if (swarm.getDesignatedLeader() != null) {
                 value.setString("leader", swarm.getDesignatedLeader().toString());
             }

@@ -50,6 +50,21 @@ public final class MissionValidationResult {
         if (definition.isSwarmEnabled() && definition.getSwarmMaximumMembers() < 1) {
             errors.add("Swarm size must be positive");
         }
+        if (definition.isSwarmEnabled() && definition.getSwarmId() == null) {
+            errors.add("An owned swarm must be selected before launch");
+        }
+        if (!definition.isSwarmEnabled() && !definition.getSelectedUavs().isEmpty()) {
+            errors.add("Selected UAVs require swarm execution");
+        }
+        if (definition.isAttack() && definition.getMissionType() != MissionType.STRIKE
+                && definition.getMissionType() != MissionType.DESTROYING) {
+            errors.add("Attack authorization requires a strike mission type");
+        }
+        if (definition.isSwarmEnabled()
+                && definition.isAttack() != (definition.getMissionType() == MissionType.STRIKE
+                || definition.getMissionType() == MissionType.DESTROYING)) {
+            errors.add("Swarm strike type and attack authorization must agree");
+        }
         if (definition.getGuidanceMode().equals("UNSPECIFIED")) errors.add("Guidance mode is required");
         if (definition.getRecoveryMode().equals("UNSPECIFIED")) errors.add("Recovery mode is required");
         return new MissionValidationResult(errors);

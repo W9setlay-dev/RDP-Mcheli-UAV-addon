@@ -29,4 +29,20 @@ public class SwarmAssignmentManagerTest {
                 == SwarmRole.EXECUTOR ? swarm.getMembers().get(0).getRole()
                 : swarm.getMembers().get(1).getRole());
     }
+
+    @Test
+    public void operationalRoleAssignmentDoesNotChangeVehicleProfileOrCapabilities() {
+        SwarmRecord swarm = new SwarmRecord(UUID.randomUUID(), UUID.randomUUID(), "ops");
+        UUID aircraft = UUID.randomUUID();
+        SwarmMember member = new SwarmMember(aircraft, "LONG_RANGE_REUSABLE_UAV",
+                true, true);
+        swarm.add(member);
+
+        assertTrue(new SwarmAssignmentManager().assign(swarm, aircraft, SwarmRole.EXECUTOR));
+
+        assertEquals(SwarmRole.EXECUTOR, member.getRole());
+        assertEquals("LONG_RANGE_REUSABLE_UAV", member.getProfile());
+        assertTrue(member.supportsLongRange());
+        assertTrue(member.hasPayload());
+    }
 }

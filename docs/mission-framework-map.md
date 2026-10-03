@@ -7,7 +7,7 @@ surfaces. It distinguishes source/test evidence from live MCheli behavior.
 |---|---|---|---|
 | Task creation | `RdpUavNetwork`, `GuiMissionControl`, `MissionManager` | Mission identity, owner, aircraft, target specification, and queue assignment are represented in source and covered by tests | Exact connected-player creation flow still needs a target-instance mission trace |
 | Preflight validation | `MissionLifecycle.dispatch`, `WingManFlightAdapter`, `GuidedWeaponAdapter`, `TargetAuthority` | Server checks aircraft presence, dimension, fuel, ammunition, target availability, ownership, and configured capability | Native aircraft-specific acceptance is not proven without live mission execution |
-| Mission persistence | `RDPMissionWorldData`, `MissionNbtCodec` | Schema 4 migration preserves accepted-launch semantics, validates lifecycle ownership, and rejects malformed persisted states | In-memory projectile-to-mission association is not restored after server restart |
+| Mission persistence | `RDPMissionWorldData`, `MissionNbtCodec` | Current worktree codec declares schema 7 and persists mission lifecycle metadata; the codec is locally modified, so this is not a clean-revision migration claim | In-memory projectile-to-mission association is not restored after server restart; live save/reload is unverified |
 | Dispatch and route | `MissionLifecycle`, `MissionSafety`, `WingManFlightAdapter`, `AirframeController`, `NativeAircraftControlAdapter` | WingMan supplies route setpoints; a leased RDP fixed-wing/helicopter controller writes bounded MCheliCE attitude/throttle setpoints; matching WingMan movement helpers are guarded | Physical route acceptance, airframe response, and per-profile calibration require live telemetry |
 | Entity designation | `TargetAuthority`, `TargetResolver`, `ServerAiTargetLockHandler` | Server validates UUID, dimension, loaded state, range, profile, ownership, and mission assignment | No nearby-target substitution is permitted, but exact runtime lock retention remains unobserved |
 | Point/area designation | `RDPMission`, `SquareStrikePlan`, `WingManFlightAdapter.armSquareStrike` | Deterministic bounded pass nodes are generated; coordinate geometry is regression-tested | Native square-strike execution and weapon effect remain runtime-unverified |
@@ -22,20 +22,17 @@ surfaces. It distinguishes source/test evidence from live MCheli behavior.
 
 ## Runtime evidence boundary
 
-The ForgeGradle development server currently reaches the following milestones in
-a clean run:
+Historical project records describe a ForgeGradle server reaching `Done` and a
+separate RDP Core world-data constructor failure. Those records are not a
+current runtime acceptance result. The saved 2026-09-27 development client log
+loads Forge 14.23.5.2768 and addon hooks, then crashes during client
+initialization in McHeliCE `LegacyModelLoader` with a missing
+`IModel.asVanillaModel()` method, before entering a world. The root
+`logs/latest.log` is empty, and the compressed 2026-10-02 log contains only
+test-worker hook messages. No saved current server-ready mission run exists.
 
-1. RDP-UAV coremod loads.
-2. Forge loads the expected mod set.
-3. `DedicatedServer: Done` is emitted.
-4. RDP Core marks the server context `RUNNING`.
-
-Those milestones prove server initialization only. They do not prove aircraft
-movement, target lock retention, route convergence, projectile impact, or game
-effect confirmation.
-
-The development log also contains a nonfatal
-`RDPWorldSavedData(String)` reflection failure from the external
-`rdpcore-1.0.0.jar`. This repository does not modify that dependency. The
-failure must remain separately tracked until a compatible RDP Core artifact is
-available.
+These records prove neither mission persistence nor aircraft movement, target
+lock retention, route convergence, projectile impact, or game-effect
+confirmation. The historical RDP Core constructor report remains unverified
+against a successful current world-load run; local JAR signatures alone are
+not runtime evidence.

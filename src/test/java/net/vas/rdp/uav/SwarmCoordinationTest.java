@@ -9,6 +9,10 @@ import net.vas.rdp.uav.swarm.SwarmState;
 import net.vas.rdp.uav.swarm.SwarmStatus;
 import net.vas.rdp.uav.swarm.SwarmRole;
 import net.vas.rdp.uav.swarm.SwarmTaskAllocator;
+import net.vas.rdp.uav.swarm.SwarmConfiguration;
+import net.vas.rdp.uav.swarm.SwarmLeadership;
+import net.vas.rdp.uav.swarm.SwarmFormation;
+import net.vas.rdp.uav.swarm.SwarmFormationGuidance;
 import org.junit.Test;
 
 import java.util.Arrays;
@@ -49,6 +53,49 @@ public class SwarmCoordinationTest {
         SwarmRecord swarm = new SwarmRecord(UUID.randomUUID(), UUID.randomUUID(), "formation");
         swarm.add(new SwarmMember(UUID.randomUUID(), "SEARCHER", false, false));
         assertEquals(1, new FormationController().slots(swarm).size());
+    }
+
+    @Test
+    public void formationSpacingOffsetsFlightWaypointInHeadingFrame() {
+        SwarmRecord swarm = new SwarmRecord(UUID.randomUUID(), UUID.randomUUID(), "formation");
+        swarm.setConfiguration(SwarmConfiguration.builder().maximumMembers(4)
+                .horizontalSpacing(10D).verticalSpacing(6D)
+                .formation(SwarmFormation.LINE).leadership(SwarmLeadership.DYNAMIC_LEADER).build());
+        UUID leaderId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        UUID followerId = UUID.fromString("00000000-0000-0000-0000-000000000002");
+        swarm.add(new SwarmMember(leaderId, "SEARCHER", false, false));
+        swarm.add(new SwarmMember(followerId, "SEARCHER", false, false));
+        SwarmFormationGuidance.Target target = SwarmFormationGuidance.offsetTarget(
+                swarm, followerId, 0D, 100D, 100D, 0D, 0D, 0D);
+        assertEquals(10D, target.x, 0.001D);
+        assertEquals(106D, target.y, 0.001D);
+        assertEquals(100D, target.z, 0.001D);
+    }
+
+    @Test
+    public void designatedLeaderFailoverHonorsConfiguration() {
+        SwarmRecord swarm = new SwarmRecord(UUID.randomUUID(), UUID.randomUUID(), "leadership");
+        UUID leaderId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        UUID followerId = UUID.fromString("00000000-0000-0000-0000-000000000002");
+        SwarmMember leader = new SwarmMember(leaderId, "SEARCHER", false, false);
+        swarm.add(leader);
+        swarm.add(new SwarmMember(followerId, "SEARCHER", false, false));
+        swarm.setDesignatedLeader(leaderId);
+        swarm.setLeadership(SwarmLeadership.DESIGNATED_LEADER);
+        leader.setAvailable(false);
+        swarm.setConfiguration(SwarmConfiguration.builder().maximumMembers(4)
+                .leadership(SwarmLeadership.DESIGNATED_LEADER)
+                .allowCommanderFailover(false).build());
+        assertEquals(null, swarm.referenceMember());
+        swarm.setConfiguration(swarm.getConfiguration().toBuilder()
+                .allowCommanderFailover(true).build());
+        assertEquals(followerId, swarm.referenceMember());
+    }
+
+    @Test
+    public void requestedMemberLimitIsNotSilentlyClampedByClientLocalPolicy() {
+        assertEquals(64, SwarmConfiguration.builder().maximumMembers(64).build()
+                .getMaximumMembers());
     }
 
     @Test

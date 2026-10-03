@@ -250,7 +250,7 @@ public final class RdpUavCommand extends CommandBase {
                 return;
             }
             net.vas.rdp.uav.swarm.SwarmRecord record = RDPUavMod.swarms().find(player.world, swarmId);
-            if (RDPUavMod.swarms().owns(record, player.getUniqueID())) {
+            if (!RDPUavMod.swarms().owns(record, player.getUniqueID())) {
                 throw new IllegalArgumentException("Swarm not found or unauthorized.");
             }
             player.sendMessage(new TextComponentString("Swarm " + record.getName() + " state="

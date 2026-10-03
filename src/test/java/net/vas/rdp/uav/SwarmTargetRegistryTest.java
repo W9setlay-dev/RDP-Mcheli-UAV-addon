@@ -21,4 +21,16 @@ public class SwarmTargetRegistryTest {
         registry.clear();
         assertEquals(SwarmTargetState.CLEAR, registry.getState());
     }
+
+    @Test
+    public void sharedTargetRegistryRejectsSilentReplacement() {
+        SwarmTargetRegistry registry = new SwarmTargetRegistry();
+        UUID initial = UUID.randomUUID();
+        UUID replacement = UUID.randomUUID();
+
+        assertEquals(Boolean.TRUE, registry.lock(initial, 0, 1.0D, 2.0D, 3.0D, 10L));
+        assertEquals(Boolean.FALSE, registry.lock(replacement, 0, 4.0D, 5.0D, 6.0D, 11L));
+        assertEquals(initial, registry.getTargetId());
+        assertEquals(SwarmTargetState.LOCKED, registry.getState());
+    }
 }

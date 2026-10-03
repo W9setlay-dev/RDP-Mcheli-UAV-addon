@@ -174,6 +174,7 @@ public final class MissionManager {
             recordTransferred = record.transfer(parent.getMissionId(), child.getMissionId());
             if (!recordTransferred) throw new IllegalStateException("AIRCRAFT_RECORD_TRANSFER_REJECTED");
             parent.linkChildMission(child);
+            child.setSwarmId(parent.getSwarmId());
             data.add(child);
             childStored = true;
             queue.enqueue(child);

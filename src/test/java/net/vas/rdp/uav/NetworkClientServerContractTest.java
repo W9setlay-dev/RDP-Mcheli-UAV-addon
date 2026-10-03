@@ -4,7 +4,13 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import net.vas.rdp.uav.client.GuiMissionControl;
 import net.vas.rdp.uav.mission.MissionDefinition;
+import net.vas.rdp.uav.mission.MissionType;
 import net.vas.rdp.uav.network.RdpUavNetwork;
+import net.vas.rdp.uav.swarm.SwarmConfiguration;
+import net.vas.rdp.uav.swarm.SwarmFormation;
+import net.vas.rdp.uav.swarm.SearchPattern;
+import net.vas.rdp.uav.swarm.SwarmLeadership;
+import net.vas.rdp.uav.client.SwarmGuiState;
 import org.junit.Test;
 
 import java.nio.charset.StandardCharsets;
@@ -14,6 +20,7 @@ import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 /**
@@ -45,16 +52,93 @@ public class NetworkClientServerContractTest {
 
     @Test
     public void versionedMissionDefinitionLaunchPreservesConfiguration() {
+        UUID swarmId = UUID.randomUUID();
+        UUID selectedId = UUID.randomUUID();
         MissionDefinition definition = new MissionDefinition()
+                .setMissionType(MissionType.STRIKE)
                 .setTarget("minecraft:zombie")
                 .setAttack(true)
                 .setSwarmEnabled(true)
-                .setSwarmMaximumMembers(4);
+                .setSwarmMaximumMembers(4)
+                .setSwarmId(swarmId)
+                .selectUav(selectedId)
+                .setSwarmConfiguration(SwarmConfiguration.builder().maximumMembers(4)
+                        .horizontalSpacing(30D).verticalSpacing(15D)
+                        .formation(SwarmFormation.RING).searchPattern(SearchPattern.LANE)
+                        .leadership(SwarmLeadership.DESIGNATED_LEADER)
+                        .allowDuplicateTargets(true).allowCommanderFailover(false).build());
         RdpUavNetwork.CreateMission.LaunchMissionDefinition received = roundTrip(
                 new RdpUavNetwork.CreateMission.LaunchMissionDefinition(definition),
                 new RdpUavNetwork.CreateMission.LaunchMissionDefinition());
         assertEquals("minecraft:zombie", getLaunchTarget(received));
         assertFalse(getLaunchUnsupported(received));
+        assertEquals(swarmId.toString(), received.getSwarmId());
+        assertEquals(java.util.Collections.singletonList(selectedId), received.getSelectedUavs());
+        MissionDefinition decoded = received.toMissionDefinition();
+        assertEquals(SwarmFormation.RING, decoded.getSwarmConfiguration().getFormation());
+        assertEquals(SearchPattern.LANE, decoded.getSwarmConfiguration().getSearchPattern());
+        assertEquals(30D, decoded.getSwarmConfiguration().getHorizontalSpacing(), 0D);
+        assertEquals(15D, decoded.getSwarmConfiguration().getVerticalSpacing(), 0D);
+        assertFalse(decoded.getSwarmConfiguration().isAllowCommanderFailover());
+    }
+
+    @Test
+    public void versionThreeMissionPacketStillDecodesWithoutSwarmExtension() {
+        RdpUavNetwork.CreateMission.LaunchMissionDefinition sent =
+                new RdpUavNetwork.CreateMission.LaunchMissionDefinition(new MissionDefinition()
+                        .setTarget("minecraft:zombie"));
+        setPrivateInt(sent, "version", 3);
+        RdpUavNetwork.CreateMission.LaunchMissionDefinition received = roundTrip(sent,
+                new RdpUavNetwork.CreateMission.LaunchMissionDefinition());
+        assertEquals("", received.getSwarmId());
+        assertTrue(received.getSelectedUavs().isEmpty());
+    }
+
+    @Test
+    public void dedicatedSwarmPacketsPreserveOwnerIntentAndSnapshotRows() {
+        UUID swarmId = UUID.randomUUID();
+        UUID aircraftId = UUID.randomUUID();
+        assertSameWirePayload(new RdpUavNetwork.RequestSwarmSnapshot(swarmId.toString()),
+                new RdpUavNetwork.RequestSwarmSnapshot());
+        assertSameWirePayload(new RdpUavNetwork.SwarmOperatorCommand(2, swarmId.toString(),
+                        aircraftId.toString(), ""),
+                new RdpUavNetwork.SwarmOperatorCommand());
+        assertSameWirePayload(new RdpUavNetwork.SwarmOperatorCommand(6, swarmId.toString(),
+                        aircraftId.toString(), ""),
+                new RdpUavNetwork.SwarmOperatorCommand());
+        assertSameWirePayload(new RdpUavNetwork.SwarmSharedTargetCommand(
+                        swarmId.toString(), aircraftId, false),
+                new RdpUavNetwork.SwarmSharedTargetCommand());
+        assertSameWirePayload(new RdpUavNetwork.SwarmConfigurationUpdate(swarmId.toString(),
+                        SwarmConfiguration.builder().maximumMembers(4).horizontalSpacing(24D)
+                                .verticalSpacing(12D).formation(SwarmFormation.WEDGE)
+                                .searchPattern(SearchPattern.SPIRAL)
+                                .leadership(SwarmLeadership.NO_SINGLE_LEADER).build(), true),
+                new RdpUavNetwork.SwarmConfigurationUpdate());
+
+        SwarmGuiState.Member member = new SwarmGuiState.Member(aircraftId,
+                "REUSABLE_UAV", "SCOUT", "ASSIGNED", true, false, true);
+        SwarmGuiState.Swarm swarm = new SwarmGuiState.Swarm(swarmId, "alpha", "DEPLOYING",
+                "ASSIGNED", "WEDGE", "SPIRAL", "NO_SINGLE_LEADER", 4,
+                24D, 12D, false, true, true, "null", "CLEAR",
+                java.util.Collections.singletonList(member));
+        RdpUavNetwork.SwarmSnapshot snapshot = roundTrip(
+                new RdpUavNetwork.SwarmSnapshot(java.util.Collections.singletonList(swarm)),
+                new RdpUavNetwork.SwarmSnapshot());
+        assertEquals(swarmId, snapshot.getSwarms().get(0).id);
+        assertEquals(aircraftId, snapshot.getSwarms().get(0).members.get(0).aircraftId);
+        assertEquals("SPIRAL", snapshot.getSwarms().get(0).searchPattern);
+        assertEquals(true, snapshot.getSwarms().get(0).members.get(0).designatedLeader);
+    }
+
+    private static void setPrivateInt(Object target, String name, int value) {
+        try {
+            java.lang.reflect.Field field = target.getClass().getDeclaredField(name);
+            field.setAccessible(true);
+            field.setInt(target, value);
+        } catch (ReflectiveOperationException failure) {
+            throw new AssertionError(failure);
+        }
     }
 
     private static String getLaunchTarget(RdpUavNetwork.CreateMission.LaunchMissionDefinition message) {

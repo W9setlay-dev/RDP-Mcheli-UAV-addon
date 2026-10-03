@@ -23,6 +23,7 @@ import net.vas.rdp.uav.target.TargetSelectionMode;
 import net.vas.rdp.uav.target.ContactLifecycle;
 import net.vas.rdp.uav.target.ContactSnapshot;
 import net.vas.rdp.uav.target.TargetAuthority;
+import net.vas.rdp.uav.target.TargetPolicy;
 import net.vas.rdp.uav.target.TargetResolver;
 import net.vas.rdp.uav.target.TargetClassifier;
 import net.vas.rdp.uav.flight.KamikazeImpactDetector;
@@ -1210,7 +1211,8 @@ public final class MissionLifecycle {
         Entity current = targets.findLoaded(world, mission.getTargetId());
         UavVehicleProfile vehicleProfile = profile(aircraft);
         if (current != null && targetDistance(aircraft, Target.entity(current))
-                <= vehicleProfile.getLockRange()) {
+                <= vehicleProfile.getLockRange()
+                && canMissionUseTarget(world, mission, current.getUniqueID())) {
             targets.observe(world, current, targetDistance(aircraft, Target.entity(current)),
                     tick, ContactLifecycle.TRACKING);
             projectTargetLock(world, mission, current, tick);
@@ -1227,9 +1229,18 @@ public final class MissionLifecycle {
                 vehicleProfile.getDetectionRange(),
                 mission.getTargetSpec());
         if (candidates.isEmpty()) return null;
-        Entity reacquired = candidates.get(0).getEntity();
+        Entity reacquired = null;
+        TargetResolver.EntityCandidate selectedCandidate = null;
+        for (TargetResolver.EntityCandidate candidate : candidates) {
+            if (canMissionUseTarget(world, mission, candidate.getEntity().getUniqueID())) {
+                reacquired = candidate.getEntity();
+                selectedCandidate = candidate;
+                break;
+            }
+        }
+        if (reacquired == null || selectedCandidate == null) return null;
         targets.observe(world, reacquired,
-                Math.sqrt(candidates.get(0).getDistanceSquared()), tick, ContactLifecycle.SELECTABLE);
+                Math.sqrt(selectedCandidate.getDistanceSquared()), tick, ContactLifecycle.SELECTABLE);
         if (mission.getTargetId() == null) mission.reacquireTarget(reacquired.getUniqueID(), tick);
         else if (!mission.getTargetId().equals(reacquired.getUniqueID())) {
             // Manual and automatic searches may recover a moved entity, but
@@ -1246,6 +1257,27 @@ public final class MissionLifecycle {
             return resolvePointTarget(world, mission.getTargetSpec().getX(),
                     mission.getTargetSpec().getY(), mission.getTargetSpec().getZ());
         }
+        UUID sharedTargetId = net.vas.rdp.uav.RDPUavMod.swarms()
+                .sharedTargetId(world, mission);
+        if (sharedTargetId != null && mission.getTargetId() == null) {
+            Entity sharedTarget = targets.findLoaded(world, sharedTargetId);
+            if (sharedTarget == null || !TargetPolicy.builder()
+                    .include(mission.getTargetPolicy().getInclude().toArray(new String[0]))
+                    .require(mission.getTargetPolicy().getRequire().toArray(new String[0]))
+                    .exclude(mission.getTargetPolicy().getExclude().toArray(new String[0]))
+                    .rejectDeeplyEmbedded(mission.getTargetPolicy().isRejectEmbedded())
+                    .allowHostileVehicles(mission.getTargetPolicy().isAllowVehicleTargets())
+                    .withMinimumConfidence(mission.getTargetPolicy().getMinimumConfidence())
+                    .evaluate(world, sharedTarget, null).isAccepted()
+                    || !canMissionUseTarget(world, mission, sharedTargetId)) {
+                return null;
+            }
+            targets.observe(world, sharedTarget, aircraft.getDistance(sharedTarget),
+                    world.getTotalWorldTime(), ContactLifecycle.SELECTED);
+            mission.reacquireTarget(sharedTargetId, world.getTotalWorldTime());
+            projectTargetLock(world, mission, sharedTarget, world.getTotalWorldTime());
+            return Target.entity(sharedTarget);
+        }
         Entity current = targets.findLoaded(world, mission.getTargetId());
         // Once an operator has locked an entity UUID, disappearance must
         // remain TARGET_LOST/WATING_FOR_TARGET until that same UUID returns.
@@ -1253,6 +1285,11 @@ public final class MissionLifecycle {
         if (current == null && mission.getTargetId() == null
                 && mission.getTargetSelectionMode() == TargetSelectionMode.MANUAL) {
             current = targets.findLoadedByRegistryId(world, mission.getTargetSpec().getRegistryId());
+        }
+        if (current != null && !canMissionUseTarget(world, mission, current.getUniqueID())) {
+            if (mission.getTargetId() != null
+                    || mission.getTargetSelectionMode() != TargetSelectionMode.MANUAL) return null;
+            current = null;
         }
         if (current != null && !net.vas.rdp.uav.target.TargetPolicy.builder()
                 .include(mission.getTargetPolicy().getInclude().toArray(new String[0]))
@@ -1278,11 +1315,26 @@ public final class MissionLifecycle {
                 profile(aircraft).getDetectionRange(),
                 mission.getTargetSpec(), null, mission.getTargetPolicy());
         if (candidates.isEmpty()) return null;
-        Entity selected = candidates.get(0).getEntity();
+        Entity selected = null;
+        TargetResolver.EntityCandidate selectedCandidate = null;
+        for (TargetResolver.EntityCandidate candidate : candidates) {
+            if (canMissionUseTarget(world, mission, candidate.getEntity().getUniqueID())) {
+                selected = candidate.getEntity();
+                selectedCandidate = candidate;
+                break;
+            }
+        }
+        if (selected == null || selectedCandidate == null) return null;
         targets.observe(world, selected,
-                Math.sqrt(candidates.get(0).getDistanceSquared()), world.getTotalWorldTime(),
+                Math.sqrt(selectedCandidate.getDistanceSquared()), world.getTotalWorldTime(),
                 ContactLifecycle.SELECTABLE);
         return Target.entity(selected);
+    }
+
+    private boolean canMissionUseTarget(World world, RDPMission mission, UUID targetId) {
+        return mission.getSwarmId() == null
+                || net.vas.rdp.uav.RDPUavMod.swarms()
+                        .canMissionUseTarget(world, mission, targetId);
     }
 
     private void projectTargetLock(World world, RDPMission mission, Entity target, long tick) {

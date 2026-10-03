@@ -617,6 +617,12 @@ requires a production return-route implementation; live validation remains
   yaw/pitch/roll/throttle setters and `updateControl()`.
 - Set RDP's server WorldTick START listener to lowest priority so the command
   is applied after WingMan callbacks and before aircraft physics.
+- **Current-source correction:** This bullet records the Phase 15 implementation
+  at that historical point, not the current listener priority. Current
+  `RDPUavMod.ServerTickHandler` is registered at `EventPriority.HIGHEST`;
+  priority alone does not prove ordering after every WingMan callback. See
+  `current-architecture.md` and `ai-flight-control-ownership.md` for the
+  current boundary and remaining runtime evidence requirement.
 - Confined the RDP control lease to route-flight phases; `LANDING` and
   `PARKING` hand the final recovery leg back to native MCheliCE handlers because
   those paths contain direct movement writes outside the guarded FLY_TO helpers.
@@ -878,3 +884,351 @@ source case supplies a state and finite `(30, 28, 20)` coordinates at tick 12,
 so the pasted stack trace does not match the current source inputs. JUnit was
 not run; diagnose this next against the exact failing checkout/build and runtime
 arguments before changing the controller's fail-closed behavior.
+
+## Phase 1 — responsibility alignment execution ledger — 2026-10-02
+
+```text
+CURRENT PHASE / APPROVAL:
+  Phase 1 responsibility alignment and focused regression lock — approved and complete.
+  Phase 2 adapter/runtime acceptance — not approved to execute; D-008 is unresolved.
+
+COMPLETED:
+  Rechecked current Git state; aligned existing responsibility/evidence docs;
+  added one clean-file role/profile separation contract; ran focused and full
+  tests/build; reviewed diff and whitespace.
+
+IN PROGRESS:
+  None. No native handoff or runtime behavior was changed.
+
+PENDING:
+  Phase 2 isolated client/server acceptance, per-airframe control validation,
+  live packet/HUD/target/payload/persistence checks.
+
+BLOCKED:
+  The exact supported Minecraft/Forge/Java/McHeliCE/RDP Core tuple is unknown.
+  Repository configuration/docs conflict on Forge 2768/2859/2864. User was
+  unavailable to select the deployment tuple. Do not select a replacement
+  based only on source, docs, or JAR signatures.
+
+FILES CHANGED:
+  docs/UAV_AI_FRAMEWORK_REWORK_REPORT.md
+  docs/ai-flight-control-ownership.md
+  docs/api-verification-notes.md
+  docs/current-architecture.md
+  docs/implementation-source-matrix.md
+  docs/mission-framework-map.md
+  docs/mission-telemetry.md
+  docs/runtime-test-matrix.md
+  src/test/java/net/vas/rdp/uav/SwarmAssignmentManagerTest.java
+  Existing dirty source/test paths and docs/GITHUB_COPILOT_WORKFLOW.md remain
+  user-owned and untouched.
+
+VERIFICATION:
+  Focused: PASS — .\gradlew.bat test --tests net.vas.rdp.uav.SwarmAssignmentManagerTest
+    --tests net.vas.rdp.uav.AirframeControllerTest --tests
+    net.vas.rdp.uav.VehicleCapabilityTest --tests
+    net.vas.rdp.uav.NetworkClientServerContractTest --tests
+    net.vas.rdp.uav.GuidedMissileMissionLifecycleTest --tests
+    net.vas.rdp.uav.mission.MissionMovementAuthorityTest --tests
+    net.vas.rdp.uav.core.RdpUavTransformerTest --no-daemon
+    Result: BUILD SUCCESSFUL; focused source-contract tests passed. Does not prove
+    Forge tick order, physical aircraft response, network delivery, rendering,
+    native release, damage, or persistence in a live game.
+  Full tests/build: PASS — .\gradlew.bat test build --no-daemon
+    Result: BUILD SUCCESSFUL; 282 tests, 0 failures, 0 errors, 0 skipped,
+    52 suites (Gradle XML reports). Build/package ran; no artifact was deployed.
+    Existing Gradle deprecation and ForgeGradle mapping warnings remain.
+  Diff/scope: PASS — git diff --check produced no whitespace errors; only an
+    LF/CRLF normalization warning. git status showed the nine files above plus
+    pre-existing user changes and the known untracked runbook; no unexpected
+    tracked or untracked build output appeared.
+  Forge/McHeli runtime: NOT RUN for Phase 1. Existing saved 2026-09-27 client
+    run fails during McHeliCE model initialization on Forge 2768 before world
+    entry; no successful current mission run is available.
+  Long-running/regression: BLOCKED — no live runtime tuple/approval; no extended
+    flight, save/reload, or multi-aircraft run was performed.
+
+APPROVED DECISIONS:
+  D-001 through D-007 are source/project-record boundaries approved for
+  documentation/regression alignment only; no gameplay behavior change was
+  authorized. D-008 (runtime tuple) remains unresolved. D-009 (protect local
+  modifications) remains in force.
+
+NEXT EXACT ACTION:
+  Obtain the exact supported runtime tuple and explicit approval for an isolated
+  disposable client/server run. Then execute Phase 2 runtime acceptance; stop
+  before dependency changes, production deployment, or edits to any protected
+  local path.
+```
+
+### Requirements coverage and remaining backlog
+
+Status labels below distinguish source implementation from tests and live
+operation. `IMPLEMENTED` means a source responsibility/path exists;
+`TESTED` means a relevant deterministic check is present or was run;
+`RUNTIME VERIFIED` requires observed in-game behavior. A source class or
+successful build alone never establishes runtime verification.
+
+| Requirement area | Current status and evidence | Proposed owner / dependency / phase |
+|---|---|---|
+| Mission lifecycle, task/decision handling | **IMPLEMENTED; TESTED (source contracts).** `MissionDefinition`, `AiDecisionEngine`/`AiTaskingService`, `MissionManager`, `RDPMission`, `MissionLifecycle`; lifecycle and transition tests. **RUNTIME VERIFIED: NO.** | Intent stays in request/definition; manager owns assignment; mission aggregate owns state; lifecycle executes. Phase 2 requires approved runtime; mission persistence work later must avoid dirty codec/state files absent approval. |
+| Patrol, search, route planning, altitude, recovery | **PARTIAL; TESTED (deterministic route/controller tests).** Patrol/route planners, `TerrainRoutePlanner`, `WingManFlightAdapter`, recovery states and profiles exist. Global obstacle avoidance, physical altitude hold, return/landing, and prolonged recovery are not demonstrated. | Lifecycle chooses work; route planners create bounded paths; WingMan adapter owns native route contract; per-airframe controller writes controls. Phase 2 after startup; later recovery slice after movement acceptance. |
+| Mission persistence | **IMPLEMENTED (source); PARTIAL (test); RUNTIME BLOCKED.** `RDPMissionWorldData`/`MissionNbtCodec`; current dirty worktree schema is 7. No current save/restart run. | Mission aggregate/codec owns mission record; native projectile correlation is not durable. Runtime save/reload depends on D-008 and clean world-load proof. |
+| Vehicle capabilities/profiles | **IMPLEMENTED; TESTED (profile/capability unit checks).** `UavVehicleProfile`, `UavVehicleProfiles`, `VehicleCapability`. Envelopes remain provisional. | Profile describes capability, not current operational assignment. Per-definition tuning requires separate live cases. |
+| Fixed-wing | **IMPLEMENTED; TESTED (controller math); RUNTIME NOT VERIFIED.** `FixedWingFlightController`, `AirframeController`, profile speed/turn/climb envelopes. | Phase 2 straight route, turn, climb/descent, stall/recovery measurement on an approved fixed-wing definition; do not infer from helicopter results. |
+| Rotary-wing / FPV | **IMPLEMENTED; TESTED (controller and state contracts); RUNTIME NOT VERIFIED.** `HelicopterFlightController`, actual `MCH_EntityHeli` selection, `FpvFlightStateMachine`. | Separate Phase 2 hover, drift, altitude, standoff, terminal tests; controller profile must not be inferred from fixed-wing. |
+| VTOL and long-endurance constraints | **UNKNOWN/PARTIAL.** No separately verified VTOL execution profile or live transition law was established. Long-range reusable profile exists with expanded configured lock/detection ranges; actual range/endurance is not proven. | Require an airframe/API-specific capability and user-approved doctrine before implementation; after basic flight and runtime target are established. |
+| Sensors, observations, detection/classification, lock, continuity, fusion/world model | **PARTIAL; TESTED (contact/fusion source tests); RUNTIME NOT VERIFIED.** `MinecraftWorldPerceptionAdapter` provides bounded world observations; `TargetResolver`/`TargetClassifier`, `ContactTracker`, `SensorFusion`. No complete onboard sensor suite/world model is evidenced. | Server observation/authority layer owns contact inputs; mission UUID owns lock; sensor suite expansion is a later approved architecture slice. |
+| Client override, camera, lock overlay/HUD, server/client ownership | **PARTIAL; TESTED (packet/UI source contracts); RUNTIME NOT VERIFIED.** Client selection request and synchronized HUD exist; server validates UUID; transformer targets operator axes. Camera alignment and packet path require live tests. | Server owns mission/lock; client supplies selection and displays telemetry only. Phase 2 client/server acceptance after D-008. |
+| Navigation, guidance, maneuvers, movement authority | **IMPLEMENTED; TESTED (deterministic controllers and transformer contract); RUNTIME NOT VERIFIED.** Mission/lifecycle -> WingMan route/setpoint -> controller -> movement lease/native adapter -> McHeli physics. Tick ordering beyond registered priorities is not established. | Keep legacy calls in `WingManFlightAdapter`/transformer and writes in `NativeAircraftControlAdapter`; Phase 2 runtime trace required before any handoff change. |
+| McHeli/WingMan adapters and guided missile/TV support | **PARTIAL.** Local McHeliCE 1.5.1 signatures were inspected; adapters and capability registry exist. TV is configured unsupported by default; method signatures do not prove behavior. | Adapter owns API translation; native engine owns projectile physics. Test one supported weapon live; TV remains unsupported unless verified and approved. |
+| Swarm membership, roles, formation, allocation, cooperative search, communication, persistence, degraded mode | **PARTIAL; TESTED (source contracts); RUNTIME NOT VERIFIED.** `SwarmManager`, `SwarmRecord`, role/assignment managers, formation/search planners and world data exist; search is bounded. No proven physical separation, live communication, restart, or scale behavior. | Swarm owns bounded assignment/projections; member `RDPMission` retains mission/lock/execution. Phase after single aircraft and persistence baseline; dirty swarm files protected. |
+| Payload control, SelfDestruct compatibility, failure handling | **PARTIAL; TESTED (outcome/state contracts); RUNTIME NOT VERIFIED.** Mission and guided adapters separate launch/impact/effect/unknown. Native hooks are transformer-targeted and local signatures exist. No live release/damage/effect evidence. | Mission authorizes and records outcomes; `GuidedWeaponAdapter` delegates native release; never mark success on failed handoff. Phase 2 only in disposable runtime after D-008 and scenario approval. |
+| Mixin/coremod | **PARTIAL.** Addon uses `RdpUavTransformer`; current source names target method owners; local JAR contains those methods. Hook installation/compatibility on selected supported runtime is not established. MixinBooter dependency necessity remains unknown. | Keep ASM/coremod hooks isolated; verify exact injection points in selected JAR and runtime before any strategy/dependency change. |
+| Telemetry, deterministic tests, build checks | **IMPLEMENTED; TESTED.** `RdpUavDebug`, telemetry and source tests; Phase 1 focused run and full suite/build passed as recorded above. Historical docs contain other dated results. | Continue layered checks; current run results apply to the current dirty worktree, not live Minecraft behavior. |
+| Live runtime and long-running checks | **BLOCKED / NOT RUNTIME VERIFIED.** Saved Forge 2768 client fails before world entry; the 2026-10-02 isolated 2768 server probe stopped at the EULA gate before world startup; no successful current mission runtime or extended save/reload/multi-aircraft scenario. | First resolve D-008 and the isolated server EULA gate; then perform per-airframe, lock/network/HUD, payload, persistence, and endurance tests. |
+
+## Phase 2 — isolated runtime gate ledger — 2026-10-02
+
+```text
+CURRENT PHASE / APPROVAL:
+  Phase 2 adapter/runtime acceptance — user requested continuation.
+  D-008 (supported runtime tuple) remains unresolved. The isolated probe below
+  used the build.gradle-configured Forge 14.23.5.2768 only; it did not select
+  that version as the supported deployment/runtime target.
+
+COMPLETED:
+  Read the new root logs/latest.log; it contains three test-worker hook
+  messages, not a game launch. Created a project copy under session artifacts
+  without copying or using the repository run/ directory. Ran the dedicated
+  server startup task there. Forge 2768, McHeliCE core, MixinBooter, and the
+  addon coremod initialized through launch-wrapper setup; Minecraft then
+  stopped at its EULA prompt.
+
+IN PROGRESS:
+  None. No mission, world, client, or aircraft behavior was tested.
+
+PENDING:
+  Resolve D-008 against the intended runtime; establish the exact Java,
+  Forge, McHeliCE, WingMan, and RDP Core tuple; obtain the required EULA
+  authorization for a disposable server; then repeat startup and continue
+  with a client/server smoke test before any gameplay acceptance.
+
+BLOCKED:
+  The isolated copy's run/eula.txt has eula=false. The task output explicitly
+  says Minecraft requires EULA agreement and exits before world startup.
+  No EULA agreement was supplied, so it was not changed. README, developer
+  guide, and build.gradle still disagree on Forge 2768/2859/2864. Do not treat
+  Gradle's BUILD SUCCESSFUL status as a Minecraft server-start pass.
+
+RECOMMENDATION (not an approved version change):
+  Treat Forge 14.23.5.2864 as the leading source-validation candidate because
+  DEVELOPER_GUIDE.md identifies it as the build validation target and README.md
+  calls it the exact installed runtime. Keep 2768 identified as the current
+  build.gradle configuration, not as proof of supported deployment. Treat
+  2859 as the separately documented deployment target. Reconcile configuration
+  and verify the actual installed tuple before changing the project build.
+
+FILES CHANGED:
+  Repository: docs/runtime-test-matrix.md and
+  docs/UAV_AI_FRAMEWORK_REWORK_REPORT.md (evidence/status only).
+  The isolated source/dependency copy and generated logs/config are under the
+  session artifacts directory, outside the repository. Repository run/,
+  saves, worlds, and protected source/test edits were not used or changed.
+
+VERIFICATION:
+  Latest root log: PASS (read-only inspection) — logs/latest.log has only
+  three test-worker hook messages; it is not runtime evidence.
+  Isolated server launch: BLOCKED — command .\gradlew.bat runServer --no-daemon
+  in the session-artifact copy returned Gradle BUILD SUCCESSFUL, but
+  run\logs\latest.log ends with the Minecraft EULA refusal and the generated
+  run\eula.txt says eula=false. No world directory or server-ready state was
+  produced. This used Java 1.8.0_502 and configured Forge 14.23.5.2768 with
+  local McHeliCE 1.5.1 / RDP Core 1.0.0; it is exploratory and not a supported
+  runtime selection.
+  Client/live mission checks: NOT RUN — no selected supported tuple; no GUI
+  client was launched; EULA/server-world gate remains unresolved.
+  Original user run data: PASS (preserved) — the repository run/ directory was
+  not used. No runtime artifact was deployed.
+
+APPROVED DECISIONS:
+  D-001 through D-007 remain the Phase 1 documentation/regression boundaries.
+  D-008 (runtime tuple) remains unresolved. D-009 (protect local modifications)
+  remains in force. The request to continue Phase 2 authorized this isolated
+  startup probe, not a new dependency/version, EULA agreement, deployment, or
+  changes to protected files.
+
+NEXT EXACT ACTION:
+  Resolve the exact supported runtime tuple and authorize the disposable
+  server's EULA gate. Then rerun server startup in the isolated copy and
+  proceed to the client/server acceptance matrix only if the world reaches
+  ready state; stop at any dependency, API, or persistence failure.
+```
+
+## Master architecture continuation checkpoint — 2026-10-02
+
+```text
+CURRENT PHASE / APPROVAL:
+  Master prompt Phase 0 architecture discovery is complete. Continue the
+  approved sequential architecture roadmap from Phase 1. D-010 through D-014
+  are recorded in docs/DECISION_LOG.md. D-008 (the supported runtime tuple)
+  remains unresolved; D-009 (preserve pre-existing local changes) remains in
+  force.
+
+COMPLETED:
+  D-010 isolated toolchain investigation: ForgeGradle 2.3 cannot extract the
+  exact Forge 2864 userdev3 artifact; ForgeGradle 3.0.197 can compile and
+  package the copied source against Forge 2864. Full Gradle tests retain seven
+  network-registry bootstrap failures. Root build configuration was not
+  changed.
+  D-011 retains the deterministic MissionLifecycle without a behavior-tree
+  framework. D-012 evolves the existing compositional vehicle profile. D-013
+  keeps observation and target tracks server-authoritative behind the
+  profile-bounded perception adapter. D-014 assigns swarm configuration and
+  monitoring to a dedicated mission-GUI page while the server remains the
+  authority for validation, coordination, execution, and telemetry.
+  Source inspection found that MissionGuiTab.SWARM currently has no dedicated
+  content layout, swarm inputs are mixed into the general UAV view, and
+  launchMissionDefinition refuses swarm definitions on the client. Existing
+  server swarm records and periodic reconciliation are present.
+
+IN PROGRESS:
+  Implement the D-014 operator page against the existing server-side swarm
+  aggregate; connect authorized membership/configuration to autonomous member
+  missions and return synchronized owner-scoped telemetry.
+
+PENDING:
+  Sequentially audit Phase 1–6 contracts against existing profile, perception,
+  flight, guidance, deterministic decision, patrol/search implementations;
+  extend only verified gaps. Then finish swarm mission execution, fixed-wing
+  diversity, payload compatibility, and resilience work. Preserve the approved
+  server-authority boundaries.
+
+BLOCKED:
+  Full Forge 2864 test execution is not clean: seven network contract tests
+  encounter Forge NetworkRegistry initialization NPEs under the isolated FG3
+  test worker. Live Forge client/server and all gameplay acceptance remain
+  unverified. Do not alter the main Forge/plugin selection until D-008 and the
+  test bootstrap outcome are resolved.
+
+FILES CHANGED IN THE D-010 CHECKPOINT:
+  BUILD_VALIDATION_REPORT.md
+  docs/DECISION_LOG.md
+  docs/runtime-test-matrix.md
+  The isolated Gradle probes are outside the repository. All earlier dirty
+  source, test, and documentation changes remain preserved.
+
+VERIFICATION:
+  ForgeGradle 2.3 / Forge 2864: FAIL at extractUserdev because the requested
+  legacy userdev artifact is not present.
+  ForgeGradle 3.0.197 / Forge 2864: compileJava, compileTestJava, jar,
+  reobfJar, and build -x test passed. The full test run passed 277/284 after
+  adding the compile-only ModularUI jar to test runtime; 7 network contract
+  tests failed during NetworkRegistry channel insertion.
+  Main checkout baseline previously recorded: 284 tests and build passed on
+  configured Forge 2768. No main test/build is claimed after this probe.
+  Forge runtime: NOT RUN. No client/server or world was started, no EULA was
+  accepted, and no artifact was deployed.
+
+APPROVED DECISIONS:
+  D-010: exact Forge 2864 build-path investigation in an isolated copy.
+  D-011: deterministic MissionLifecycle and explicit policies; no behavior tree.
+  D-012: extend UavVehicleProfile compositionally.
+  D-013: server-side profile-bounded observation and authoritative tracks.
+  D-014: dedicated swarm mission GUI page; server-authoritative coordination
+  and self-autonomous swarm mission execution.
+
+NEXT EXACT ACTION:
+  Implement the actual SWARM tab layout and server-side launch/configuration
+  path. Preserve failure feedback, owner authorization, profile/availability
+  checks, bounded configuration, and per-member MissionLifecycle ownership.
+```
+
+### D-014 implementation checkpoint — 2026-10-03
+
+```text
+STATUS:
+  The D-014 source implementation is complete and build-verified. Runtime
+  behavior remains unverified.
+
+IMPLEMENTED:
+  A dedicated SWARM mission-control page now owns roster selection, member
+  enrollment/removal, bounded configuration, leader selection, pause/resume,
+  disband, shared-target selection, and mission launch. Server snapshots are
+  owner-scoped; commands and mission intents are validated on the server.
+  Mission fan-out creates independent MissionManager-owned missions and
+  preserves the swarm association through persistence and linked retasking.
+  Supported fan-out types are reconnaissance, observation, patrol, strike,
+  and destroying. Patrol accepts the existing bounded waypoint syntax
+  (x z [loiter seconds]; ...), and each selected aircraft's route is checked
+  against its profile before launch. Strike missions retain the existing
+  per-mission authorization requirement.
+  Formation and altitude slot offsets now reach the server flight setpoints;
+  attack terminal guidance does not receive a formation offset. Search
+  patterns select target-loss search routes. Duplicate-target policy applies
+  to both shared and independently acquired targets. Leadership failover and
+  designated-member selection now affect coordination.
+
+VERIFIED:
+  Main checkout: Forge 1.12.2-14.23.5.2768, `gradlew.bat test --no-daemon
+  --console=plain`: PASS, 293 tests, zero failures/errors/skips.
+  Main checkout: `gradlew.bat build --no-daemon --console=plain`: PASS,
+  including `jar`, `reobfJar`, and source jar tasks.
+  Isolated Forge 2864 probe using ForgeGradle 3.0.197 and the updated main
+  `src` tree: `compileJava compileTestJava jar reobfJar --rerun-tasks` PASS.
+  This does not change the root ForgeGradle 2.3 / Forge 2768 selection and
+  does not resolve the seven known Forge NetworkRegistry test-worker errors
+  recorded by the earlier full Forge 2864 test run.
+  `git diff --check`: PASS. Git reports line-ending conversion warnings on
+  the existing Windows checkout; no whitespace errors were reported.
+
+ARTIFACT:
+  `build/libs/rdp-uav-addon-0.1.0.jar`, 728,044 bytes,
+  SHA-256 8256FE89493CE43B28CB65C9B42031200804C5CA1A693413ECE002B88442F4AF.
+
+RUNTIME VERIFIED:
+  None. No client or mission server was launched. The earlier isolated server
+  stopped at the Minecraft EULA gate (eula=false); no EULA was accepted, no
+  world was created, and no artifact was deployed.
+
+UNKNOWN / BLOCKED:
+  In-game layout, packet behavior, control response to formation setpoints,
+  terrain-safe patrol operation, mission fan-out, target sharing, persistence
+  across restart, and strike authorization have not been exercised in a live
+  Forge/McHeli instance. The final supported runtime tuple D-008 remains
+  unresolved.
+
+NEXT EXACT ACTION:
+  Resolve D-015 before changing flight-control selection. Keep live swarm
+  acceptance blocked until the runtime tuple and EULA gate are resolved.
+```
+
+### Phase 8 fixed-wing/VTOL audit — 2026-10-03
+
+```text
+STATUS:
+  Read-only API/profile audit complete. D-015 is pending before implementation.
+
+VERIFIED:
+  The bundled McHeli CE 1.5.1 plane entity extends MCH_EntityAircraft and has
+  native VTOL configuration/mode APIs. Its generic attitude/throttle methods
+  are already the addon adapter boundary. Existing addon selection routes
+  native helicopters and HELICOPTER_ONE_WAY_FPV profiles to the helicopter
+  controller; all other supported execution profiles route to the fixed-wing
+  controller. The selector does not inspect plane VTOL enable/current mode.
+
+UNKNOWN:
+  Which exact McHeli plane definitions the gameplay instance loads, whether
+  their VTOL mode is enabled/default, how the selected UAVs behave through
+  transition, and whether controller handoff can meet safe trajectories.
+
+DECISION GATE:
+  D-015 offers either a bounded fixed-wing first pass that rejects VTOL-enabled
+  aircraft, or explicit VTOL-aware mode/controller handoff. No flight behavior
+  was changed during this audit.
+
+NEXT EXACT ACTION:
+  User selects D-015 option A or B. Then implement only that approved scope,
+  add profile/controller contract coverage, and update the live trajectory
+  matrix. D-008 and live runtime validation remain unresolved independently.
+```

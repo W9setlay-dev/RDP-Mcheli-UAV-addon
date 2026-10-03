@@ -50,7 +50,7 @@ tasks.register('prefetchAssetsHttps') {
         def assets = new JsonSlurper().parse(indexFile)
         assets.objects.each { assetName, asset ->
             def hash = asset.hash
-            def objectFile = new File(assetsRoot, "objects/${hash[0..1]}/${hash}")
+            def objectFile = new File(assetsRoot, "objects/${hash[0..1 as String]}/${hash}")
             def valid = objectFile.isFile() &&
                     objectFile.length() == asset.size &&
                     sha1(objectFile) == hash

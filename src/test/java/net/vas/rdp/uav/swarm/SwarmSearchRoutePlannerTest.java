@@ -57,4 +57,24 @@ public class SwarmSearchRoutePlannerTest {
         }
         assertTrue(distance <= 2048.0D);
     }
+
+    @Test
+    public void configuredSearchPatternsProduceBoundedRoutes() {
+        for (SearchPattern pattern : new SearchPattern[] {SearchPattern.GRID,
+                SearchPattern.LANE, SearchPattern.SPIRAL, SearchPattern.RING,
+                SearchPattern.SECTOR}) {
+            List<MissionWaypoint> route = SwarmSearchRoutePlanner.route(
+                    10D, -20D, 24D, pattern);
+            assertTrue(route.size() >= 6 && route.size() <= 8);
+            for (MissionWaypoint waypoint : route) {
+                assertTrue(Math.abs(waypoint.getX() - 10D) <= 24D);
+                assertTrue(Math.abs(waypoint.getZ() + 20D) <= 24D);
+            }
+        }
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void customPatternRequiresExplicitGeometry() {
+        SwarmSearchRoutePlanner.route(0D, 0D, 24D, SearchPattern.CUSTOM);
+    }
 }

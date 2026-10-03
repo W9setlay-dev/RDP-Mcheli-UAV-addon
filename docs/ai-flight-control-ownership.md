@@ -12,14 +12,15 @@ The active mission flight path has three separate responsibilities:
    attitude/throttle setpoints while the server-side RDP control lease is
    active. MCheliCE still integrates the aircraft and resolves collision.
 
-The server tick hook runs at `WorldTick START` with lowest Forge event priority,
-after the WingMan tick handlers and before normal entity physics. A targeted
-transformer guard is injected into the movement helper methods found in the
-bundled MCheliCE 1.5.1 `WingmanTickHandler` and `AutonomousFlightHandler`. The
-guard claims the mission lease before those helpers can write. RDP then renews
-the same lease and applies its control command. The separate packet hook blocks
+The server tick hook applies controls at `WorldTick START` with Forge event
+priority `HIGHEST`. This priority does not establish that the callback runs
+after every WingMan tick handler. A targeted transformer guard is injected
+into movement helper methods found in the bundled MCheliCE 1.5.1
+`WingmanTickHandler` and `AutonomousFlightHandler`; while the mission lease is
+active, those guarded writes are suppressed. The separate packet hook blocks
 the operator's flight-axis flags while mission ownership is active; camera,
-weapon, and station actions keep their native packet path.
+weapon, and station actions keep their native packet path. Exact transformed
+ordering and physical response still require runtime validation.
 
 During final `LANDING` and `PARKING`, the guard releases the lease and allows
 the full native MCheliCE recovery branch to run. Those branches include direct

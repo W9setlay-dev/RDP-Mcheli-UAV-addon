@@ -28,11 +28,48 @@ MissionLifecycle
 McHeliCE / WingMan / Minecraft world
 ```
 
+## Responsibility boundaries
+
+```text
+operator intent
+  -> MissionDefinition / server validation
+  -> MissionManager assignment
+  -> RDPMission state + target UUID
+  -> MissionLifecycle execution
+       |-> TargetAuthority observation (server-owned target lock remains in mission)
+       |-> WingManFlightAdapter route nodes
+       |     -> WingmanEntry effective route setpoint
+       |     -> AirframeController
+       |     -> MissionMovementAuthority lease
+       |     -> NativeAircraftControlAdapter attitude/throttle writes
+       |     -> McHeliCE physics and collision
+       |-> GuidedWeaponAdapter validated native release
+             -> McHeliCE/WingMan projectile and effect behavior
+
+client camera selection -> validated server request only
+server telemetry -> client HUD projection only
+```
+
+Vehicle capabilities are defined by the configured `UavVehicleProfile` /
+`VehicleCapability`; `MissionType` represents intent, and `SwarmRole` represents
+a member's current assignment. None of those replaces mission state or owns
+movement.
+
 ## Mission ownership
 
-- `MissionManager` owns assignment state, aircraft auth, and queue behavior.
-- `RDPMission` owns the mission’s target, state, last update tick, and failure reason.
-- `MissionLifecycle` owns the dispatch/update loop and conversion of target findings into state transitions.
+- `MissionDefinition` represents operator intent and configuration validation;
+  it is not a live mission and cannot authorize execution on its own.
+- `MissionManager` owns aircraft assignment, authorization checks, and queue
+  behavior. It creates and reserves runtime missions on the server.
+- `RDPMission` owns persisted mission identity, lifecycle state, target UUID /
+  `TargetLock`, and mission outcome metadata. `MissionState` constrains legal
+  transitions.
+- `MissionLifecycle` owns dispatch and per-tick execution decisions, including
+  conversion of server observations into mission transitions. It is the
+  production executor; planning/tasking proposals do not replace it.
+- `RDPMissionWorldData` and `MissionNbtCodec` own mission world persistence.
+  The current worktree codec reports schema 7; that source file has local
+  modifications, so this is not a clean-revision or runtime migration claim.
 - `RDPMission.getPhase()` and `getControlOwner()` expose compatibility projections for
   flight ownership without replacing the persisted `MissionState` graph. A
   `KAMIKADZE_TARGET` mission is owned by terminal guidance; ordinary target
@@ -64,10 +101,12 @@ McHeliCE / WingMan / Minecraft world
   classifications are diagnostic only and never alter flight control.
 - `TargetResolver` searches the live world for entities near a location.
 - `TargetClassifier` decides whether an entity registry ID is actually hostile or modded hostile.
-- `ContactSnapshot` is the authoritative tracked-contact projection: it carries
-  stable entity/registry identity, current position, velocity, lifecycle,
-  confidence, and current entity bounds. `TargetLock` additionally supports
-  lock-owner and mission association metadata.
+- `RDPMission.targetId` / `TargetLock` is the authoritative mission lock
+  identity. `ContactSnapshot` is the server tracker’s current observation
+  projection: it carries entity/registry identity, position, velocity,
+  lifecycle, confidence, and entity bounds, but does not replace mission lock
+  identity. Client camera selection is a request input; the HUD renders
+  synchronized server telemetry and does not create or authorize a lock.
 
 ## Flight and execution architecture
 
@@ -83,10 +122,13 @@ McHeliCE / WingMan / Minecraft world
   altitude with measured ground track, speed, vertical rate, and orientation,
   and emits bounded yaw/pitch/roll/throttle setpoints.
 - `NativeAircraftControlAdapter` is the single addon movement writer. On
-  server `WorldTick START`, after WingMan's tick callbacks and before entity
-  physics, it rate-limits the setpoints and calls the verified MCheliCE
-  aircraft setters and `updateControl()`. It never writes entity position or
-  motion. MCheliCE still integrates velocity, position, and collisions.
+  server `WorldTick START` at Forge priority `HIGHEST`, it rate-limits the
+  setpoints and calls the verified MCheliCE aircraft setters and
+  `updateControl()`. This priority does not establish that the callback runs
+  after every WingMan tick callback. The transformer guards matching
+  WingMan movement helpers while the mission lease is active. The adapter
+  never writes entity position or motion; MCheliCE integrates velocity,
+  position, and collisions.
 - `MissionMovementAuthority` grants a short per-aircraft lease. The coremod
   guard acquires it before WingMan movement helper writes; while it is active,
   those helper writes are suppressed. The packet hook rejects operator flight
@@ -96,6 +138,16 @@ McHeliCE / WingMan / Minecraft world
 - The fixed-wing and helicopter speed, turn, bank, climb, descent, and throttle
   envelopes are provisional source defaults. They are not measured aircraft
   specifications and must be calibrated from live telemetry per definition.
+- `UavVehicleProfile` and `VehicleCapability` describe configured airframe
+  capabilities and execution envelopes; `MissionType` describes requested
+  mission intent; `SwarmRole` describes a member's current operational
+  assignment. Assignment changes do not redefine aircraft capability.
+- Fixed-wing and rotary-wing controllers are separate. Fixed-wing control
+  accounts for ground track, bank, and stall-speed envelope; rotary control
+  uses horizontal velocity/position and collective response. The physical
+  `MCH_EntityHeli` type can select the rotary controller independently of the
+  configured execution profile. Neither source defaults nor unit tests prove
+  live flight quality.
 - `FpvFlightStateMachine` retains `MOVING_TO_TARGET`, `HOVER`, and
   `TERMINAL_APPROACH` mission policy. FPV hover holds the current WingMan route
   target with the same helicopter feedback controller; pursuit cannot replace

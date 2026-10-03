@@ -9,6 +9,7 @@ import net.vas.rdp.uav.mission.AircraftRegistry;
 import net.vas.rdp.uav.mission.MissionState;
 import net.vas.rdp.uav.mission.MissionType;
 import net.vas.rdp.uav.mission.MissionManager;
+import net.vas.rdp.uav.mission.MissionQueue;
 import net.vas.rdp.uav.mission.RDPMission;
 import net.vas.rdp.uav.mission.MissionWaypoint;
 import net.vas.rdp.uav.persistence.MissionNbtCodec;
@@ -61,6 +62,24 @@ public class RdpUavCoreTest {
         } catch (IllegalArgumentException expected) {
             // Expected validation boundary.
         }
+    }
+
+    @Test
+    public void missionQueueMembershipUsesMissionIdentityDuringRestore() {
+        RDPMission original = mission(TargetSpec.manual("mod:target", TargetPriority.HIGH));
+        RDPMission restored = MissionNbtCodec.read(MissionNbtCodec.write(original));
+        MissionQueue queue = new MissionQueue();
+
+        queue.enqueue(original);
+        assertTrue(queue.contains(restored));
+        assertTrue(queue.remove(restored));
+        assertEquals(0, queue.size());
+
+        RDPMission other = mission(TargetSpec.manual("other:target", TargetPriority.NORMAL));
+        queue.enqueue(other);
+        queue.enqueue(original);
+        assertTrue(queue.remove(restored));
+        assertEquals(1, queue.size());
     }
 
     @Test

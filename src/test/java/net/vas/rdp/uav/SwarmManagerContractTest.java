@@ -1,5 +1,6 @@
 package net.vas.rdp.uav;
 
+import net.vas.rdp.uav.swarm.SwarmManager;
 import net.vas.rdp.uav.swarm.SwarmRecord;
 import net.vas.rdp.uav.swarm.SwarmRole;
 import org.junit.Test;
@@ -22,5 +23,15 @@ public class SwarmManagerContractTest {
         UUID target = UUID.randomUUID();
         swarm.getTargetRegistry().lock(target, 4L);
         assertEquals(target, swarm.getTargetRegistry().getTargetId());
+    }
+
+    @Test
+    public void swarmOwnerCheckAllowsOnlyTheRecordOwner() {
+        UUID owner = UUID.randomUUID();
+        SwarmRecord swarm = new SwarmRecord(UUID.randomUUID(), owner, "ops");
+        SwarmManager manager = new SwarmManager();
+
+        assertTrue(manager.owns(swarm, owner));
+        assertTrue(!manager.owns(swarm, UUID.randomUUID()));
     }
 }

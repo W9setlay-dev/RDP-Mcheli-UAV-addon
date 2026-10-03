@@ -1,5 +1,17 @@
 # Runtime test matrix
 
+## Evidence provenance
+
+Rows below are cumulative, dated historical records unless explicitly
+revalidated against the current checkout. The saved 2026-09-27 development
+client log reaches addon hook initialization but crashes during client model
+loading, before entering a world. The root `logs/latest.log` contains three
+test-worker hook messages only. On 2026-10-02 an isolated copy of the project
+was used for a Forge 2768 `runServer` startup probe; Forge and coremods
+initialized, then Minecraft stopped at the EULA prompt (`eula=false`) before
+world/server startup. This is not evidence of server readiness or UAV behavior,
+and 2768 is not a resolved supported-runtime selection.
+
 | Area | Command | Result | Notes |
 | --- | --- | --- | --- |
 | repository inspection | `git --no-pager status --short` | PASS | Confirmed working tree state |
@@ -28,7 +40,8 @@
 | guided weapon live launch/seeker/impact | controlled RDP gameplay session | BLOCKED | Source and native API wiring are complete, but this environment cannot reliably drive a controlled in-game launch and observe seeker acquisition, trajectory, impact, or damage |
 | native PARKED route completion | source contract and regression review | PASS | PARKED no longer implies mission success: locked missions advance only inside the validated execution envelope, and post-launch terminal guidance cannot re-route or launch twice |
 | packet string framing | `.\gradlew.bat test --no-daemon` | PASS | Shared network string framing rejects null and strings over 1024 UTF-8 bytes before allocation/use |
-| Forge dedicated-server startup smoke | `.\gradlew.bat runServer --no-daemon` | PARTIAL | Reached `Done` with McHeliCE, WingMan, RDP Core, and addon coremod loaded; reproduced `RDPWorldSavedData.<init>(String)` failure during world load/save |
+| Forge dedicated-server startup smoke | `.\gradlew.bat runServer --no-daemon` | HISTORICAL PARTIAL | An earlier run reported `Done` with McHeliCE, WingMan, RDP Core, and addon coremod, then a `RDPWorldSavedData.<init>(String)` failure. This is not current-checkout server evidence; the saved 2026-09-27 client run crashes before world entry. |
+| Isolated configured Forge 2768 server startup probe | `.\gradlew.bat runServer --no-daemon` from the isolated session-artifact copy | BLOCKED | Gradle reported `BUILD SUCCESSFUL`, but Minecraft stopped with “You need to agree to the EULA” and wrote `run\eula.txt` with `eula=false`; no world was loaded and no server readiness or gameplay was verified. The original repository `run\` directory was not used. This probe does not resolve whether 2768, 2859, or 2864 is the supported runtime. |
 | native aircraft method presence | `javap -classpath libs/mcheli-ce-1.5.1.jar -public com.norwood.mcheli.aircraft.MCH_EntityAircraft` | PASS | Verified public rotation and throttle methods; method presence is not physical-flight evidence |
 | official McHeliCE control-path comparison | `Warfactory-Official/McHeliCE@cbaff7f30e549ff75e485388c24c74a4316c2228` plus local 1.5.1 JAR | PASS | Official WingMan server handlers use bounded `setRotYaw`, `setRotPitch`, `setRotRoll`, `setThrottle`, and `updateControl`; local signatures match |
 | native server control shaping | `.\gradlew.bat test --tests net.vas.rdp.uav.NativeControlMathTest --no-daemon` | PASS | Yaw/pitch/roll rate limits, yaw wrap, helicopter collective behavior, and finite bounded commands are deterministic |
@@ -73,7 +86,7 @@
 | Slow approach accumulates progress | loaded waypoint with measured reductions under 0.5 blocks/tick | PENDING_DEVELOPER_IN_GAME_TEST | Confirm cumulative distance improvement refreshes the progress timer and does not falsely enter `REPLAN` |
 | Genuine route stall and recovery budget | stationary aircraft with valid target/route | PENDING_DEVELOPER_IN_GAME_TEST | Confirm each timeout increments `recoveryAttempts`, accepted routes do not clear it, and only measured movement resets it |
 | Recovery exhaustion and cleanup | force more than five no-progress recovery cycles | PENDING_DEVELOPER_IN_GAME_TEST | Confirm terminal reason contains `_RECOVERY_EXHAUSTED`, lease/route are released, and mission remains persisted as `FAILED` |
-| Active mission save/load | save and reload while in SEARCHING or REPLAN | PENDING_DEVELOPER_IN_GAME_TEST | Confirm schema 6 retains `lastMeaningfulProgressTick`, route progress, and recovery budget without immediately resetting or exhausting the mission |
+| Active mission save/load | save and reload while in SEARCHING or REPLAN | PENDING_DEVELOPER_IN_GAME_TEST | Confirm the selected revision's codec retains progress/recovery fields without resetting or exhausting the mission; the current worktree codec reports schema 7 but is locally modified. |
 
 ## Developer live handoff
 
@@ -275,7 +288,18 @@ Provide next:
 
 ## Remaining risk
 
-The runtime matrix is deliberately limited to what is available in this environment. The mission and guided-weapon systems are proven as source-level integrations against the local McHeliCE 1.5.1 API, but not as a live in-game autonomous flight or projectile-effects pipeline. The dedicated server now starts, but the RDP Core world-data constructor error blocks a trustworthy persisted-mission smoke test. The next runtime pass must resolve that dependency mismatch, then verify visible fixed-wing turning, moving-target tracking, orbit behavior, lock/clear feedback, native seeker acquisition, terminal approach, impact, and damage in the installed RDP instance.
+The runtime matrix combines historical reports with current pending scenarios;
+its old `PASS` labels do not mean the current dirty checkout was rerun. Source
+and local McHeliCE 1.5.1 API evidence do not prove a live autonomous flight or
+projectile-effects pipeline. Earlier documentation reports a dedicated server
+reaching `Done` and an RDP Core world-data constructor error, but no current
+saved server-ready mission run is available. The saved 2026-09-27 client log
+instead fails in McHeliCE model loading before world entry. The next runtime
+pass must first use an explicitly selected compatible runtime tuple in an
+isolated instance, then verify visible fixed-wing and rotary-wing behavior
+separately, moving-target tracking, lock/clear feedback, native seeker
+acquisition, terminal approach, impact, and effect confirmation. Do not replace
+an installed production JAR as part of this verification.
 
 ### Phase J developer handoff
 
@@ -356,3 +380,21 @@ Repeat while another dimension is ticking and confirm it does not prune this
 projectile's state. Saved/restarted projectile assignments remain open. Save
 the exact artifact hash, complete `latest.log`, weapon/profile, target type,
 hit/miss result, and a short clip. This matrix has not yet been run in-game.
+
+## Exact Forge 2864 toolchain probe — 2026-10-02
+
+| Area | Command | Result | Notes |
+| --- | --- | --- | --- |
+| Forge 2864 with current ForgeGradle 2.3 | `.\gradlew.bat test build --no-daemon --stacktrace` in isolated copy | FAIL | `extractUserdev` requests the unpublished legacy `userdev` classifier; the exact version exposes `userdev3`. Main checkout unchanged. |
+| Forge 2864 compile and package with ForgeGradle 3.0.197 | `.\gradlew.bat build -x test --no-daemon --rerun-tasks` in isolated copy | PASS | `compileJava`, `compileTestJava`, `jar`, and `reobfJar` completed with Forge 2864 and copied local dependencies. This does not select the production tuple. |
+| Forge 2864 source tests with ForgeGradle 3.0.197 | `.\gradlew.bat test --no-daemon --rerun-tasks` in isolated copy | PARTIAL | 277/284 passed after supplying ModularUI to test runtime. Seven `NetworkClientServerContractTest` cases fail at Forge `NetworkRegistry.newChannel` initialization in the test worker. |
+| Forge 2864 live client/server or mission runtime | not run | NOT RUN | No client or server was launched; no EULA, world, deployment, aircraft, mission, packet, or HUD behavior was validated. |
+
+## D-014 source implementation verification — 2026-10-03
+
+| Area | Command | Result | Notes |
+| --- | --- | --- | --- |
+| Main checkout tests (Forge 2768) | `gradlew.bat test --no-daemon --console=plain` | PASS | 293 tests, zero failures/errors/skips. |
+| Main checkout build (Forge 2768) | `gradlew.bat build --no-daemon --console=plain` | PASS | Includes jar and reobfuscation. Artifact hash is recorded in `BUILD_VALIDATION_REPORT.md`. |
+| Updated source compile/package (Forge 2864, isolated FG3) | `gradlew.bat compileJava compileTestJava jar reobfJar --rerun-tasks` | PASS | Updated main checkout `src` was copied into the preserved FG3.0.197 probe; compile, test compilation, jar, and reobfuscation all reran successfully. Tests were not rerun here. |
+| Swarm GUI/client/server runtime acceptance | not run | NOT RUN | GUI layout, snapshot/command packets, formation flight, patrol, target sharing, restart persistence, and strike authorization require an authorized live Forge/McHeli instance. The disposable server remains at `eula=false`; no EULA was accepted. |

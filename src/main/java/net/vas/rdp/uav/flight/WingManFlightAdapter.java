@@ -99,6 +99,22 @@ public final class WingManFlightAdapter {
                     aircraft.getUniqueID());
             return;
         }
+        if (mission.getSwarmId() != null
+                && mission.getExecutionStage()
+                != net.vas.rdp.uav.mission.MissionExecutionStage.TERMINAL
+                && (!mission.isAttack() || mission.getTargetId() == null)) {
+            net.vas.rdp.uav.swarm.SwarmRecord swarm =
+                    net.vas.rdp.uav.RDPUavMod.swarms().find(world, mission.getSwarmId());
+            net.vas.rdp.uav.swarm.SwarmFormationGuidance.Target formationTarget =
+                    net.vas.rdp.uav.swarm.SwarmFormationGuidance.offsetTarget(swarm,
+                            aircraft.getUniqueID(), targetX, targetY, targetZ,
+                            aircraft.posX, aircraft.posZ, aircraft.rotationYaw);
+            if (formationTarget != null) {
+                targetX = formationTarget.x;
+                targetY = formationTarget.y;
+                targetZ = formationTarget.z;
+            }
+        }
         AircraftState state = aircraftStates.observe(aircraft, entry, mission, tick);
         double baseTargetX = targetX;
         double baseTargetY = targetY;

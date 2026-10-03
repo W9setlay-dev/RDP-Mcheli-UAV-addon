@@ -21,6 +21,15 @@ public final class MissionDefinitionCodec {
         tag.setBoolean("attack", definition.isAttack());
         tag.setBoolean("swarmEnabled", definition.isSwarmEnabled());
         tag.setInteger("swarmMaximumMembers", definition.getSwarmMaximumMembers());
+        if (definition.getSwarmId() != null) tag.setString("swarmId", definition.getSwarmId().toString());
+        net.vas.rdp.uav.swarm.SwarmConfiguration swarm = definition.getSwarmConfiguration();
+        tag.setString("swarmFormation", swarm.getFormation().name());
+        tag.setString("swarmSearchPattern", swarm.getSearchPattern().name());
+        tag.setString("swarmLeadership", swarm.getLeadership().name());
+        tag.setDouble("swarmHorizontalSpacing", swarm.getHorizontalSpacing());
+        tag.setDouble("swarmVerticalSpacing", swarm.getVerticalSpacing());
+        tag.setBoolean("swarmAllowDuplicates", swarm.isAllowDuplicateTargets());
+        tag.setBoolean("swarmCommanderFailover", swarm.isAllowCommanderFailover());
         tag.setString("searchMode", definition.getSearchMode());
         tag.setString("trackingMode", definition.getTrackingMode());
         tag.setString("guidanceMode", definition.getGuidanceMode());
@@ -58,6 +67,34 @@ public final class MissionDefinitionCodec {
                     .setSwarmEnabled(tag.getBoolean("swarmEnabled"));
             if (tag.hasKey("swarmMaximumMembers")) {
                 definition.setSwarmMaximumMembers(tag.getInteger("swarmMaximumMembers"));
+            }
+            if (tag.hasKey("swarmId") && !tag.getString("swarmId").trim().isEmpty()) {
+                definition.setSwarmId(java.util.UUID.fromString(tag.getString("swarmId")));
+            }
+            if (tag.hasKey("swarmFormation") || tag.hasKey("swarmSearchPattern")
+                    || tag.hasKey("swarmLeadership") || tag.hasKey("swarmHorizontalSpacing")
+                    || tag.hasKey("swarmVerticalSpacing") || tag.hasKey("swarmAllowDuplicates")
+                    || tag.hasKey("swarmCommanderFailover")) {
+                net.vas.rdp.uav.swarm.SwarmConfiguration current = definition.getSwarmConfiguration();
+                definition.setSwarmConfiguration(net.vas.rdp.uav.swarm.SwarmConfiguration.builder()
+                        .maximumMembers(current.getMaximumMembers())
+                        .horizontalSpacing(tag.hasKey("swarmHorizontalSpacing")
+                                ? tag.getDouble("swarmHorizontalSpacing") : current.getHorizontalSpacing())
+                        .verticalSpacing(tag.hasKey("swarmVerticalSpacing")
+                                ? tag.getDouble("swarmVerticalSpacing") : current.getVerticalSpacing())
+                        .allowDuplicateTargets(tag.hasKey("swarmAllowDuplicates")
+                                ? tag.getBoolean("swarmAllowDuplicates") : current.isAllowDuplicateTargets())
+                        .allowCommanderFailover(tag.hasKey("swarmCommanderFailover")
+                                ? tag.getBoolean("swarmCommanderFailover") : current.isAllowCommanderFailover())
+                        .formation(tag.hasKey("swarmFormation")
+                                ? net.vas.rdp.uav.swarm.SwarmFormation.valueOf(tag.getString("swarmFormation"))
+                                : current.getFormation())
+                        .searchPattern(tag.hasKey("swarmSearchPattern")
+                                ? net.vas.rdp.uav.swarm.SearchPattern.valueOf(tag.getString("swarmSearchPattern"))
+                                : current.getSearchPattern())
+                        .leadership(tag.hasKey("swarmLeadership")
+                                ? net.vas.rdp.uav.swarm.SwarmLeadership.valueOf(tag.getString("swarmLeadership"))
+                                : current.getLeadership()).build());
             }
             if (tag.hasKey("searchMode")) definition.setSearchMode(tag.getString("searchMode"));
             if (tag.hasKey("trackingMode")) definition.setTrackingMode(tag.getString("trackingMode"));

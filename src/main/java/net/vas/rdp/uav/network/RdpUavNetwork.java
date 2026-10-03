@@ -72,7 +72,17 @@ public final class RdpUavNetwork {
         CHANNEL.registerMessage(ServerCameraAimHandler.class, CameraAim.class, 22, Side.SERVER);
         CHANNEL.registerMessage(ServerOperatorTrimHandler.class, OperatorTrim.class, 23, Side.SERVER);
         CHANNEL.registerMessage(ServerLinkedRetaskHandler.class, LinkedRetask.class, 24, Side.SERVER);
+        CHANNEL.registerMessage(ServerSwarmSnapshotHandler.class,
+                RequestSwarmSnapshot.class, 25, Side.SERVER);
+        CHANNEL.registerMessage(ServerSwarmOperatorCommandHandler.class,
+                SwarmOperatorCommand.class, 27, Side.SERVER);
+        CHANNEL.registerMessage(ServerSwarmConfigurationHandler.class,
+                SwarmConfigurationUpdate.class, 28, Side.SERVER);
+        CHANNEL.registerMessage(ServerSwarmSharedTargetHandler.class,
+                SwarmSharedTargetCommand.class, 29, Side.SERVER);
         if (FMLCommonHandler.instance().getSide().isClient()) {
+            CHANNEL.registerMessage(ClientSwarmSnapshotHandler.class,
+                    SwarmSnapshot.class, 26, Side.CLIENT);
             CHANNEL.registerMessage(ClientMissionControlHandler.class,
                     OpenMissionControl.class, 1, Side.CLIENT);
             CHANNEL.registerMessage(ClientMissionDataHandler.class,
@@ -90,6 +100,32 @@ public final class RdpUavNetwork {
 
     public static void requestMissionData() {
         CHANNEL.sendToServer(new RequestMissionData());
+    }
+
+    public static void requestSwarmSnapshot(String selectedSwarmId) {
+        CHANNEL.sendToServer(new RequestSwarmSnapshot(selectedSwarmId));
+    }
+
+    public static void sendSwarmOperatorCommand(int operation, String swarmId,
+                                               String memberId, String name) {
+        CHANNEL.sendToServer(new SwarmOperatorCommand(operation, swarmId, memberId, name));
+    }
+
+    public static void updateSwarmConfiguration(String swarmId,
+                                                net.vas.rdp.uav.swarm.SwarmConfiguration configuration,
+                                                boolean participation) {
+        if (swarmId == null || configuration == null) return;
+        CHANNEL.sendToServer(new SwarmConfigurationUpdate(swarmId, configuration, participation));
+    }
+
+    public static void lockSharedSwarmTarget(String swarmId, java.util.UUID targetId) {
+        if (swarmId == null || targetId == null) return;
+        CHANNEL.sendToServer(new SwarmSharedTargetCommand(swarmId, targetId, false));
+    }
+
+    public static void clearSharedSwarmTarget(String swarmId) {
+        if (swarmId == null) return;
+        CHANNEL.sendToServer(new SwarmSharedTargetCommand(swarmId, null, true));
     }
 
     public static void abortMission(String missionId) {
@@ -172,6 +208,12 @@ public final class RdpUavNetwork {
         if (definition == null) return false;
         MissionValidationResult validation = MissionValidationResult.validate(definition);
         if (!validation.isValid()) return false;
+        if (definition.isSwarmEnabled()) {
+            if (definition.getMissionType() == net.vas.rdp.uav.mission.MissionType.PATROL
+                    || definition.getSwarmId() == null) return false;
+            CHANNEL.sendToServer(new CreateMission.LaunchMissionDefinition(definition));
+            return true;
+        }
         if (definition.getMissionType() == net.vas.rdp.uav.mission.MissionType.SQUARE_STRIKE) {
             if (definition.isSwarmEnabled() || !definition.getSelectedUavs().isEmpty()
                     || definition.isDefaultTargetPolicy()) return false;
@@ -186,7 +228,6 @@ public final class RdpUavNetwork {
 
     private static boolean isLaunchSupported(MissionDefinition definition) {
         return definition.getMissionType() == net.vas.rdp.uav.mission.MissionType.SQUARE_STRIKE
-                || definition.isSwarmEnabled()
                 || !definition.getSelectedUavs().isEmpty()
                 || definition.isDefaultTargetPolicy()
                 || !"DEFAULT".equals(definition.getSearchMode())
@@ -275,18 +316,442 @@ public final class RdpUavNetwork {
         CHANNEL.sendTo(MissionData.from(player), player);
     }
 
+    private static void reject(EntityPlayerMP player, String message) {
+        player.sendMessage(new net.minecraft.util.text.TextComponentString(message));
+    }
+
     public static void syncTargetTelemetry(EntityPlayerMP player) {
         CHANNEL.sendTo(TargetTelemetry.from(player), player);
     }
 
     public static void syncSwarmTelemetry(EntityPlayerMP player) {
-        net.vas.rdp.uav.swarm.SwarmRecord selected = null;
+        sendSwarmSnapshot(player, "");
+    }
+
+    private static void sendSwarmSnapshot(EntityPlayerMP player, String selectedId) {
+        java.util.List<net.vas.rdp.uav.swarm.SwarmRecord> owned = new java.util.ArrayList<>();
         for (net.vas.rdp.uav.swarm.SwarmRecord swarm :
                 net.vas.rdp.uav.persistence.RDPUavSwarmWorldData.get(player.world)
                         .getRepository().snapshot()) {
-            if (player.getUniqueID().equals(swarm.getOwnerId())) { selected = swarm; break; }
+            if (player.getUniqueID().equals(swarm.getOwnerId())) owned.add(swarm);
         }
-        if (selected != null) CHANNEL.sendTo(SwarmTelemetry.from(selected), player);
+        owned.sort(java.util.Comparator.comparing(swarm -> swarm.getName().toLowerCase(
+                java.util.Locale.ROOT) + swarm.getSwarmId().toString()));
+        CHANNEL.sendTo(SwarmSnapshot.from(owned, selectedId), player);
+    }
+
+    public static final class RequestSwarmSnapshot implements IMessage {
+        private String selectedSwarmId = "";
+        public RequestSwarmSnapshot() { }
+        public RequestSwarmSnapshot(String selectedSwarmId) {
+            this.selectedSwarmId = selectedSwarmId == null ? "" : selectedSwarmId;
+        }
+        public void fromBytes(ByteBuf buffer) { selectedSwarmId = readString(buffer); }
+        public void toBytes(ByteBuf buffer) { writeString(buffer, selectedSwarmId); }
+    }
+
+    public static final class SwarmSnapshot implements IMessage {
+        private final java.util.List<net.vas.rdp.uav.client.SwarmGuiState.Swarm> swarms =
+                new java.util.ArrayList<>();
+        public SwarmSnapshot() { }
+        public SwarmSnapshot(java.util.List<net.vas.rdp.uav.client.SwarmGuiState.Swarm> entries) {
+            if (entries != null) swarms.addAll(entries);
+        }
+        public java.util.List<net.vas.rdp.uav.client.SwarmGuiState.Swarm> getSwarms() {
+            return java.util.Collections.unmodifiableList(swarms);
+        }
+
+        private static SwarmSnapshot from(
+                java.util.List<net.vas.rdp.uav.swarm.SwarmRecord> owned, String selectedId) {
+            SwarmSnapshot packet = new SwarmSnapshot();
+            java.util.UUID selected;
+            try { selected = selectedId == null || selectedId.trim().isEmpty()
+                    ? null : java.util.UUID.fromString(selectedId); }
+            catch (IllegalArgumentException invalid) { selected = null; }
+            for (int i = 0; i < owned.size() && i < 64; i++) {
+                net.vas.rdp.uav.swarm.SwarmRecord record = owned.get(i);
+                java.util.List<net.vas.rdp.uav.client.SwarmGuiState.Member> members =
+                        new java.util.ArrayList<>();
+                if (record.getSwarmId().equals(selected)) {
+                    for (net.vas.rdp.uav.swarm.SwarmMember member : record.getMembers()) {
+                        if (members.size() >= 64) break;
+                        members.add(new net.vas.rdp.uav.client.SwarmGuiState.Member(
+                                member.getAircraftId(), member.getProfile(), member.getRole().name(),
+                                member.getState().name(), member.isAvailable(),
+                                member.isOperatorControlled(), member.getAircraftId().equals(
+                                record.getDesignatedLeader())));
+                    }
+                }
+                net.vas.rdp.uav.swarm.SwarmConfiguration configuration = record.getConfiguration();
+                net.vas.rdp.uav.swarm.SwarmStatus status =
+                        net.vas.rdp.uav.swarm.SwarmStatus.from(record);
+                packet.swarms.add(new net.vas.rdp.uav.client.SwarmGuiState.Swarm(
+                        record.getSwarmId(), record.getName(), record.getState().name(),
+                        record.getMissionState().name(), configuration.getFormation().name(),
+                        configuration.getSearchPattern().name(), configuration.getLeadership().name(),
+                        configuration.getMaximumMembers(), configuration.getHorizontalSpacing(),
+                        configuration.getVerticalSpacing(), configuration.isAllowDuplicateTargets(),
+                        configuration.isAllowCommanderFailover(), record.isMissionParticipation(),
+                        String.valueOf(status.getTargetId()), status.getTargetState().name(), members));
+            }
+            return packet;
+        }
+
+        public void fromBytes(ByteBuf buffer) {
+            swarms.clear();
+            int count = buffer.readUnsignedByte();
+            if (count > 64) throw new IllegalArgumentException("Too many swarms in snapshot");
+            for (int i = 0; i < count; i++) {
+                java.util.UUID id = new java.util.UUID(buffer.readLong(), buffer.readLong());
+                String name = readString(buffer);
+                String state = readString(buffer);
+                String missionState = readString(buffer);
+                String formation = readString(buffer);
+                String search = readString(buffer);
+                String leadership = readString(buffer);
+                int maximum = buffer.readUnsignedByte();
+                double horizontal = buffer.readDouble();
+                double vertical = buffer.readDouble();
+                boolean duplicates = buffer.readBoolean();
+                boolean failover = buffer.readBoolean();
+                boolean participation = buffer.readBoolean();
+                String target = readString(buffer);
+                String targetState = readString(buffer);
+                int membersCount = buffer.readUnsignedByte();
+                if (membersCount > 64) throw new IllegalArgumentException("Too many swarm members");
+                java.util.List<net.vas.rdp.uav.client.SwarmGuiState.Member> members =
+                        new java.util.ArrayList<>();
+                for (int memberIndex = 0; memberIndex < membersCount; memberIndex++) {
+                    java.util.UUID aircraft = new java.util.UUID(buffer.readLong(), buffer.readLong());
+                    members.add(new net.vas.rdp.uav.client.SwarmGuiState.Member(aircraft,
+                            readString(buffer), readString(buffer), readString(buffer),
+                            buffer.readBoolean(), buffer.readBoolean(), buffer.readBoolean()));
+                }
+                swarms.add(new net.vas.rdp.uav.client.SwarmGuiState.Swarm(id, name, state,
+                        missionState, formation, search, leadership, maximum, horizontal, vertical,
+                        duplicates, failover, participation, target, targetState, members));
+            }
+        }
+
+        public void toBytes(ByteBuf buffer) {
+            int count = Math.min(64, swarms.size());
+            buffer.writeByte(count);
+            for (int i = 0; i < count; i++) {
+                net.vas.rdp.uav.client.SwarmGuiState.Swarm swarm = swarms.get(i);
+                buffer.writeLong(swarm.id.getMostSignificantBits());
+                buffer.writeLong(swarm.id.getLeastSignificantBits());
+                writeString(buffer, swarm.name);
+                writeString(buffer, swarm.state);
+                writeString(buffer, swarm.missionState);
+                writeString(buffer, swarm.formation);
+                writeString(buffer, swarm.searchPattern);
+                writeString(buffer, swarm.leadership);
+                buffer.writeByte(Math.max(1, Math.min(64, swarm.maximumMembers)));
+                buffer.writeDouble(swarm.horizontalSpacing);
+                buffer.writeDouble(swarm.verticalSpacing);
+                buffer.writeBoolean(swarm.allowDuplicates);
+                buffer.writeBoolean(swarm.commanderFailover);
+                buffer.writeBoolean(swarm.participation);
+                writeString(buffer, swarm.target);
+                writeString(buffer, swarm.targetState);
+                int membersCount = Math.min(64, swarm.members.size());
+                buffer.writeByte(membersCount);
+                for (int memberIndex = 0; memberIndex < membersCount; memberIndex++) {
+                    net.vas.rdp.uav.client.SwarmGuiState.Member member = swarm.members.get(memberIndex);
+                    buffer.writeLong(member.aircraftId.getMostSignificantBits());
+                    buffer.writeLong(member.aircraftId.getLeastSignificantBits());
+                    writeString(buffer, member.profile);
+                    writeString(buffer, member.role);
+                    writeString(buffer, member.state);
+                    buffer.writeBoolean(member.available);
+                    buffer.writeBoolean(member.operatorControlled);
+                    buffer.writeBoolean(member.designatedLeader);
+                }
+            }
+        }
+    }
+
+    public static final class ServerSwarmSnapshotHandler
+            implements IMessageHandler<RequestSwarmSnapshot, IMessage> {
+        public IMessage onMessage(final RequestSwarmSnapshot message, MessageContext context) {
+            final EntityPlayerMP player = context.getServerHandler().player;
+            Objects.requireNonNull(player.getServer()).addScheduledTask(
+                    () -> sendSwarmSnapshot(player, message.selectedSwarmId));
+            return null;
+        }
+    }
+
+    public static final class ClientSwarmSnapshotHandler
+            implements IMessageHandler<SwarmSnapshot, IMessage> {
+        public IMessage onMessage(final SwarmSnapshot message, MessageContext context) {
+            net.minecraftforge.fml.client.FMLClientHandler.instance().getClient()
+                    .addScheduledTask(() -> net.vas.rdp.uav.client.SwarmGuiState
+                            .replace(message.swarms));
+            return null;
+        }
+    }
+
+    public static final class SwarmOperatorCommand implements IMessage {
+        public static final int CREATE = 0;
+        public static final int ADD_OPERATED_AIRCRAFT = 1;
+        public static final int REMOVE_MEMBER = 2;
+        public static final int PAUSE = 3;
+        public static final int RESUME = 4;
+        public static final int DISBAND = 5;
+        public static final int SET_DESIGNATED_LEADER = 6;
+        private int operation;
+        private String swarmId = "";
+        private String memberId = "";
+        private String name = "";
+
+        public SwarmOperatorCommand() { }
+        public SwarmOperatorCommand(int operation, String swarmId,
+                                    String memberId, String name) {
+            this.operation = operation;
+            this.swarmId = swarmId == null ? "" : swarmId;
+            this.memberId = memberId == null ? "" : memberId;
+            this.name = name == null ? "" : name;
+        }
+        public void fromBytes(ByteBuf buffer) {
+            operation = buffer.readUnsignedByte();
+            swarmId = readString(buffer);
+            memberId = readString(buffer);
+            name = readString(buffer);
+        }
+        public void toBytes(ByteBuf buffer) {
+            buffer.writeByte(Math.max(0, Math.min(6, operation)));
+            writeString(buffer, swarmId);
+            writeString(buffer, memberId);
+            writeString(buffer, name);
+        }
+    }
+
+    public static final class ServerSwarmOperatorCommandHandler
+            implements IMessageHandler<SwarmOperatorCommand, IMessage> {
+        public IMessage onMessage(final SwarmOperatorCommand message, MessageContext context) {
+            final EntityPlayerMP player = context.getServerHandler().player;
+            Objects.requireNonNull(player.getServer()).addScheduledTask(() -> {
+                String result;
+                MCH_EntityAircraft operated =
+                        net.vas.rdp.uav.mission.UavControlAccess.findControlledAircraft(player);
+                if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(operated, player)) {
+                    reject(player, "Swarm command rejected: operator control is required.");
+                    return;
+                }
+                try {
+                    net.vas.rdp.uav.swarm.SwarmManager swarms = RDPUavMod.swarms();
+                    if (message.operation == SwarmOperatorCommand.CREATE) {
+                        int count = 0;
+                        for (net.vas.rdp.uav.swarm.SwarmRecord item :
+                                net.vas.rdp.uav.persistence.RDPUavSwarmWorldData.get(player.world)
+                                        .getRepository().snapshot()) {
+                            if (player.getUniqueID().equals(item.getOwnerId())) count++;
+                        }
+                        if (count >= 64) throw new IllegalArgumentException("Owner swarm limit reached");
+                        String name = message.name.replaceAll("[^A-Za-z0-9 _-]", "").trim();
+                        if (name.isEmpty()) name = "UAV swarm " + (count + 1);
+                        if (name.length() > 24) name = name.substring(0, 24);
+                        net.vas.rdp.uav.swarm.SwarmRecord created =
+                                swarms.createForOperatedAircraft(player.world,
+                                        player.getUniqueID(), name, operated);
+                        result = "Created swarm " + created.getName() + " with the operated UAV.";
+                        sendSwarmSnapshot(player, created.getSwarmId().toString());
+                    } else {
+                        java.util.UUID id = java.util.UUID.fromString(message.swarmId);
+                        boolean accepted;
+                        switch (message.operation) {
+                            case SwarmOperatorCommand.ADD_OPERATED_AIRCRAFT:
+                                accepted = swarms.addOperatedAircraft(player.world,
+                                        player.getUniqueID(), id, operated);
+                                result = accepted ? "Operated UAV added to swarm."
+                                        : "Swarm add rejected: UAV is unsupported, unavailable, or already enrolled.";
+                                break;
+                            case SwarmOperatorCommand.REMOVE_MEMBER:
+                                accepted = swarms.removeMember(player.world, player.getUniqueID(),
+                                        id, java.util.UUID.fromString(message.memberId));
+                                result = accepted ? "Swarm member removed."
+                                        : "Swarm removal rejected: member authorization failed.";
+                                break;
+                            case SwarmOperatorCommand.PAUSE:
+                                accepted = swarms.setState(player.world, player.getUniqueID(), id,
+                                        net.vas.rdp.uav.swarm.SwarmState.AWAITING_OPERATOR);
+                                result = accepted ? "Swarm missions paused." : "Swarm pause rejected.";
+                                break;
+                            case SwarmOperatorCommand.RESUME:
+                                accepted = swarms.setState(player.world, player.getUniqueID(), id,
+                                        net.vas.rdp.uav.swarm.SwarmState.READY);
+                                result = accepted ? "Swarm missions resumed." : "Swarm resume rejected.";
+                                break;
+                            case SwarmOperatorCommand.DISBAND:
+                                accepted = swarms.setState(player.world, player.getUniqueID(), id,
+                                        net.vas.rdp.uav.swarm.SwarmState.DISBANDED);
+                                result = accepted ? "Swarm disbanded and its active member missions were aborted."
+                                        : "Swarm disband rejected.";
+                                break;
+                            case SwarmOperatorCommand.SET_DESIGNATED_LEADER:
+                                accepted = swarms.setDesignatedLeader(player.world,
+                                        player.getUniqueID(), id,
+                                        java.util.UUID.fromString(message.memberId));
+                                result = accepted ? "Designated swarm leader updated."
+                                        : "Leader selection rejected: member authorization failed.";
+                                break;
+                            default:
+                                throw new IllegalArgumentException("Unknown swarm operation");
+                        }
+                        sendSwarmSnapshot(player, id.toString());
+                    }
+                    player.sendMessage(new net.minecraft.util.text.TextComponentString(result));
+                    sendMissionData(player);
+                } catch (IllegalArgumentException failure) {
+                    reject(player, "Swarm command rejected: "
+                            + (failure.getMessage() == null ? "invalid request" : failure.getMessage()));
+                    sendSwarmSnapshot(player, "");
+                }
+            });
+            return null;
+        }
+    }
+
+    public static final class SwarmConfigurationUpdate implements IMessage {
+        private String swarmId = "";
+        private int maximumMembers = 1;
+        private double horizontalSpacing = 16D;
+        private double verticalSpacing = 10D;
+        private String formation = net.vas.rdp.uav.swarm.SwarmFormation.LINE.name();
+        private String searchPattern = net.vas.rdp.uav.swarm.SearchPattern.GRID.name();
+        private String leadership = net.vas.rdp.uav.swarm.SwarmLeadership.DYNAMIC_LEADER.name();
+        private boolean allowDuplicates;
+        private boolean commanderFailover = true;
+        private boolean participation = true;
+
+        public SwarmConfigurationUpdate() { }
+        public SwarmConfigurationUpdate(String swarmId,
+                net.vas.rdp.uav.swarm.SwarmConfiguration configuration, boolean participation) {
+            this.swarmId = swarmId;
+            maximumMembers = configuration.getMaximumMembers();
+            horizontalSpacing = configuration.getHorizontalSpacing();
+            verticalSpacing = configuration.getVerticalSpacing();
+            formation = configuration.getFormation().name();
+            searchPattern = configuration.getSearchPattern().name();
+            leadership = configuration.getLeadership().name();
+            allowDuplicates = configuration.isAllowDuplicateTargets();
+            commanderFailover = configuration.isAllowCommanderFailover();
+            this.participation = participation;
+        }
+        public void fromBytes(ByteBuf buffer) {
+            swarmId = readString(buffer);
+            maximumMembers = buffer.readUnsignedByte();
+            horizontalSpacing = buffer.readDouble();
+            verticalSpacing = buffer.readDouble();
+            formation = readString(buffer);
+            searchPattern = readString(buffer);
+            leadership = readString(buffer);
+            allowDuplicates = buffer.readBoolean();
+            commanderFailover = buffer.readBoolean();
+            participation = buffer.readBoolean();
+        }
+        public void toBytes(ByteBuf buffer) {
+            writeString(buffer, swarmId);
+            buffer.writeByte(Math.max(1, Math.min(64, maximumMembers)));
+            buffer.writeDouble(horizontalSpacing);
+            buffer.writeDouble(verticalSpacing);
+            writeString(buffer, formation);
+            writeString(buffer, searchPattern);
+            writeString(buffer, leadership);
+            buffer.writeBoolean(allowDuplicates);
+            buffer.writeBoolean(commanderFailover);
+            buffer.writeBoolean(participation);
+        }
+    }
+
+    public static final class ServerSwarmConfigurationHandler
+            implements IMessageHandler<SwarmConfigurationUpdate, IMessage> {
+        public IMessage onMessage(final SwarmConfigurationUpdate message, MessageContext context) {
+            final EntityPlayerMP player = context.getServerHandler().player;
+            Objects.requireNonNull(player.getServer()).addScheduledTask(() -> {
+                try {
+                    java.util.UUID id = java.util.UUID.fromString(message.swarmId);
+                    if (message.maximumMembers < 1
+                            || message.maximumMembers > net.vas.rdp.uav.swarm.SwarmConfig.maximumSize) {
+                        throw new IllegalArgumentException("Member limit exceeds server policy");
+                    }
+                    net.vas.rdp.uav.swarm.SwarmConfiguration configuration =
+                            net.vas.rdp.uav.swarm.SwarmConfiguration.builder()
+                                    .maximumMembers(message.maximumMembers)
+                                    .horizontalSpacing(message.horizontalSpacing)
+                                    .verticalSpacing(message.verticalSpacing)
+                                    .formation(net.vas.rdp.uav.swarm.SwarmFormation.valueOf(message.formation))
+                                    .searchPattern(net.vas.rdp.uav.swarm.SearchPattern.valueOf(message.searchPattern))
+                                    .leadership(net.vas.rdp.uav.swarm.SwarmLeadership.valueOf(message.leadership))
+                                    .allowDuplicateTargets(message.allowDuplicates)
+                                    .allowCommanderFailover(message.commanderFailover).build();
+                    boolean accepted = RDPUavMod.swarms().updateConfiguration(player.world,
+                            player.getUniqueID(), id, configuration, message.participation);
+                    player.sendMessage(new net.minecraft.util.text.TextComponentString(accepted
+                            ? "Swarm configuration updated."
+                            : "Swarm configuration rejected: owner or server-bound validation failed."));
+                    sendSwarmSnapshot(player, id.toString());
+                } catch (IllegalArgumentException invalid) {
+                    reject(player, "Swarm configuration rejected: invalid swarm or settings.");
+                    sendSwarmSnapshot(player, "");
+                }
+            });
+            return null;
+        }
+    }
+
+    public static final class SwarmSharedTargetCommand implements IMessage {
+        private String swarmId = "";
+        private String targetId = "";
+        private boolean clear;
+        public SwarmSharedTargetCommand() { }
+        public SwarmSharedTargetCommand(String swarmId, java.util.UUID targetId, boolean clear) {
+            this.swarmId = swarmId == null ? "" : swarmId;
+            this.targetId = targetId == null ? "" : targetId.toString();
+            this.clear = clear;
+        }
+        public void fromBytes(ByteBuf buffer) {
+            swarmId = readString(buffer);
+            targetId = readString(buffer);
+            clear = buffer.readBoolean();
+        }
+        public void toBytes(ByteBuf buffer) {
+            writeString(buffer, swarmId);
+            writeString(buffer, targetId);
+            buffer.writeBoolean(clear);
+        }
+    }
+
+    public static final class ServerSwarmSharedTargetHandler
+            implements IMessageHandler<SwarmSharedTargetCommand, IMessage> {
+        public IMessage onMessage(final SwarmSharedTargetCommand message, MessageContext context) {
+            final EntityPlayerMP player = context.getServerHandler().player;
+            Objects.requireNonNull(player.getServer()).addScheduledTask(() -> {
+                MCH_EntityAircraft aircraft =
+                        net.vas.rdp.uav.mission.UavControlAccess.findControlledAircraft(player);
+                if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(aircraft, player)) {
+                    reject(player, "Shared swarm target rejected: operator control is required.");
+                    return;
+                }
+                try {
+                    java.util.UUID swarmId = java.util.UUID.fromString(message.swarmId);
+                    boolean accepted = message.clear
+                            ? RDPUavMod.swarms().clearSharedTarget(player.world,
+                                    player.getUniqueID(), swarmId)
+                            : RDPUavMod.swarms().lockSharedTarget(player.world,
+                                    player.getUniqueID(), swarmId,
+                                    java.util.UUID.fromString(message.targetId),
+                                    player.world.getTotalWorldTime());
+                    player.sendMessage(new net.minecraft.util.text.TextComponentString(accepted
+                            ? message.clear ? "Shared swarm target cleared." : "Shared swarm target locked."
+                            : "Shared swarm target rejected by ownership or target policy."));
+                    sendSwarmSnapshot(player, swarmId.toString());
+                } catch (IllegalArgumentException invalid) {
+                    reject(player, "Shared swarm target rejected: invalid identity.");
+                }
+            });
+            return null;
+        }
     }
 
     public static final class SwarmTelemetry implements IMessage {
@@ -440,15 +905,20 @@ public final class RdpUavNetwork {
                         java.util.UUID id = java.util.UUID.fromString(message.swarmId);
                         net.vas.rdp.uav.swarm.SwarmRecord record =
                                 RDPUavMod.swarms().find(player.world, id);
-                        if (RDPUavMod.swarms().owns(record, player.getUniqueID())) {
+                        if (!RDPUavMod.swarms().owns(record, player.getUniqueID())
+                                || message.maximumMembers < 1
+                                || message.maximumMembers > net.vas.rdp.uav.swarm.SwarmConfig.maximumSize) {
                             player.sendMessage(new net.minecraft.util.text.TextComponentString(
-                                    "Swarm configuration rejected: owner authorization is required."));
+                                    "Swarm configuration rejected: owner authorization or size validation failed."));
                             return;
                         }
-                        record.setMissionMaximumMembers(message.maximumMembers);
-                        record.setMissionParticipation(message.participation);
-                        record.setAllowDuplicateTargets(message.allowDuplicates);
-                        net.vas.rdp.uav.persistence.RDPUavSwarmWorldData.get(player.world).markDirty();
+                        net.vas.rdp.uav.swarm.SwarmConfiguration configuration = record.getConfiguration()
+                                .toBuilder().maximumMembers(message.maximumMembers)
+                                .allowDuplicateTargets(message.allowDuplicates).build();
+                        if (!RDPUavMod.swarms().updateConfiguration(player.world,
+                                player.getUniqueID(), id, configuration, message.participation)) {
+                            throw new IllegalArgumentException("Swarm configuration failed server validation");
+                        }
                         player.sendMessage(new net.minecraft.util.text.TextComponentString(
                                 "Swarm configuration updated."));
                         syncSwarmTelemetry(player);
@@ -601,7 +1071,7 @@ public final class RdpUavNetwork {
         }
 
         public static final class LaunchMissionDefinition implements IMessage {
-            private int version = 3;
+            private int version = 4;
             private String type = "";
             private String target = "";
             private boolean attack;
@@ -617,6 +1087,15 @@ public final class RdpUavNetwork {
             private boolean policyAllowVehicles = true;
             private double policyMinimumConfidence;
             private String patrolRoute = "";
+            private String swarmId = "";
+            private final java.util.List<java.util.UUID> selectedUavs = new java.util.ArrayList<>();
+            private String swarmFormation = net.vas.rdp.uav.swarm.SwarmFormation.LINE.name();
+            private String swarmSearchPattern = net.vas.rdp.uav.swarm.SearchPattern.GRID.name();
+            private String swarmLeadership = net.vas.rdp.uav.swarm.SwarmLeadership.DYNAMIC_LEADER.name();
+            private double swarmHorizontalSpacing = 16D;
+            private double swarmVerticalSpacing = 10D;
+            private boolean swarmAllowDuplicates;
+            private boolean swarmCommanderFailover = true;
 
             public LaunchMissionDefinition() { }
 
@@ -628,6 +1107,17 @@ public final class RdpUavNetwork {
                 this.weapon = definition.getGuidedWeapon();
                 this.swarmEnabled = definition.isSwarmEnabled();
                 this.swarmMaximumMembers = definition.getSwarmMaximumMembers();
+                this.swarmId = definition.getSwarmId() == null
+                        ? "" : definition.getSwarmId().toString();
+                this.selectedUavs.addAll(definition.getSelectedUavs());
+                net.vas.rdp.uav.swarm.SwarmConfiguration swarm = definition.getSwarmConfiguration();
+                this.swarmFormation = swarm.getFormation().name();
+                this.swarmSearchPattern = swarm.getSearchPattern().name();
+                this.swarmLeadership = swarm.getLeadership().name();
+                this.swarmHorizontalSpacing = swarm.getHorizontalSpacing();
+                this.swarmVerticalSpacing = swarm.getVerticalSpacing();
+                this.swarmAllowDuplicates = swarm.isAllowDuplicateTargets();
+                this.swarmCommanderFailover = swarm.isAllowCommanderFailover();
                 this.unsupportedConfiguration = false;
                 this.policyInclude = joinPolicy(definition.getTargetPolicy().getInclude());
                 this.policyRequire = joinPolicy(definition.getTargetPolicy().getRequire());
@@ -656,6 +1146,22 @@ public final class RdpUavNetwork {
                 policyAllowVehicles = buffer.readBoolean();
                 policyMinimumConfidence = buffer.readDouble();
                 patrolRoute = readString(buffer);
+                if (version >= 4) {
+                    swarmId = readString(buffer);
+                    int count = buffer.readUnsignedByte();
+                    if (count > 64) throw new IllegalArgumentException("Too many selected UAVs");
+                    selectedUavs.clear();
+                    for (int i = 0; i < count; i++) {
+                        selectedUavs.add(new java.util.UUID(buffer.readLong(), buffer.readLong()));
+                    }
+                    swarmFormation = readString(buffer);
+                    swarmSearchPattern = readString(buffer);
+                    swarmLeadership = readString(buffer);
+                    swarmHorizontalSpacing = buffer.readDouble();
+                    swarmVerticalSpacing = buffer.readDouble();
+                    swarmAllowDuplicates = buffer.readBoolean();
+                    swarmCommanderFailover = buffer.readBoolean();
+                }
             }
 
             public void toBytes(ByteBuf buffer) {
@@ -675,6 +1181,66 @@ public final class RdpUavNetwork {
                 buffer.writeBoolean(policyAllowVehicles);
                 buffer.writeDouble(policyMinimumConfidence);
                 writeString(buffer, patrolRoute);
+                if (version >= 4) {
+                    writeString(buffer, swarmId);
+                    int count = Math.min(64, selectedUavs.size());
+                    buffer.writeByte(count);
+                    for (int i = 0; i < count; i++) {
+                        java.util.UUID id = selectedUavs.get(i);
+                        buffer.writeLong(id.getMostSignificantBits());
+                        buffer.writeLong(id.getLeastSignificantBits());
+                    }
+                    writeString(buffer, swarmFormation);
+                    writeString(buffer, swarmSearchPattern);
+                    writeString(buffer, swarmLeadership);
+                    buffer.writeDouble(swarmHorizontalSpacing);
+                    buffer.writeDouble(swarmVerticalSpacing);
+                    buffer.writeBoolean(swarmAllowDuplicates);
+                    buffer.writeBoolean(swarmCommanderFailover);
+                }
+            }
+
+            public MissionDefinition toMissionDefinition() {
+                net.vas.rdp.uav.mission.MissionDefinition definition = new MissionDefinition()
+                        .setMissionType(net.vas.rdp.uav.mission.MissionType.valueOf(type))
+                        .setTarget(target).setGuidedWeapon(weapon).setAttack(attack)
+                        .setPriority(net.vas.rdp.uav.target.TargetPriority.values()[
+                                Math.max(0, Math.min(3, priority))])
+                        .setSwarmEnabled(swarmEnabled).setSwarmMaximumMembers(swarmMaximumMembers);
+                if (swarmId != null && !swarmId.trim().isEmpty()) {
+                    definition.setSwarmId(java.util.UUID.fromString(swarmId));
+                }
+                for (java.util.UUID id : selectedUavs) definition.selectUav(id);
+                definition.setSwarmConfiguration(net.vas.rdp.uav.swarm.SwarmConfiguration.builder()
+                        .maximumMembers(swarmMaximumMembers)
+                        .horizontalSpacing(swarmHorizontalSpacing)
+                        .verticalSpacing(swarmVerticalSpacing)
+                        .allowDuplicateTargets(swarmAllowDuplicates)
+                        .allowCommanderFailover(swarmCommanderFailover)
+                        .formation(net.vas.rdp.uav.swarm.SwarmFormation.valueOf(swarmFormation))
+                        .searchPattern(net.vas.rdp.uav.swarm.SearchPattern.valueOf(swarmSearchPattern))
+                        .leadership(net.vas.rdp.uav.swarm.SwarmLeadership.valueOf(swarmLeadership))
+                        .build());
+                net.vas.rdp.uav.target.TargetPolicy.Builder policy =
+                        net.vas.rdp.uav.target.TargetPolicy.builder()
+                                .include(policyValues(policyInclude))
+                                .require(policyValues(policyRequire))
+                                .exclude(policyValues(policyExclude))
+                                .rejectDeeplyEmbedded(policyRejectEmbedded)
+                                .allowHostileVehicles(policyAllowVehicles)
+                                .withMinimumConfidence(policyMinimumConfidence);
+                definition.setTargetPolicy(policy.snapshot());
+                return definition;
+            }
+
+            private static String[] policyValues(String encoded) {
+                if (encoded == null || encoded.trim().isEmpty()) return new String[0];
+                return encoded.split("\\|", -1);
+            }
+
+            public String getSwarmId() { return swarmId; }
+            public java.util.List<java.util.UUID> getSelectedUavs() {
+                return java.util.Collections.unmodifiableList(selectedUavs);
             }
 
             private static String joinPolicy(java.util.List<String> values) {
@@ -1961,7 +2527,10 @@ public final class RdpUavNetwork {
             final EntityPlayerMP player = context.getServerHandler().player;
             Objects.requireNonNull(player.getServer()).addScheduledTask(() -> {
                 boolean patrol = "PATROL".equals(message.type);
-                if (message.version != 3 || message.unsupportedConfiguration
+                if ((message.version != 3 && message.version != 4)
+                        || (message.version == 3 && message.swarmEnabled)
+                        || (message.swarmEnabled && message.version < 4)
+                        || message.unsupportedConfiguration
                         || (patrol ? message.patrolRoute == null || message.patrolRoute.trim().isEmpty()
                         : message.target == null || !message.target.matches(
                         "(?i)(mod=[A-Za-z0-9_.-]+|[A-Za-z0-9_.-]+:[A-Za-z0-9_./-]+)"))) {
@@ -1976,6 +2545,29 @@ public final class RdpUavNetwork {
                 }
                 if (message.swarmMaximumMembers < 1 || message.swarmMaximumMembers > 64) {
                     reject(player, "Mission definition rejected: invalid swarm size.");
+                    return;
+                }
+                if (message.swarmEnabled) {
+                    try {
+                        if (message.swarmId == null || message.swarmId.trim().isEmpty()) {
+                            throw new IllegalArgumentException("Select an owned swarm first");
+                        }
+                        MissionDefinition definition = message.toMissionDefinition();
+                        MissionValidationResult validation = MissionValidationResult.validate(definition);
+                        if (!validation.isValid()) {
+                            throw new IllegalArgumentException(validation.getErrors().get(0));
+                        }
+                        int launched = RDPUavMod.swarms().launchMission(player.world,
+                                player.getUniqueID(), java.util.UUID.fromString(message.swarmId), definition);
+                        player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                "Swarm mission assigned to " + launched + " UAV(s)."));
+                        sendMissionData(player);
+                        sendSwarmSnapshot(player, message.swarmId);
+                    } catch (RuntimeException invalid) {
+                        reject(player, "Swarm mission rejected: "
+                                + (invalid.getMessage() == null ? "server validation failed" : invalid.getMessage()));
+                        sendSwarmSnapshot(player, message.swarmId);
+                    }
                     return;
                 }
                 if (patrol) {

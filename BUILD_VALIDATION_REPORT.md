@@ -165,6 +165,35 @@ The survival abort path is source-validated only: the server checks mission
 ownership and rejects terminal or malformed requests, but no live multiplayer
 packet test has been run.
 
+## Isolated exact-Forge compatibility probe — 2026-10-02
+
+The D-010 investigation tested the copied current checkout in session artifacts;
+the main checkout's build files were not changed for this probe.
+
+* With ForgeGradle `2.3-1.0.1`, Gradle `4.10.3`, and Forge
+  `1.12.2-14.23.5.2864`, `test build --no-daemon` fails at `extractUserdev`.
+  ForgeGradle requests
+  `forge-1.12.2-14.23.5.2864-userdev.jar`; the cache contains `userdev3`,
+  `universal`, and `sources` artifacts for that Forge version.
+* With ForgeGradle `3.0.197` in a second isolated copy, `compileJava`,
+  `compileTestJava`, `jar`, `reobfJar`, and `build -x test --rerun-tasks`
+  succeeded against Forge 2864 and the copied local dependencies.
+* `test --rerun-tasks` discovered 284 tests. Initially 13 failed because the
+  test runtime omitted the compile-only ModularUI jar and Forge's network
+  registry was not initialized. Adding ModularUI to the test runtime reduced
+  failures to seven; all seven are in `NetworkClientServerContractTest` and
+  fail while `RdpUavNetwork` statically registers a `SimpleNetworkWrapper`.
+  The failure is an NPE in Forge `NetworkRegistry.newChannel` while inserting
+  into its channel map. The other 277 tests passed in that run.
+* Conclusion: the target source can be compiled and packaged with the exact
+  Forge artifact using ForgeGradle 3.0.197. Full test compatibility is not yet
+  established. This result does not select the supported deployment tuple,
+  validate a running client/server, or authorize changing the main build.
+
+Probe directories and build outputs are outside the repository under the
+session artifact root. The active project `run/` directory, installed game,
+worlds, and root Forge version were not changed.
+
 ### UNVERIFIED FEATURES
 
 * Actual `WingmanEntry` execution by `AutonomousFlightHandler`.
@@ -334,3 +363,24 @@ passes. The project can compile and run its source/unit suite. The exact
 Forge/McHeli client/server mission path, aircraft steering, weapon release,
 impact, landing, parking, and HUD packet behavior still require a running
 matching instance. No live mission is claimed as passed without that evidence.
+
+## D-014 swarm implementation build — 2026-10-03
+
+Main checkout remains configured for Forge 1.12.2-14.23.5.2768 with
+ForgeGradle 2.3.
+
+| Command | Result | Evidence |
+| --- | --- | --- |
+| `gradlew.bat test --no-daemon --console=plain` | PASS | 293 tests, 0 failures, 0 errors, 0 skipped. |
+| `gradlew.bat build --no-daemon --console=plain` | PASS | `jar`, `reobfJar`, source jar, and build tasks completed. |
+| `git diff --check` | PASS | No whitespace errors. Git emitted only Windows line-ending conversion warnings. |
+| Isolated Forge 2864 FG3 probe: `compileJava compileTestJava jar reobfJar --rerun-tasks` | PASS | Recompiled the updated main `src` tree against Forge 14.23.5.2864 using ForgeGradle 3.0.197. This is an isolated compile/package result, not a production tuple selection or runtime test. |
+
+Artifact: `build/libs/rdp-uav-addon-0.1.0.jar`, 728,044 bytes,
+SHA-256 `8256FE89493CE43B28CB65C9B42031200804C5CA1A693413ECE002B88442F4AF`.
+
+Live client/server validation was not run. The prior isolated server attempt
+stopped at the EULA gate; `eula=false` remains in that disposable probe, and
+no world or deployment was created. The separate Forge 2864 full test run
+still has seven known `NetworkRegistry.newChannel` test-worker errors; this
+checkpoint only reran compile, test compilation, packaging, and reobfuscation.

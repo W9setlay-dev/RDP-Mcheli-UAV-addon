@@ -17,7 +17,7 @@ import net.vas.rdp.uav.target.TargetSpec;
 import java.util.UUID;
 
 public final class MissionNbtCodec {
-    private static final int CURRENT_SCHEMA = 7;
+    private static final int CURRENT_SCHEMA = 8;
     private MissionNbtCodec() {
     }
 
@@ -25,6 +25,7 @@ public final class MissionNbtCodec {
         NBTTagCompound tag = new NBTTagCompound();
         tag.setInteger("schemaVersion", CURRENT_SCHEMA);
         tag.setString("missionId", mission.getMissionId().toString());
+        if (mission.getSwarmId() != null) tag.setString("swarmId", mission.getSwarmId().toString());
         tag.setString("ownerId", mission.getOwnerId().toString());
         tag.setString("aircraftId", mission.getAircraftId().toString());
         tag.setString("aircraftType", mission.getAircraftType());
@@ -96,10 +97,16 @@ public final class MissionNbtCodec {
 
     public static RDPMission read(NBTTagCompound tag) {
         if (tag == null) throw new IllegalArgumentException("Mission NBT is required");
-        String registryId = tag.getString("targetId");
-        String namespace = tag.getString("targetNamespace");
-        TargetSelectionMode mode = enumValue(tag, "targetMode", TargetSelectionMode.class);
-        TargetPriority priority = enumValue(tag, "priority", TargetPriority.class);
+        String registryId = tag.hasKey("targetId") ? tag.getString("targetId") : "";
+        String namespace = tag.hasKey("targetNamespace") ? tag.getString("targetNamespace") : "";
+        TargetSelectionMode mode = tag.hasKey("targetMode")
+                && !tag.getString("targetMode").trim().isEmpty()
+                ? enumValue(tag, "targetMode", TargetSelectionMode.class)
+                : legacyTargetMode(registryId, namespace, tag);
+        TargetPriority priority = tag.hasKey("priority")
+                && !tag.getString("priority").trim().isEmpty()
+                ? enumValue(tag, "priority", TargetPriority.class)
+                : TargetPriority.NORMAL;
         TargetSpec spec = mode == TargetSelectionMode.MANUAL
                 ? TargetSpec.manual(registryId, priority)
                 : mode == TargetSelectionMode.AUTO
@@ -141,6 +148,9 @@ public final class MissionNbtCodec {
         mission.restoreExecutionMetadata(executionStage,
                 parent.isEmpty() ? null : parseUuid(parent, "parentMissionId"),
                 child.isEmpty() ? null : parseUuid(child, "childMissionId"));
+        if (tag.hasKey("swarmId") && !tag.getString("swarmId").trim().isEmpty()) {
+            mission.setSwarmId(parseUuid(tag.getString("swarmId"), "swarmId"));
+        }
         mission.setDimension(tag.getInteger("dimension"));
         if (mission.getMissionType() == MissionType.PATROL && tag.hasKey("patrolRoute")) {
             NBTTagList routeTag = tag.getTagList("patrolRoute", 10);
@@ -209,7 +219,23 @@ public final class MissionNbtCodec {
                 throw new IllegalArgumentException("Mission control owner does not match state");
             }
         }
+        mission.validateStateConsistency();
         return mission;
+    }
+
+    private static TargetSelectionMode legacyTargetMode(String registryId,
+                                                       String namespace,
+                                                       NBTTagCompound tag) {
+        if (!registryId.trim().isEmpty()) {
+            return registryId.contains(":") ? TargetSelectionMode.MANUAL : TargetSelectionMode.AUTO;
+        }
+        if (!namespace.trim().isEmpty()) {
+            return TargetSelectionMode.AUTO;
+        }
+        if (tag.hasKey("targetX") || tag.hasKey("targetY") || tag.hasKey("targetZ")) {
+            return TargetSelectionMode.POINT;
+        }
+        return TargetSelectionMode.POINT;
     }
 
     private static void writeList(NBTTagCompound tag, String key, java.util.List<String> values) {

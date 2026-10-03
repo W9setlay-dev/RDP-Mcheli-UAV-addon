@@ -88,7 +88,7 @@ public final class SwarmRecord {
 
     private void assignSlots() {
         List<FormationSlot> slots = FormationGeometry.slots(formation, members.size(),
-                SwarmConfig.horizontalSpacing, SwarmConfig.verticalSpacing);
+                configuration.getHorizontalSpacing(), configuration.getVerticalSpacing());
         for (int i = 0; i < members.size(); i++) {
             members.get(i).setSlot(slots.get(i));
         }
@@ -103,13 +103,29 @@ public final class SwarmRecord {
     public SwarmState getState() { return state; }
     public void setState(SwarmState state) { if (state != null) this.state = state; }
     public SwarmLeadership getLeadership() { return leadership; }
-    public void setLeadership(SwarmLeadership value) { if (value != null) leadership = value; }
+    public void setLeadership(SwarmLeadership value) {
+        if (value != null) {
+            leadership = value;
+            configuration = configuration.toBuilder().leadership(value).build();
+        }
+    }
     public SwarmFormation getFormation() { return formation; }
-    public void setFormation(SwarmFormation value) { if (value != null) formation = value; }
+    public void setFormation(SwarmFormation value) {
+        if (value != null) {
+            formation = value;
+            configuration = configuration.toBuilder().formation(value).build();
+            assignSlots();
+        }
+    }
     public SwarmResult getResult() { return result; }
     public void setResult(SwarmResult value) { if (value != null) result = value; }
     public SearchPattern getSearchPattern() { return searchPattern; }
-    public void setSearchPattern(SearchPattern value) { if (value != null) searchPattern = value; }
+    public void setSearchPattern(SearchPattern value) {
+        if (value != null) {
+            searchPattern = value;
+            configuration = configuration.toBuilder().searchPattern(value).build();
+        }
+    }
     public UUID getDesignatedLeader() { return designatedLeader; }
     public void setDesignatedLeader(UUID value) { designatedLeader = value; }
     public UUID getCommanderId() { return commanderId; }
@@ -127,12 +143,20 @@ public final class SwarmRecord {
         missionMaximumMembers = Math.max(1, Math.min(SwarmConfig.maximumSize, value));
     }
     public boolean isAllowDuplicateTargets() { return allowDuplicateTargets; }
-    public void setAllowDuplicateTargets(boolean value) { allowDuplicateTargets = value; }
+    public void setAllowDuplicateTargets(boolean value) {
+        allowDuplicateTargets = value;
+        configuration = configuration.toBuilder().allowDuplicateTargets(value).build();
+    }
     public SwarmConfiguration getConfiguration() { return configuration; }
     public void setConfiguration(SwarmConfiguration value) {
         if (value == null) throw new IllegalArgumentException("Swarm configuration is required");
         configuration = value;
         missionMaximumMembers = Math.min(missionMaximumMembers, value.getMaximumMembers());
+        allowDuplicateTargets = value.isAllowDuplicateTargets();
+        formation = value.getFormation();
+        searchPattern = value.getSearchPattern();
+        leadership = value.getLeadership();
+        assignSlots();
     }
     public SwarmAssignmentManager getAssignmentManager() { return assignmentManager; }
     public SwarmTargetRegistry getTargetRegistry() { return targetRegistry; }
@@ -141,11 +165,16 @@ public final class SwarmRecord {
         if (members.isEmpty() || leadership == SwarmLeadership.NO_SINGLE_LEADER) return null;
         if (leadership == SwarmLeadership.DESIGNATED_LEADER && designatedLeader != null) {
             for (SwarmMember member : members) {
-                if (designatedLeader.equals(member.getAircraftId()) && member.isAvailable()) {
-                    commanderId = designatedLeader;
-                    return designatedLeader;
+                if (designatedLeader.equals(member.getAircraftId())) {
+                    if (member.isAvailable()) {
+                        commanderId = designatedLeader;
+                        return designatedLeader;
+                    }
+                    if (!configuration.isAllowCommanderFailover()) return null;
+                    break;
                 }
             }
+            if (!configuration.isAllowCommanderFailover()) return null;
         }
         if (commanderId != null) {
             for (SwarmMember member : members) {
@@ -153,6 +182,7 @@ public final class SwarmRecord {
                     return commanderId;
                 }
             }
+            if (!configuration.isAllowCommanderFailover()) return null;
         }
         for (SwarmMember member : members) {
             if (member.isAvailable()) {
@@ -160,7 +190,6 @@ public final class SwarmRecord {
                 return commanderId;
             }
         }
-        commanderId = null;
         return null;
     }
 }

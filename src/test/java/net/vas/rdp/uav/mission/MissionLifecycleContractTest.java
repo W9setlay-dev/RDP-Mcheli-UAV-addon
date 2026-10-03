@@ -1,6 +1,7 @@
 package net.vas.rdp.uav.mission;
 
 import net.vas.rdp.uav.target.TargetPriority;
+import net.vas.rdp.uav.target.TargetSelectionMode;
 import net.vas.rdp.uav.target.TargetSpec;
 import net.vas.rdp.uav.persistence.MissionNbtCodec;
 import net.minecraft.nbt.NBTTagCompound;
@@ -126,6 +127,60 @@ public class MissionLifecycleContractTest {
     }
 
     @Test
+    public void terminalCommitRejectsTargetReplacementAndAreaClear() {
+        RDPMission mission = mission(0);
+        UUID committedTarget = UUID.randomUUID();
+        mission.transitionTo(MissionState.DISPATCHED, 1);
+        mission.transitionTo(MissionState.TAKEOFF, 2);
+        mission.transitionTo(MissionState.CRUISE, 3);
+        mission.transitionTo(MissionState.SEARCHING, 4);
+        mission.transitionTo(MissionState.TARGET_ACQUIRED, 5);
+        mission.lockTarget(committedTarget, 6);
+        mission.transitionTo(MissionState.KAMIKADZE_TARGET, 7);
+
+        try {
+            mission.lockTarget(UUID.randomUUID(), 8);
+            fail("A terminal target must not be replaced by a different UUID");
+        } catch (IllegalStateException expected) {
+            assertEquals("Terminal target cannot be replaced", expected.getMessage());
+        }
+
+        try {
+            mission.lockPoint(8);
+            fail("A terminal target must not be cleared by a point lock");
+        } catch (IllegalStateException expected) {
+            assertEquals("Terminal target cannot be replaced", expected.getMessage());
+        }
+
+        try {
+            mission.applyOperatorAreaLock(1.0D, 2.0D, 3.0D, 8);
+            fail("A terminal target must not be cleared by an area lock");
+        } catch (IllegalStateException expected) {
+            assertEquals("Terminal target cannot be replaced", expected.getMessage());
+        }
+
+        assertEquals(committedTarget, mission.getTargetId());
+        assertEquals(MissionState.KAMIKADZE_TARGET, mission.getState());
+    }
+
+    @Test
+    public void targetClaimOwnershipIsSingleWriterAndForceReassignsTheTarget() {
+        MissionCoordinator coordinator = new MissionCoordinator();
+        UUID targetId = UUID.randomUUID();
+        UUID firstAircraft = UUID.randomUUID();
+        UUID secondAircraft = UUID.randomUUID();
+
+        assertTrue(coordinator.claim(firstAircraft, targetId));
+        assertTrue(coordinator.isAssigned(firstAircraft, targetId));
+        assertFalse(coordinator.claim(secondAircraft, targetId));
+
+        assertTrue(coordinator.claim(secondAircraft, targetId, null, null, true));
+        assertTrue(coordinator.isAssigned(secondAircraft, targetId));
+        assertFalse(coordinator.isAssigned(firstAircraft, targetId));
+        assertFalse(coordinator.claim(firstAircraft, targetId));
+    }
+
+    @Test
     public void controlOwnerFollowsAuthoritativeMissionState() {
         RDPMission mission = mission(0);
         assertEquals(ControlOwner.MISSION_AI, mission.getControlOwner());
@@ -219,6 +274,34 @@ public class MissionLifecycleContractTest {
         assertEquals(MissionExecutionStage.TRANSIT, restored.getExecutionStage());
         assertNull(restored.getParentMissionId());
         assertNull(restored.getChildMissionId());
+    }
+
+    @Test
+    public void swarmAssociationSurvivesMissionPersistence() {
+        RDPMission source = mission(0);
+        UUID swarmId = UUID.randomUUID();
+        source.setSwarmId(swarmId);
+
+        RDPMission restored = MissionNbtCodec.read(MissionNbtCodec.write(source));
+
+        assertEquals(swarmId, restored.getSwarmId());
+    }
+
+    @Test
+    public void legacyTargetSelectionMetadataDefaultsToTheSavedIdentity() {
+        RDPMission source = new RDPMission(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
+                "switchblade", MissionType.RECONNAISSANCE,
+                TargetSpec.manual("mod:target", TargetPriority.HIGH),
+                false, false, false, 64, 32, 0L);
+        NBTTagCompound legacy = MissionNbtCodec.write(source);
+        legacy.removeTag("targetMode");
+        legacy.removeTag("priority");
+
+        RDPMission restored = MissionNbtCodec.read(legacy);
+
+        assertEquals(TargetSelectionMode.MANUAL, restored.getTargetSelectionMode());
+        assertEquals(TargetPriority.NORMAL, restored.getTargetPriority());
+        assertEquals("mod:target", restored.getTargetSpec().getRegistryId());
     }
 
     @Test

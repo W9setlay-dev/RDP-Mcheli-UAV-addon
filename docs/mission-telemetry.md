@@ -87,8 +87,10 @@ mods loaded, `DedicatedServer: Done`, and RDP Core marking the server context
 `RUNNING`. These milestones prove server initialization, not physical UAV
 flight.
 
-The development runtime currently logs a nonfatal reflection stack trace from
-the external `rdpcore-1.0.0.jar` when its world-save integration requests a
-legacy `RDPWorldSavedData(String)` constructor. That dependency is outside this
-repository and is not modified by the addon. It must remain a separately
-reported runtime limitation until the matching RDP Core artifact is supplied.
+Historical project records report a nonfatal reflection stack trace from the
+external `rdpcore-1.0.0.jar` requesting a legacy
+`RDPWorldSavedData(String)` constructor. The saved 2026-09-27 client run
+instead fails during client initialization in McHeliCE model loading, before a
+world is opened; the root current log is empty. Neither record establishes the
+current dedicated-server world-save behavior. Keep the constructor report
+historical until reproduced in a successful current world-load run.

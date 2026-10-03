@@ -74,10 +74,24 @@ public final class SwarmTargetRegistry {
 
     public synchronized boolean lock(UUID targetId, int dimension,
                                      double x, double y, double z, long tick) {
-        if (!observe(targetId, dimension, x, y, z, tick)
-                && !targetId.equals(this.targetId)) return false;
+        if (targetId == null || tick < 0L || !Double.isFinite(x)
+                || !Double.isFinite(y) || !Double.isFinite(z)) {
+            throw new IllegalArgumentException("Target identity and finite observation are required");
+        }
+        if (this.targetId != null && !this.targetId.equals(targetId)) {
+            return false;
+        }
+        boolean changed = !targetId.equals(this.targetId) || this.dimension != dimension
+                || this.lastSeenTick != tick || this.lastX != x || this.lastY != y || this.lastZ != z
+                || state != SwarmTargetState.LOCKED;
+        this.targetId = targetId;
+        this.dimension = dimension;
+        this.lastX = x;
+        this.lastY = y;
+        this.lastZ = z;
+        this.lastSeenTick = tick;
         state = SwarmTargetState.LOCKED;
-        return true;
+        return changed;
     }
 
     public synchronized void markLost() {
