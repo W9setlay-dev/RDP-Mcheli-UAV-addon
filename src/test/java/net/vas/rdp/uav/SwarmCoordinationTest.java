@@ -19,8 +19,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.*;
 
 public class SwarmCoordinationTest {
     @Test
@@ -86,7 +85,7 @@ public class SwarmCoordinationTest {
         swarm.setConfiguration(SwarmConfiguration.builder().maximumMembers(4)
                 .leadership(SwarmLeadership.DESIGNATED_LEADER)
                 .allowCommanderFailover(false).build());
-        assertEquals(null, swarm.referenceMember());
+        assertNull(swarm.referenceMember());
         swarm.setConfiguration(swarm.getConfiguration().toBuilder()
                 .allowCommanderFailover(true).build());
         assertEquals(followerId, swarm.referenceMember());
@@ -124,8 +123,8 @@ public class SwarmCoordinationTest {
 
         assertEquals(SwarmRole.SEARCHER, searcher.getRole());
         assertEquals(SwarmRole.TRACKER, tracker.getRole());
-        assertFalse(searcher.getRole() == SwarmRole.EXECUTOR);
-        assertFalse(tracker.getRole() == SwarmRole.EXECUTOR);
+        assertNotSame(searcher.getRole(), SwarmRole.EXECUTOR);
+        assertNotSame(tracker.getRole(), SwarmRole.EXECUTOR);
     }
 
     @Test
@@ -146,6 +145,6 @@ public class SwarmCoordinationTest {
 
         assertEquals(SwarmRole.RESERVE, unavailable.getRole());
         assertEquals(SwarmRole.SEARCHER, replacement.getRole());
-        assertFalse(replacement.getRole() == SwarmRole.EXECUTOR);
+        assertNotSame(replacement.getRole(), SwarmRole.EXECUTOR);
     }
 }

@@ -7,13 +7,14 @@ import net.vas.rdp.uav.mission.MissionPresets;
 import net.vas.rdp.uav.mission.MissionWaypoint;
 import org.junit.Test;
 
-import static org.junit.Assert.assertEquals;
 import java.util.UUID;
 import net.vas.rdp.uav.target.TargetPolicy;
 import net.vas.rdp.uav.swarm.SwarmConfiguration;
 import net.vas.rdp.uav.swarm.SwarmFormation;
 import net.vas.rdp.uav.swarm.SearchPattern;
 import net.vas.rdp.uav.swarm.SwarmLeadership;
+
+import static org.junit.Assert.*;
 
 public class MissionDefinitionCodecTest {
     @Test
@@ -51,8 +52,8 @@ public class MissionDefinitionCodecTest {
                 decoded.getSwarmConfiguration().getLeadership());
         assertEquals(27D, decoded.getSwarmConfiguration().getHorizontalSpacing(), 0D);
         assertEquals(13D, decoded.getSwarmConfiguration().getVerticalSpacing(), 0D);
-        assertEquals(true, decoded.getSwarmConfiguration().isAllowDuplicateTargets());
-        assertEquals(false, decoded.getSwarmConfiguration().isAllowCommanderFailover());
+        assertTrue(decoded.getSwarmConfiguration().isAllowDuplicateTargets());
+        assertFalse(decoded.getSwarmConfiguration().isAllowCommanderFailover());
         assertEquals(source.getTargetPolicy().getInclude(), decoded.getTargetPolicy().getInclude());
         assertEquals(source.getTargetPolicy().isRejectEmbedded(),
                 decoded.getTargetPolicy().isRejectEmbedded());

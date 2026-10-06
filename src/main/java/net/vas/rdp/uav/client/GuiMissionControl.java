@@ -75,7 +75,7 @@ public final class GuiMissionControl extends GuiScreen {
 
     static Entity capturedCrosshairTarget() {
         Minecraft mc = Minecraft.getMinecraft();
-        if (mc == null || mc.world == null || capturedCrosshairTargetId == null) {
+        if (mc.world == null || capturedCrosshairTargetId == null) {
             return null;
         }
         for (Entity entity : mc.world.loadedEntityList) {
@@ -171,7 +171,7 @@ public final class GuiMissionControl extends GuiScreen {
                 active.pendingDangerMissionId = null;
             }
             Minecraft mc = Minecraft.getMinecraft();
-            if (mc != null && mc.player != null) {
+            if (mc.player != null) {
                 mc.player.sendMessage(new net.minecraft.util.text.TextComponentString(
                         "Abort not sent: select an active mission in Mission Control first."));
             }
@@ -505,7 +505,7 @@ public final class GuiMissionControl extends GuiScreen {
         else if (button.id == 15) confirmDangerAction("clear-all", GuiMissionControl::clearAll, "Archive all of your mission records? They remain in server history.");
         else if (button.id == 16) confirmDangerAction("return-to-base", GuiMissionControl::returnSelected, "Request native McHeli return and landing for the selected mission?");
         else if (button.id == 31) confirmDangerAction("linked-retask",
-                () -> retaskSelectedToCrosshair(),
+                this::retaskSelectedToCrosshair,
                 "Transfer the held reconnaissance aircraft to a new linked strike mission?");
         else if (button.id == 5) createEntityMission(false);
         else if (button.id == 6) confirmDangerAction("attack", () -> createEntityMission(true), "Launch an autonomous hostile-target attack?");

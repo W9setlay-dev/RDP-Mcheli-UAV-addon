@@ -44,7 +44,7 @@ public class FlightGuidancePlannerTest {
 
     private static AircraftState state(double vx) {
         return AircraftState.observe(UUID.randomUUID(), 0, 100,
-                0.0, 100.0, 0.0, 0.0 - vx, 100.0 - 0.0, 0.0 - 0.0,
+                0.0, 100.0, 0.0, 0.0 - vx, 100.0 - 0.0, 0.0,
                 0, 0, 0, 1, "ENROUTE", UUID.randomUUID(),
                 ControlOwner.MISSION_AI, true, 0, 0,
                 100, 100, 0, 100, "KNOWN");

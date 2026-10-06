@@ -1,6 +1,3 @@
-import groovy.json.JsonSlurper
-import java.security.MessageDigest
-
 buildscript {
     repositories {
         mavenCentral()
@@ -11,75 +8,30 @@ buildscript {
     }
 
     dependencies {
-        classpath 'com.anatawa12.forge:ForgeGradle:2.3-1.0.1'
+        classpath 'net.minecraftforge.gradle:ForgeGradle:3.0.197'
     }
 }
 
-apply plugin: 'net.minecraftforge.gradle.forge'
+apply plugin: 'net.minecraftforge.gradle'
 apply plugin: 'java'
 
 version = '0.1.0'
 group = 'net.vas.rdp.uav'
 archivesBaseName = 'rdp-uav-addon'
+def forgeVersion = '1.12.2-14.23.5.2859'
 
 sourceCompatibility = 1.8
 targetCompatibility = 1.8
 
 minecraft {
-    version = '1.12.2-14.23.5.2768'
-    runDir = 'run'
-    mappings = 'stable_39'
-}
-
-// ForgeGradle 2.3 hard-codes the legacy HTTP asset endpoint. Prefetch the
-// objects over HTTPS so its getAssets task can complete without using HTTP.
-tasks.register('prefetchAssetsHttps') {
-    dependsOn getAssetIndex
-
-    doLast {
-        def sha1 = { File file ->
-            MessageDigest digest = MessageDigest.getInstance('SHA-1')
-            digest.digest(file.bytes).encodeHex().toString()
-        }
-        def assetsRoot = new File(gradle.gradleUserHomeDir, 'caches/minecraft/assets')
-        def indexFile = new File(assetsRoot, 'indexes/1.12.json')
-        if (!indexFile.isFile()) {
-            throw new GradleException("Minecraft asset index was not generated: ${indexFile}")
-        }
-
-        def assets = new JsonSlurper().parse(indexFile)
-        assets.objects.each { assetName, asset ->
-            def hash = asset.hash
-            def objectFile = new File(assetsRoot, "objects/${hash[0..1 as String]}/${hash}")
-            def valid = objectFile.isFile() &&
-                    objectFile.length() == asset.size &&
-                    sha1(objectFile) == hash
-            if (!valid) {
-                objectFile.parentFile.mkdirs()
-                def temporaryFile = new File(objectFile.parentFile, "${hash}.part")
-                def assetUrl = new URL("https://resources.download.minecraft.net/${hash[0..1 as String]}/${hash}")
-                assetUrl.withInputStream { input ->
-                    temporaryFile.withOutputStream { output ->
-                        output << input
-                    }
-                }
-                if (temporaryFile.length() != asset.size || sha1(temporaryFile) != hash) {
-                    temporaryFile.delete()
-                    throw new GradleException("Downloaded Minecraft asset failed verification: ${assetName}")
-                }
-                if (objectFile.exists()) {
-                    objectFile.delete()
-                }
-                if (!temporaryFile.renameTo(objectFile)) {
-                    temporaryFile.delete()
-                    throw new GradleException("Could not install Minecraft asset: ${objectFile}")
-                }
-            }
+    mappings channel: 'stable', version: '39-1.12'
+    runs {
+        client {
+            workingDirectory project.file('run')
+            property 'fml.coreMods.load', 'com.norwood.mcheli.core.MCHCore,zone.rong.mixinbooter.MixinBooterPlugin,net.vas.rdp.uav.core.RdpUavCorePlugin'
         }
     }
 }
-
-getAssets.dependsOn prefetchAssetsHttps
 
 repositories {
     maven {
@@ -90,17 +42,30 @@ repositories {
 
 def mcheliJar = file(System.getenv('RDP_MCHELI_JAR') ?: 'libs/mcheli-ce-1.5.1.jar')
 def rdpCoreJar = file(System.getenv('RDP_CORE_JAR') ?: 'libs/rdpcore-1.0.0.jar')
-def modularUiCompileJar = file('libs/modularui-3.0.2.jar')
+def elegantNetworkingJar = file('libs/elegant-networking-1.12-3.17.jar')
+def mcheliAccessTransformer = file("$buildDir/generated/mcheli/META-INF/mcheli_at.cfg")
+
+tasks.register('extractMcheliAccessTransformer', Copy) {
+    from zipTree(mcheliJar)
+    include 'META-INF/mcheli_at.cfg'
+    into mcheliAccessTransformer.parentFile
+}
 
 dependencies {
-    // Use explicit runtime paths in CI/local instance builds; fall back to libs for distribution.
-    compile files(mcheliJar, rdpCoreJar)
-    compileOnly files(modularUiCompileJar)
-    compile('zone.rong:mixinbooter:11.17') {
+    minecraft "net.minecraftforge:forge:${forgeVersion}"
+    // Keep required McHeli runtime mods on the client launch classpath.
+    compile files(elegantNetworkingJar, mcheliJar, rdpCoreJar)
+    compile('com.cleanroommc:modularui:3.0.5') {
+        transitive = false
+    }
+    runtimeOnly('zone.rong:mixinbooter:11.17') {
         transitive = false
     }
     testCompile 'junit:junit:4.13.2'
 }
+
+minecraft.accessTransformer mcheliAccessTransformer
+compileJava.dependsOn 'extractMcheliAccessTransformer'
 
 processResources {
     inputs.property 'version', project.version

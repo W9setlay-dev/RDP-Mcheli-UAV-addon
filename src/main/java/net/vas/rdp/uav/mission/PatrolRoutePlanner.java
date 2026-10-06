@@ -129,7 +129,7 @@ public final class PatrolRoutePlanner {
         }
 
         private static Plan rejected(String reason) {
-            return new Plan(false, reason, Collections.<FlightWaypoint>emptyList());
+            return new Plan(false, reason, Collections.emptyList());
         }
 
         public boolean isAccepted() { return accepted; }

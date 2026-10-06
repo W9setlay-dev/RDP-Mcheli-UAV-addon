@@ -22,6 +22,7 @@ import net.vas.rdp.uav.mission.MissionValidationResult;
 import net.vas.rdp.uav.mission.UavControlAccess;
 import net.vas.rdp.uav.target.TargetPriority;
 import net.vas.rdp.uav.target.TargetSpec;
+import org.jetbrains.annotations.NotNull;
 
 /** Server-side swarm aggregate; individual missions remain MissionManager-owned. */
 public final class SwarmManager {
@@ -142,15 +143,7 @@ public final class SwarmManager {
         }
         MissionValidationResult validation = MissionValidationResult.validate(definition);
         if (!validation.isValid()) throw new IllegalArgumentException(validation.getErrors().get(0));
-        MissionType type = definition.getMissionType();
-        if (type != MissionType.RECONNAISSANCE && type != MissionType.OBSERVATION
-                && type != MissionType.PATROL
-                && type != MissionType.STRIKE && type != MissionType.DESTROYING) {
-            throw new IllegalArgumentException("Mission type is unsupported for swarm fan-out");
-        }
-        if (definition.isAttack() != (type == MissionType.STRIKE || type == MissionType.DESTROYING)) {
-            throw new IllegalArgumentException("Strike mission type and attack authorization must agree");
-        }
+        MissionType type = getType(definition);
 
         java.util.Set<UUID> explicitlySelected = new java.util.LinkedHashSet<>(definition.getSelectedUavs());
         java.util.Set<UUID> knownMembers = new java.util.HashSet<>();
@@ -271,6 +264,7 @@ public final class SwarmManager {
                         : definition.getTarget().regionMatches(true, 0, "mod=", 0, 4)
                         ? TargetSpec.modNamespace(definition.getTarget().substring(4), priority)
                         : TargetSpec.manual(definition.getTarget(), priority);
+                assert candidate.aircraft.getAcInfo() != null;
                 RDPMission mission = new RDPMission(UUID.randomUUID(), owner,
                         candidate.aircraft.getUniqueID(), candidate.aircraft.getAcInfo().name,
                         type, target, definition.isAttack(), type == MissionType.DESTROYING,
@@ -300,6 +294,20 @@ public final class SwarmManager {
         RDPUavSwarmWorldData.get(world).markDirty();
         RDPMissionWorldData.get(world).markDirty();
         return created.size();
+    }
+
+    @NotNull
+    private static MissionType getType(MissionDefinition definition) {
+        MissionType type = definition.getMissionType();
+        if (type != MissionType.RECONNAISSANCE && type != MissionType.OBSERVATION
+                && type != MissionType.PATROL
+                && type != MissionType.STRIKE && type != MissionType.DESTROYING) {
+            throw new IllegalArgumentException("Mission type is unsupported for swarm fan-out");
+        }
+        if (definition.isAttack() != (type == MissionType.STRIKE || type == MissionType.DESTROYING)) {
+            throw new IllegalArgumentException("Strike mission type and attack authorization must agree");
+        }
+        return type;
     }
 
     private static final class LaunchCandidate {
@@ -588,14 +596,13 @@ public final class SwarmManager {
                 }
                 member.setAvailable(loaded);
                 MCH_EntityAircraft currentAircraft = aircraft(world, member.getAircraftId());
-                member.setOperatorControlled(currentAircraft != null
-                        && UavControlAccess.hasDirectAircraftRider(currentAircraft));
+                member.setOperatorControlled(UavControlAccess.hasDirectAircraftRider(currentAircraft));
                 RDPMission mission = missionFor(world, swarm.getSwarmId(), member.getAircraftId());
                 if (mission != null && !mission.isTerminal()) {
                     member.setState(mission.isPaused() ? SwarmMemberState.HOLDING
                             : SwarmMemberState.ASSIGNED);
                     member.setAssignedTarget(mission.getTargetId());
-                } else if (mission == null || mission.isTerminal()) {
+                } else {
                     member.setAssignedTarget(null);
                 }
                 if (!loaded && member.getState() != SwarmMemberState.DESTROYED) {

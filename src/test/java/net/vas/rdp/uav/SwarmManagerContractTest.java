@@ -7,8 +7,7 @@ import org.junit.Test;
 
 import java.util.UUID;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.*;
 
 public class SwarmManagerContractTest {
     @Test
@@ -32,6 +31,6 @@ public class SwarmManagerContractTest {
         SwarmManager manager = new SwarmManager();
 
         assertTrue(manager.owns(swarm, owner));
-        assertTrue(!manager.owns(swarm, UUID.randomUUID()));
+        assertFalse(manager.owns(swarm, UUID.randomUUID()));
     }
 }

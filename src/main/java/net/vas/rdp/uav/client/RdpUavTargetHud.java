@@ -14,6 +14,7 @@ import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
 import org.lwjgl.opengl.GL11;
 
+import java.util.Objects;
 import java.util.UUID;
 
 @SideOnly(Side.CLIENT)
@@ -157,7 +158,7 @@ public final class RdpUavTargetHud {
     }
 
     private static boolean same(String first, String second) {
-        return first == null ? second == null : first.equals(second);
+        return Objects.equals(first, second);
     }
 
     private static boolean isTargetLocked(String targetState) {
@@ -232,7 +233,7 @@ public final class RdpUavTargetHud {
                 + "  ELEV: " + String.format(java.util.Locale.ROOT, "%.1f", telemetry.elevation)
                 + "  MARKER: " + markerState, x, detailY + 10, 0xFFFFFFFF);
         detailY += 20;
-        if (failureReason != null && !failureReason.isEmpty()) {
+        if (!failureReason.isEmpty()) {
             font.drawStringWithShadow("FAILURE: " + failureReason, x, detailY, 0xFFFF5555);
             detailY += 10;
         }

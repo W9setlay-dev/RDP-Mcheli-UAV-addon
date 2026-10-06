@@ -2528,7 +2528,6 @@ public final class RdpUavNetwork {
             Objects.requireNonNull(player.getServer()).addScheduledTask(() -> {
                 boolean patrol = "PATROL".equals(message.type);
                 if ((message.version != 3 && message.version != 4)
-                        || (message.version == 3 && message.swarmEnabled)
                         || (message.swarmEnabled && message.version < 4)
                         || message.unsupportedConfiguration
                         || (patrol ? message.patrolRoute == null || message.patrolRoute.trim().isEmpty()

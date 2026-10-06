@@ -158,7 +158,7 @@ public final class MissionManager {
         if (record == null || !parent.getMissionId().equals(record.getMissionId())) return false;
         UUID oldTarget = parent.getTargetId();
         UUID newTarget = child.getTargetId();
-        if (newTarget != null && coordinator.isTargetOccupied(newTarget)
+        if (coordinator.isTargetOccupied(newTarget)
                 && !coordinator.isAssigned(parent.getAircraftId(), newTarget)) return false;
         if (newTarget != null && !coordinator.claim(parent.getAircraftId(), newTarget)) return false;
 
@@ -313,7 +313,7 @@ public final class MissionManager {
 
     public RDPMission peekQueuedMission() { return queue.peek(); }
     public boolean acceptQueuedMission(RDPMission mission) {
-        return mission != null && queue.remove(mission);
+        return queue.remove(mission);
     }
 
     public void removeQueuedMission(RDPMission mission) {

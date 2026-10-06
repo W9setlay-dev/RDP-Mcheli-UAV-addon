@@ -3,7 +3,6 @@ package net.vas.rdp.uav.persistence;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.nbt.NBTTagList;
 import net.vas.rdp.uav.mission.MissionState;
-import net.vas.rdp.uav.mission.MissionType;
 import net.vas.rdp.uav.mission.RDPMission;
 import net.vas.rdp.uav.mission.MissionWaypoint;
 import net.vas.rdp.uav.mission.MissionType;
@@ -232,8 +231,8 @@ public final class MissionNbtCodec {
         if (!namespace.trim().isEmpty()) {
             return TargetSelectionMode.AUTO;
         }
-        if (tag.hasKey("targetX") || tag.hasKey("targetY") || tag.hasKey("targetZ")) {
-            return TargetSelectionMode.POINT;
+        if (!tag.hasKey("targetX") && !tag.hasKey("targetY")) {
+            tag.hasKey("targetZ");
         }
         return TargetSelectionMode.POINT;
     }

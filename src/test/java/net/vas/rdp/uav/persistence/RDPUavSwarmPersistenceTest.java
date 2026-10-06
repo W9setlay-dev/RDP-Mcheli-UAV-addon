@@ -9,8 +9,8 @@ import net.vas.rdp.uav.swarm.SearchPattern;
 import net.vas.rdp.uav.swarm.SwarmLeadership;
 import org.junit.Test;
 import java.util.UUID;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+
+import static org.junit.Assert.*;
 
 public class RDPUavSwarmPersistenceTest {
     @Test
@@ -57,7 +57,7 @@ public class RDPUavSwarmPersistenceTest {
         assertEquals(SwarmLeadership.DESIGNATED_LEADER,
                 loaded.getConfiguration().getLeadership());
         assertTrue(loaded.getConfiguration().isAllowDuplicateTargets());
-        assertTrue(!loaded.getConfiguration().isAllowCommanderFailover());
-        assertTrue(!loaded.isMissionParticipation());
+        assertFalse(loaded.getConfiguration().isAllowCommanderFailover());
+        assertFalse(loaded.isMissionParticipation());
     }
 }

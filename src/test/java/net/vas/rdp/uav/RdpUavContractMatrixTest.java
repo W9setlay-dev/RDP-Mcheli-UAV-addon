@@ -31,8 +31,6 @@ import net.vas.rdp.uav.profile.UavVehicleProfiles;
 import net.vas.rdp.uav.swarm.*;
 import org.junit.Test;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
@@ -42,7 +40,7 @@ import static org.junit.Assert.*;
 
 public class RdpUavContractMatrixTest {
     @Test
-    public void zalaIsGeneratedAsOneWaySelfDestructVehicleProfile() throws Exception {
+    public void zalaIsGeneratedAsOneWaySelfDestructVehicleProfile() {
         UavVehicleProfile profile = UavVehicleProfiles.forAircraft("zala421");
         assertEquals(UavExecutionProfile.ONE_WAY, profile.getExecutionProfile());
         assertEquals("SELF_DESTRUCT", profile.getTerminalPayloadBehavior());

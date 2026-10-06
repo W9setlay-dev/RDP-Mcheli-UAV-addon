@@ -13,7 +13,6 @@ import net.vas.rdp.uav.swarm.SwarmLeadership;
 import net.vas.rdp.uav.target.TargetPriority;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
