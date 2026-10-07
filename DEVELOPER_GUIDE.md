@@ -15,27 +15,22 @@ domain logic and a controlled integration boundary around those mods.
 
 ## 1. Supported environment
 
-The source project currently records this exact validation target:
+The source project currently configures this build target:
 
 | Component | Version |
 |---|---|
 | Minecraft | 1.12.2 |
-| Forge target in `build.gradle` | 14.23.5.2864 |
+| Forge target in `build.gradle` | 14.23.5.2859 |
 | McHeli CE | 1.5.1 |
 | WingMan | Included in McHeli CE 1.5.1 |
 | RDP Core | 1.0.0 |
 | Java source/target | 1.8 |
 
-The deployment instructions in `README.md` also describe a Forge
-14.23.5.2859 build because that is the Forge artifact available in the local
-cache and the requested deployment environment. Do not silently mix these
-targets:
-
-* Use 14.23.5.2864 when validating the checked-in `build.gradle`.
-* Use 14.23.5.2859 only when deliberately preparing a deployment build for
-  that runtime, after changing the Forge version intentionally and recording
-  the change.
-* Never describe a 14.23.5.2859 build as validation of 14.23.5.2864.
+Some README and historical validation text describes Forge `14.23.5.2864`.
+That is not the current `build.gradle` target. Treat the configured source
+version as authoritative, do not silently change it to match a deployment
+runtime, and never describe a `14.23.5.2859` build as validation of
+`14.23.5.2864`.
 
 McHeli CE and RDP Core jars are external dependencies. They are intentionally
 not committed to source control.
@@ -715,10 +710,13 @@ finished gameplay:
   through a matching client/server session;
 * attack steering and any weapon, damage, or self-destruct behavior remain
   live-instance validation items and are not claimed by this addon;
-* exact ForgeGradle 14.23.5.2864 execution is blocked by the missing legacy
-  `userdev.jar` classifier in ForgeGradle 2.3;
-* live GUI and packet behavior remains runtime-unverified unless a matching
-  client/server test has been executed.
+* the Forge 14.23.5.2864 / ForgeGradle 2.3 failure is a historical
+  compatibility probe; the current checked-in build targets 14.23.5.2859 and
+  its Gradle test suite has passed;
+* a Forge 14.23.5.2859 development-client attempt on 2026-10-06 failed during
+  McHeli CE mod loading with an `IllegalAccessError` in
+  `ClientSoundRegistry.commitChanges`; it did not enter a world, and current
+  GUI/packet behavior remains unverified;
 * Forge Energy is source/build validated only; a live battery drain, recharge,
   NBT reload, and capability-consumer test has not been executed in Minecraft.
 

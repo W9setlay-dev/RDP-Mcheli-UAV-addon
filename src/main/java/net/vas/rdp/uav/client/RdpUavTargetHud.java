@@ -70,23 +70,22 @@ public final class RdpUavTargetHud {
                         event.getResolution().getScaledHeight(), alert);
             }
         }
-        if (RdpUavHudConfig.markerVisible && telemetry.hasPosition
-                && (telemetry.targetUuid == null || telemetry.targetUuid.isEmpty())
-                && MissionUiState.isMarkerVisible(telemetry.missionState, telemetry.markerState)) drawMarker(mc,
-                event.getResolution().getScaledWidth(), event.getResolution().getScaledHeight());
     }
 
-    /** Draws a target lock around the synchronized entity's actual 3D bounds. */
+    /** Draws synchronized entity bounds or a point marker in world space. */
     @SubscribeEvent
     public void renderWorldTarget(RenderWorldLastEvent event) {
         if (!RdpUavHudConfig.markerVisible || telemetry == null || !telemetry.active
-                || telemetry.targetUuid == null || telemetry.targetUuid.isEmpty()
                 || !MissionUiState.isMarkerVisible(telemetry.missionState, telemetry.markerState)
                 || System.currentTimeMillis() - receivedAt > 3000L) return;
 
         Minecraft mc = Minecraft.getMinecraft();
         if (mc == null || mc.player == null || mc.world == null
                 || telemetry.dimension != mc.world.provider.getDimension()) return;
+        if (telemetry.targetUuid == null || telemetry.targetUuid.isEmpty()) {
+            if (telemetry.hasPosition) drawPointMarker(mc, event.getPartialTicks());
+            return;
+        }
         Entity target = resolveTarget(mc, telemetry.targetUuid);
         if (target == null || target.isDead || target.world == null) return;
 
@@ -119,6 +118,49 @@ public final class RdpUavTargetHud {
                     (color & 0xFF) / 255.0F,
                     ((color >>> 24) & 0xFF) / 255.0F);
             drawTargetBrackets(box);
+        } finally {
+            GlStateManager.popMatrix();
+            GL11.glPopAttrib();
+        }
+    }
+
+    private void drawPointMarker(Minecraft mc, float partialTicks) {
+        Entity camera = mc.getRenderViewEntity();
+        if (camera == null) camera = mc.player;
+        if (camera == null) return;
+        Vec3d cameraPosition = camera.getPositionEyes(partialTicks);
+        Vec3d marker = new Vec3d(telemetry.x, telemetry.y, telemetry.z);
+        RayTraceResult obstruction = mc.world.rayTraceBlocks(
+                cameraPosition, marker, false, true, false);
+        if (obstruction != null && obstruction.typeOfHit == RayTraceResult.Type.BLOCK) return;
+
+        double x = marker.x - cameraPosition.x;
+        double y = marker.y - cameraPosition.y;
+        double z = marker.z - cameraPosition.z;
+        double halfSize = 0.5D;
+        GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_LINE_BIT | GL11.GL_CURRENT_BIT
+                | GL11.GL_DEPTH_BUFFER_BIT | GL11.GL_COLOR_BUFFER_BIT);
+        GlStateManager.pushMatrix();
+        try {
+            GlStateManager.disableTexture2D();
+            GlStateManager.enableBlend();
+            GlStateManager.tryBlendFuncSeparate(770, 771, 1, 0);
+            GlStateManager.depthMask(false);
+            GL11.glLineWidth(FlirHudStyle.lineWidth(RdpUavHudConfig.flirEnabled, false));
+            int color = FlirHudStyle.bracketColor(RdpUavHudConfig.flirEnabled, false);
+            GlStateManager.color(
+                    ((color >> 16) & 0xFF) / 255.0F,
+                    ((color >> 8) & 0xFF) / 255.0F,
+                    (color & 0xFF) / 255.0F,
+                    ((color >>> 24) & 0xFF) / 255.0F);
+            GL11.glBegin(GL11.GL_LINES);
+            GL11.glVertex3d(x - halfSize, y, z);
+            GL11.glVertex3d(x + halfSize, y, z);
+            GL11.glVertex3d(x, y - halfSize, z);
+            GL11.glVertex3d(x, y + halfSize, z);
+            GL11.glVertex3d(x, y, z - halfSize);
+            GL11.glVertex3d(x, y, z + halfSize);
+            GL11.glEnd();
         } finally {
             GlStateManager.popMatrix();
             GL11.glPopAttrib();
@@ -241,73 +283,6 @@ public final class RdpUavTargetHud {
         font.drawStringWithShadow("SCAN: " + (telemetry.scanState == null ? "NONE" : telemetry.scanState)
                 + "  DEEP: " + (telemetry.deepScanState == null ? "NONE" : telemetry.deepScanState), x, detailY + 10, 0xFFFFFFFF);
         GlStateManager.popMatrix();
-    }
-
-    private void drawMarker(Minecraft mc, int width, int height) {
-        if (telemetry.dimension != mc.world.provider.getDimension()) return;
-        net.minecraft.entity.Entity camera = mc.getRenderViewEntity();
-        if (camera == null) camera = mc.player;
-        if (camera == null) return;
-        Vec3d cameraPosition = camera.getPositionEyes(mc.getRenderPartialTicks());
-        Vec3d targetPosition = new Vec3d(telemetry.x, telemetry.y, telemetry.z);
-        RayTraceResult obstruction = mc.world.rayTraceBlocks(cameraPosition, targetPosition,
-                false, true, false);
-        if (obstruction != null && obstruction.typeOfHit == RayTraceResult.Type.BLOCK) return;
-        double[] screen = project(mc, telemetry.x, telemetry.y, telemetry.z, width, height);
-        if (screen == null) return;
-        GlStateManager.pushMatrix();
-        GlStateManager.disableTexture2D();
-        GlStateManager.color(0.3F, 1.0F, 0.3F, isTargetLocked(telemetry.targetState) ? 1.0F : 0.65F);
-        GL11.glLineWidth(2.0F);
-        double size = 10.0D;
-        GL11.glBegin(GL11.GL_LINE_LOOP);
-        GL11.glVertex2d(screen[0] - size, screen[1] - size);
-        GL11.glVertex2d(screen[0] + size, screen[1] - size);
-        GL11.glVertex2d(screen[0] + size, screen[1] + size);
-        GL11.glVertex2d(screen[0] - size, screen[1] + size);
-        GL11.glEnd();
-        GlStateManager.enableTexture2D();
-        GlStateManager.popMatrix();
-
-        if (telemetry.registryId != null && !telemetry.registryId.isEmpty()) {
-            FontRenderer font = mc.fontRenderer;
-            int labelX = (int) Math.round(screen[0] + 12.0D);
-            int labelY = (int) Math.round(screen[1] - 12.0D);
-            font.drawStringWithShadow(telemetry.registryId, labelX, labelY, 0xFFFF5555);
-            font.drawStringWithShadow("LOCK " + telemetry.targetState, labelX, labelY + 10, 0xFFFFFFFF);
-        }
-    }
-
-    private double[] project(Minecraft mc, double x, double y, double z, int width, int height) {
-        net.minecraft.entity.Entity origin = mc.getRenderViewEntity();
-        if (origin == null) origin = mc.player;
-        if (origin == null) return null;
-        double px = origin.prevPosX + (origin.posX - origin.prevPosX) * mc.getRenderPartialTicks();
-        double py = origin.prevPosY + (origin.posY - origin.prevPosY) * mc.getRenderPartialTicks()
-                + origin.getEyeHeight();
-        double pz = origin.prevPosZ + (origin.posZ - origin.prevPosZ) * mc.getRenderPartialTicks();
-        double dx = x - px;
-        double dy = y - py;
-        double dz = z - pz;
-        double yaw = Math.toRadians(origin.prevRotationYaw
-                + (origin.rotationYaw - origin.prevRotationYaw) * mc.getRenderPartialTicks());
-        double pitch = Math.toRadians(origin.prevRotationPitch
-                + (origin.rotationPitch - origin.prevRotationPitch) * mc.getRenderPartialTicks());
-        double forwardX = -Math.sin(yaw) * Math.cos(pitch);
-        double forwardY = -Math.sin(pitch);
-        double forwardZ = Math.cos(yaw) * Math.cos(pitch);
-        double rightX = Math.cos(yaw);
-        double rightZ = Math.sin(yaw);
-        double upX = Math.sin(yaw) * Math.sin(pitch);
-        double upY = Math.cos(pitch);
-        double upZ = -Math.cos(yaw) * Math.sin(pitch);
-        double depth = dx * forwardX + dy * forwardY + dz * forwardZ;
-        if (depth <= 0.05D) return null;
-        double fov = Math.toRadians(mc.gameSettings.fovSetting);
-        double focalY = height / (2.0D * Math.tan(fov / 2.0D));
-        double focalX = focalY * ((double) width / (double) height);
-        return new double[] {width / 2.0D + (dx * rightX + dz * rightZ) * focalX / depth,
-                height / 2.0D - (dx * upX + dy * upY + dz * upZ) * focalY / depth};
     }
 
     public static final class Telemetry {

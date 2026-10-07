@@ -51,6 +51,12 @@ public final class GuidedWeaponCapability {
                 && behavior != GuidedNativeBehavior.UNSUPPORTED;
     }
 
+    public String availabilityReason(int ammunition) {
+        if (behavior == GuidedNativeBehavior.UNSUPPORTED) return "UNSUPPORTED_GUIDANCE";
+        if (ammunition <= 0) return "NO_AMMUNITION";
+        return "OK";
+    }
+
     public String validateObjective(GuidedObjectiveType objective) {
         if (behavior == GuidedNativeBehavior.UNSUPPORTED) return "UNSUPPORTED_GUIDANCE";
         if (objective == null) return "OBJECTIVE_TYPE_REQUIRED";

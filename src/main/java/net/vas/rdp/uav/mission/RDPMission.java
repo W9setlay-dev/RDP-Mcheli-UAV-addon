@@ -122,6 +122,16 @@ public final class RDPMission {
         executionStage = MissionExecutionStage.fromState(nextState, missionType);
         lastTransitionReason = reason.trim();
         validateStateConsistency();
+        if (isTerminalState(nextState)) {
+            MissionMovementAuthority.releaseControl(aircraftId, missionId);
+            RdpUavDebug.event("Lifecycle", "LEASE_RELEASED",
+                    "mission", missionId,
+                    "aircraft", aircraftId,
+                    "tick", tick,
+                    "reason", lastTransitionReason,
+                    "state", nextState,
+                    "controlOwner", controlOwner);
+        }
         RdpUavDebug.event("MissionLifecycle", "MISSION_STATE_TRANSITION",
                 "mission", missionId,
                 "aircraft", aircraftId,

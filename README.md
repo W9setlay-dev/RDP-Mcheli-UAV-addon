@@ -51,10 +51,13 @@ and live collision, damage, and self-destruct behavior still require validation
 in the target instance.
 
 This is the Forge 1.12.2 addon project for player-configured reconnaissance
-and target missions. It targets the exact installed runtime:
+and target missions. The checked-in source build currently targets Forge
+14.23.5.2859; some deployment and historical validation notes describe
+14.23.5.2864. Do not treat validation against one Forge version as validation
+of the other.
 
 * Minecraft 1.12.2
-* Forge 14.23.5.2864
+* Forge target in `build.gradle`: 14.23.5.2859
 * McHeli CE 1.5.1 with merged WingMan classes
 * RDP Core 1.0.0
 * Java source/target compatibility 8
@@ -482,36 +485,25 @@ bounded search, target validation, engagement assessment, resume, RTB, and
 completion. Operator override, pause, abort, and emergency transitions are
 explicitly interruptible and invalid shortcuts are rejected.
 
-ForgeGradle configuration was verified with the local ForgeGradle 2.3
-installation. A full `test`/`build` additionally requires the exact
-`net.minecraftforge:forge:1.12.2-14.23.5.2864` userdev artifact; only
-`14.23.5.2859` is cached in the current environment, so no version-mismatched
-Forge build is substituted.
+The current Gradle wrapper test run compiles and tests against the checked-in
+Forge `1.12.2-14.23.5.2859` configuration. A development-client startup
+attempt on 2026-10-06 failed during McHeli CE mod loading before world entry;
+no current-change-set gameplay or matching dedicated-server behavior is
+verified. Historical notes below about Forge `14.23.5.2864` refer to a
+separate compatibility probe and are not evidence for the current source build.
 
-## Exact Forge 14.23.5.2859 setup requested for this GUI
+## Forge 14.23.5.2859 runtime setup
 
-The checked-in `build.gradle` still targets the previously validated
-`14.23.5.2864` environment. To build this small GUI addon against the exact
-environment requested for deployment, make the following one-line change
-before running Gradle:
-
-```groovy
-minecraft {
-    version = '1.12.2-14.23.5.2859'
-}
-```
-
-Then:
-
+The checked-in `build.gradle` already configures Forge
+`1.12.2-14.23.5.2859`; no Forge-version edit is needed for this source build.
 1. Install Java `1.8.0_492` and make it the `JAVA_HOME` used by Gradle.
 2. Put the exact McHeli CE `1.5.1` jar at
    `rdp-uav-addon/libs/mcheli-ce-1.5.1.jar`.
 3. Put the matching RDP Core jar at
    `rdp-uav-addon/libs/rdpcore-1.0.0.jar`.
-4. Use ForgeGradle 2.3 with Maven access to
+4. Use the ForgeGradle version declared in `build.gradle` and Maven access to
    `https://maven.minecraftforge.net`.
-5. Run `gradlew setupDecompWorkspace` and `gradlew build` from
-   `rdp-uav-addon`.
+5. Run `gradlew.bat test` and `gradlew.bat build` from `rdp-uav-addon`.
 6. Copy `build/libs/rdp-uav-addon-0.1.0.jar` into the Minecraft 1.12.2
    `mods` directory alongside Forge `14.23.5.2859` and McHeli CE `1.5.1`.
 7. Start a dedicated server and client with the same mod set, then run

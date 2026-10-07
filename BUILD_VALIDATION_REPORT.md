@@ -1,10 +1,59 @@
 # Build validation report
 
-**Validation date:** 2026-09-07  
-**Project:** RDP UAV Missions  
-**Requested target:** Minecraft 1.12.2 / Forge `1.12.2-14.23.5.2864`
+**Validation date:** 2026-10-07
+**Project:** RDP UAV Missions
+**Configured source target:** Minecraft 1.12.2 / Forge `1.12.2-14.23.5.2859`
+**Separate documented runtime target:** Forge `1.12.2-14.23.5.2864`
 
-## Required status
+## Current verification status
+
+The current checkout was built and tested with the Forge version configured in
+`build.gradle` (`14.23.5.2859`). The separately documented `14.23.5.2864`
+runtime is not covered by that result.
+
+```text
+CONFIGURED FORGE BUILD (INCLUDING REOBF JAR): PASS (14.23.5.2859)
+FOCUSED TESTS (--rerun-tasks): PASS
+FULL GRADLE TEST SUITE: PASS
+EXACT ENTITY-ASSIGNMENT UUID PACKET ROUND-TRIP: PASS
+MCHELI CE 1.5.1 PUBLIC API SIGNATURES: VERIFIED WITH JAVAP
+FORGE 2859 DEV CLIENT STARTUP (2026-10-06): FAILED DURING MCHELI MOD LOADING
+MATCHING DEDICATED SERVER STARTUP: NOT ATTEMPTED
+CURRENT-CHANGESET GUI, LOCK, HUD, FLIGHT, AND WEAPON BEHAVIOR: NOT ATTEMPTED
+LIVE OPERATOR-STATION, CAMERA, TARGETING, AND WEAPON BEHAVIOR: NOT VERIFIED
+```
+
+The existing `run/crash-reports/crash-2026-10-06_13.37.40-client.txt` and
+`run/logs/latest.log` record a Forge `14.23.5.2859` development-client attempt
+with McHeli CE `1.5.1`, RDP Core `1.0.0`, and the addon. Mod loading failed in
+`com.norwood.mcheli.sound.ClientSoundRegistry.commitChanges` with an
+`IllegalAccessError` accessing `SoundHandler.loadSoundResource`; the client
+did not reach a world. This is prior startup evidence, not a validation of the
+current change set or of in-game behavior. The local `run/` directory also
+contains an existing saved world, so it was not relaunched during this review.
+
+Commands run for this checkout:
+
+```text
+.\gradlew.bat test --tests 'net.vas.rdp.uav.network.AiTargetLockContractTest' --tests 'net.vas.rdp.uav.GuidedWeaponTest' --tests 'net.vas.rdp.uav.mission.MissionMovementAuthorityTest' --tests 'net.vas.rdp.uav.mission.MissionLifecycleContractTest' --no-daemon --rerun-tasks
+.\gradlew.bat test --no-daemon
+.\gradlew.bat test --no-daemon --rerun-tasks
+.\gradlew.bat build --no-daemon
+.\gradlew.bat build --no-daemon --rerun-tasks
+git diff --check
+```
+
+The installed McHeli CE 1.5.1 and RDP Core 1.0.0 jars are present under
+`libs/`. The camera/view signatures and aircraft control methods were checked
+against the McHeli jar. This is API evidence, not live integration evidence.
+
+## Historical Forge 14.23.5.2864 probe (not the current source build)
+
+The following records preserve the earlier exact-2864 probe. They do not
+describe the current `build.gradle`, current test run, or current source-build
+result.
+
+### Historical status
 
 ```text
 TARGET FORGE:
@@ -65,7 +114,7 @@ RDP UAV MISSION TEST: PASS
 
 No Forge version was downgraded, and no runtime result was fabricated.
 
-## Post-implementation audit
+## Historical post-implementation audit
 
 ### IMPLEMENTED FEATURES
 

@@ -30,7 +30,7 @@ public final class RdpUavHudConfig {
             Configuration config = configuration;
             enabled = config.getBoolean("enabled", "hud", true, "Show the authoritative UAV target HUD.");
             markerVisible = config.getBoolean("markerVisible", "hud", true,
-                    "Show the target reticle when a target position is available.");
+                    "Show world-space target bounds or a world-space point marker.");
             telemetryVisible = config.getBoolean("telemetryVisible", "hud", true,
                     "Show target and mission telemetry.");
             flirEnabled = config.getBoolean("flirEnabled", "hud", false,

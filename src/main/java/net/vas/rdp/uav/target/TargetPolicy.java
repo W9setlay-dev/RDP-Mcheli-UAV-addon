@@ -4,7 +4,10 @@ import com.norwood.mcheli.aircraft.MCH_EntityAircraft;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityList;
 import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.RayTraceResult;
+import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
 import net.minecraftforge.common.config.Configuration;
 
@@ -123,6 +126,31 @@ public final class TargetPolicy {
         if (entity instanceof MCH_EntityAircraft && allowHostileVehicles) return true;
         if (rejectDeeplyEmbedded && isSafeContact(world, entity)) return false;
         return isSelectableContact(world, entity, operator);
+    }
+
+    /** Server-side conservative sightline check between the observer and target bounds. */
+    public static boolean hasLineOfSight(World world, Entity observer, Entity target) {
+        if (world == null || observer == null || target == null
+                || observer.isDead || target.isDead
+                || observer.world != world || target.world != world) return false;
+        AxisAlignedBB observerBounds = observer.getEntityBoundingBox();
+        AxisAlignedBB targetBounds = target.getEntityBoundingBox();
+        Vec3d start = new Vec3d(
+                (observerBounds.minX + observerBounds.maxX) * 0.5D,
+                (observerBounds.minY + observerBounds.maxY) * 0.5D,
+                (observerBounds.minZ + observerBounds.maxZ) * 0.5D);
+        Vec3d end = new Vec3d(
+                (targetBounds.minX + targetBounds.maxX) * 0.5D,
+                (targetBounds.minY + targetBounds.maxY) * 0.5D,
+                (targetBounds.minZ + targetBounds.maxZ) * 0.5D);
+        if (!isFinite(start) || !isFinite(end)) return false;
+        RayTraceResult obstruction = world.rayTraceBlocks(start, end, false, true, false);
+        return obstruction == null || obstruction.typeOfHit != RayTraceResult.Type.BLOCK;
+    }
+
+    private static boolean isFinite(Vec3d position) {
+        return position != null && Double.isFinite(position.x)
+                && Double.isFinite(position.y) && Double.isFinite(position.z);
     }
 
     public static final class Builder {

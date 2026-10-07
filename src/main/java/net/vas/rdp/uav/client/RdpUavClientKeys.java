@@ -152,15 +152,17 @@ public final class RdpUavClientKeys {
     }
 
     private void lockAiTarget(Minecraft minecraft) {
-        net.minecraft.entity.Entity target = GuiMissionControl.capturedCrosshairTarget();
-        if (minecraft.objectMouseOver != null && minecraft.objectMouseOver.entityHit != null) {
-            target = minecraft.objectMouseOver.entityHit;
-        }
-        if (target == null) {
-            // An empty lock request must never make the server choose an arbitrary
-            // nearby entity. The clear-lock key is the explicit unlock operation.
+        MCH_EntityAircraft aircraft = net.vas.rdp.uav.mission.UavControlAccess
+                .findControlledAircraft(minecraft.player);
+        ClientAimRayTracer.AimTarget aim = ClientAimRayTracer.trace(
+                minecraft, minecraft.getRenderPartialTicks(), minecraft.player, aircraft);
+        if (!aim.isEntity()) {
+            minecraft.player.sendMessage(new TextComponentString(aim.isBlock()
+                    ? "Target lock not sent: the active camera ray hits a block."
+                    : "Target lock not sent: no entity on the active camera ray."));
             return;
         }
+        Entity target = aim.getEntity();
         GuiMissionControl.rememberCrosshairTarget(target);
         RdpUavNetwork.lockAiTarget(target.getUniqueID());
     }

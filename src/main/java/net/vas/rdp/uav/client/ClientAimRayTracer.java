@@ -40,7 +40,8 @@ public final class ClientAimRayTracer {
                 ? Math.max(0.0F, Math.min(1.0F, partialTicks)) : 1.0F;
         Vec3d start = camera.getPositionEyes(ticks);
         Vec3d look = camera.getLook(ticks);
-        if (isFinite(start) || isFinite(look) || look.lengthSquared() < 1.0E-12D) {
+        if (hasInvalidVector(start) || hasInvalidVector(look)
+                || look.lengthSquared() < 1.0E-12D) {
             return AimTarget.miss(start);
         }
 
@@ -118,7 +119,7 @@ public final class ClientAimRayTracer {
         return false;
     }
 
-    private static boolean isFinite(Vec3d vector) {
+    private static boolean hasInvalidVector(Vec3d vector) {
         return vector == null || !Double.isFinite(vector.x)
                 || !Double.isFinite(vector.y) || !Double.isFinite(vector.z);
     }

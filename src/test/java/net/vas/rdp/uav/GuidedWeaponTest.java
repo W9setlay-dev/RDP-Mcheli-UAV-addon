@@ -296,6 +296,19 @@ public class GuidedWeaponTest {
                 new GuidedTerminalProfile(100, true));
         assertEquals("UNSUPPORTED_GUIDANCE",
                 capability.validateObjective(GuidedObjectiveType.ENTITY));
+        assertEquals("UNSUPPORTED_GUIDANCE", capability.availabilityReason(4));
+    }
+
+    @Test
+    public void availabilityReasonDistinguishesEmptyAndExecutableWeapons() {
+        GuidedWeaponCapability capability = new GuidedWeaponCapability("aa", "aamissile",
+                GuidedNativeBehavior.ENTITY_SEEKER,
+                Collections.singleton(GuidedObjectiveType.ENTITY),
+                new GuidedTerminalProfile(100, true));
+
+        assertEquals("NO_AMMUNITION", capability.availabilityReason(0));
+        assertEquals("NO_AMMUNITION", capability.availabilityReason(-1));
+        assertEquals("OK", capability.availabilityReason(1));
     }
 
     @Test

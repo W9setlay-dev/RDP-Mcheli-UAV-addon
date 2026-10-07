@@ -113,7 +113,7 @@ chain-of-thought.
 
 ### Implement
 
-1. Implement the complete approved behavior, not a disconnected helper.
+1. Implement the complete requested behavior, not a disconnected helper.
 2. Keep changes surgical and consistent with Java 8, Forge 1.12.2, McHeli CE,
    WingMan, RDP Core, and project conventions.
 3. Preserve public/runtime integration APIs unless they are proven safe to

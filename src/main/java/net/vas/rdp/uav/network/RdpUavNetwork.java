@@ -65,8 +65,8 @@ public final class RdpUavNetwork {
                 ClientSwarmTelemetryHandler.SwarmTargetUpdate.class, 17, Side.SERVER);
         CHANNEL.registerMessage(ServerAdoptProjectileHandler.class, AdoptProjectile.class, 18, Side.SERVER);
         CHANNEL.registerMessage(ServerReassignGuidedHandler.class, ReassignGuided.class, 19, Side.SERVER);
-        CHANNEL.registerMessage(AiTargetLock.ServerRegistryTargetAssignmentHandler.class,
-                AiTargetLock.RegistryTargetAssignment.class, 20, Side.SERVER);
+        CHANNEL.registerMessage(AiTargetLock.ServerEntityTargetAssignmentHandler.class,
+                AiTargetLock.EntityTargetAssignment.class, 20, Side.SERVER);
         CHANNEL.registerMessage(ServerMissionDefinitionHandler.class,
                 CreateMission.LaunchMissionDefinition.class, 21, Side.SERVER);
         CHANNEL.registerMessage(ServerCameraAimHandler.class, CameraAim.class, 22, Side.SERVER);
@@ -260,10 +260,9 @@ public final class RdpUavNetwork {
         if (targetId != null) CHANNEL.sendToServer(new AiTargetLock(targetId, false));
     }
 
-    public static void assignRegistryTarget(String missionId, String registryId) {
-        if (missionId != null && registryId != null && !missionId.trim().isEmpty()
-                && !registryId.trim().isEmpty()) {
-            CHANNEL.sendToServer(new AiTargetLock.RegistryTargetAssignment(missionId, registryId));
+    public static void assignEntityTarget(String missionId, java.util.UUID targetId) {
+        if (missionId != null && targetId != null && !missionId.trim().isEmpty()) {
+            CHANNEL.sendToServer(new AiTargetLock.EntityTargetAssignment(missionId, targetId));
         }
     }
 
@@ -1590,32 +1589,48 @@ public final class RdpUavNetwork {
             this.targetId = targetId == null ? "" : targetId.toString();
             this.clear = clear;
         }
+        public boolean isClearRequest() { return clear; }
+        public boolean hasTargetId() {
+            return targetId != null && !targetId.trim().isEmpty();
+        }
+        public boolean isInvalidLockRequest() {
+            return !clear && !hasTargetId();
+        }
 
-        public static final class RegistryTargetAssignment implements IMessage {
+        public static final class EntityTargetAssignment implements IMessage {
             private String missionId = "";
-            private String registryId = "";
+            private String targetId = "";
 
-            public RegistryTargetAssignment() { }
+            public EntityTargetAssignment() { }
 
-            public RegistryTargetAssignment(String missionId, String registryId) {
+            public EntityTargetAssignment(String missionId, java.util.UUID targetId) {
                 this.missionId = missionId == null ? "" : missionId;
-                this.registryId = registryId == null ? "" : registryId;
+                this.targetId = targetId == null ? "" : targetId.toString();
             }
 
             public void fromBytes(ByteBuf buffer) {
                 missionId = readString(buffer);
-                registryId = readString(buffer);
+                targetId = readString(buffer);
             }
 
             public void toBytes(ByteBuf buffer) {
                 writeString(buffer, missionId);
-                writeString(buffer, registryId);
+                writeString(buffer, targetId);
+            }
+
+            public String getMissionId() {
+                return missionId;
+            }
+
+            public java.util.UUID getTargetId() {
+                return targetId == null || targetId.trim().isEmpty()
+                        ? null : java.util.UUID.fromString(targetId);
             }
         }
 
-        public static final class ServerRegistryTargetAssignmentHandler
-                implements IMessageHandler<RegistryTargetAssignment, IMessage> {
-            public IMessage onMessage(final RegistryTargetAssignment message, MessageContext context) {
+        public static final class ServerEntityTargetAssignmentHandler
+                implements IMessageHandler<EntityTargetAssignment, IMessage> {
+            public IMessage onMessage(final EntityTargetAssignment message, MessageContext context) {
                 final EntityPlayerMP player = context.getServerHandler().player;
                 Objects.requireNonNull(player.getServer()).addScheduledTask(() -> {
                     MCH_EntityAircraft aircraft =
@@ -1628,6 +1643,10 @@ public final class RdpUavNetwork {
                     }
                     try {
                         java.util.UUID missionId = java.util.UUID.fromString(message.missionId);
+                        java.util.UUID targetId = message.getTargetId();
+                        if (targetId == null) {
+                            throw new IllegalArgumentException("Target UUID is required");
+                        }
                         net.vas.rdp.uav.mission.RDPMission mission =
                                 net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
                                         .getRepository().find(missionId);
@@ -1637,10 +1656,10 @@ public final class RdpUavNetwork {
                             throw new IllegalArgumentException("Mission is not assignable");
                         }
                         net.minecraft.entity.Entity target =
-                                TARGET_RESOLVER.findLoadedByRegistryId(player.world, message.registryId);
+                                TARGET_RESOLVER.findLoaded(player.world, targetId);
                         if (target == null || target == aircraft || target == player
                                 || !target.canBeCollidedWith()
-                                || !net.vas.rdp.uav.target.TargetPolicy.isSelectableContact(
+                                || !net.vas.rdp.uav.target.TargetPolicy.isSelectableExactContact(
                                 player.world, target, player)) {
                             throw new IllegalArgumentException("Target is not selectable");
                         }
@@ -1652,6 +1671,12 @@ public final class RdpUavNetwork {
                                 || target.getDistance(aircraft) > profile.getLockRange()) {
                             throw new IllegalArgumentException("Target is outside lock range");
                         }
+                        if (!net.vas.rdp.uav.target.TargetPolicy.hasLineOfSight(
+                                player.world, aircraft, target)) {
+                            player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                    "UAV target assignment rejected: LINE_OF_SIGHT_BLOCKED."));
+                            return;
+                        }
                         if (mission.getState()
                                 == net.vas.rdp.uav.mission.MissionState.KAMIKADZE_TARGET
                                 && !target.getUniqueID().equals(mission.getTargetId())) {
@@ -1662,10 +1687,10 @@ public final class RdpUavNetwork {
                                 player.world.getTotalWorldTime());
                         net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world).markDirty();
                         player.sendMessage(new net.minecraft.util.text.TextComponentString(
-                                "UAV registry target assigned: " + message.registryId));
+                                "UAV entity target assigned: " + target.getUniqueID()));
                     } catch (IllegalArgumentException failure) {
                         player.sendMessage(new net.minecraft.util.text.TextComponentString(
-                                "UAV registry target rejected: invalid mission or target."));
+                                "UAV entity target rejected: invalid mission or target."));
                     }
                 });
                 return null;
@@ -1802,17 +1827,20 @@ public final class RdpUavNetwork {
                     net.vas.rdp.uav.weapon.GuidedWeaponCapability capability =
                             net.vas.rdp.uav.weapon.GuidedWeaponRegistry.find(
                                     weapon.getName(), weapon.getInfo().type);
-                    if (capability == null) continue;
-                    weaponRows.add(weapon.getName() + "/" + weapon.getInfo().type
-                            + " " + capability.getBehavior() + " objectives="
-                            + capability.getObjectives() + " ammo="
-                            + (weapon.getAmmo() + weapon.getAmmoReserve()));
-                    if (capability.getBehavior()
-                            != net.vas.rdp.uav.weapon.GuidedNativeBehavior.UNSUPPORTED
-                            && (weapon.getAmmo() > 0 || weapon.getAmmoReserve() > 0)) {
+                    int ammunition = weapon.getAmmo() + weapon.getAmmoReserve();
+                    String reason = capability == null ? "UNREGISTERED_CAPABILITY"
+                            : capability.availabilityReason(ammunition);
+                    String status = "OK".equals(reason) ? "AVAILABLE" : "BLOCKED";
+                    String behavior = capability == null ? "UNREGISTERED"
+                            : capability.getBehavior().name();
+                    String objectives = capability == null ? "[]" : capability.getObjectives().toString();
+                    weaponRows.add(status + ":" + reason + " " + weapon.getName() + "/"
+                            + weapon.getInfo().type + " behavior=" + behavior
+                            + " objectives=" + objectives + " ammo=" + ammunition);
+                    if ("OK".equals(reason)) {
                         // Only an executable, loaded capability belongs in the
-                        // operator's weapon selector. Unsupported definitions
-                        // remain visible in weaponRows with their reason/type.
+                        // operator's weapon selector; every other weapon remains
+                        // visible with its authoritative blocked reason.
                         weaponNames.add(weapon.getName());
                     }
                 }
@@ -2940,9 +2968,12 @@ public final class RdpUavNetwork {
                     rejectTargetLock(player, aircraft, message.targetId, "OPERATOR_AUTHORIZATION");
                     return;
                 }
-                if (message.clear || (message.targetId == null
-                        || message.targetId.trim().isEmpty())) {
+                if (message.isClearRequest()) {
                     clearTargetLock(player, aircraft);
+                    return;
+                }
+                if (message.isInvalidLockRequest()) {
+                    rejectTargetLock(player, aircraft, message.targetId, "INVALID_TARGET_ID");
                     return;
                 }
                 try {
@@ -2979,6 +3010,14 @@ public final class RdpUavNetwork {
                         rejectTargetLock(player, aircraft, message.targetId, "OUT_OF_RANGE",
                                 net.minecraft.entity.EntityList.getKey(target),
                                 (double) target.getDistance(aircraft), true, "ACCEPTED");
+                        return;
+                    }
+                    if (!net.vas.rdp.uav.target.TargetPolicy.hasLineOfSight(
+                            player.world, aircraft, target)) {
+                        rejectTargetLock(player, aircraft, message.targetId,
+                                "LINE_OF_SIGHT_BLOCKED",
+                                net.minecraft.entity.EntityList.getKey(target),
+                                (double) target.getDistance(aircraft), true, "BLOCKED");
                         return;
                     }
                     ResourceLocation key =

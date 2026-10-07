@@ -5,12 +5,15 @@
 Rows below are cumulative, dated historical records unless explicitly
 revalidated against the current checkout. The saved 2026-09-27 development
 client log reaches addon hook initialization but crashes during client model
-loading, before entering a world. The root `logs/latest.log` contains three
-test-worker hook messages only. On 2026-10-02 an isolated copy of the project
-was used for a Forge 2768 `runServer` startup probe; Forge and coremods
-initialized, then Minecraft stopped at the EULA prompt (`eula=false`) before
-world/server startup. This is not evidence of server readiness or UAV behavior,
-and 2768 is not a resolved supported-runtime selection.
+loading, before entering a world. A later Forge 14.23.5.2859 development
+client attempt on 2026-10-06 failed during McHeli CE mod loading with an
+`IllegalAccessError` in `ClientSoundRegistry.commitChanges`, also before world
+entry. The root `logs/latest.log` contains three test-worker hook messages only.
+On 2026-10-02 an isolated copy of the project was used for a Forge 2768
+`runServer` startup probe; Forge and coremods initialized, then Minecraft
+stopped at the EULA prompt (`eula=false`) before world/server startup. These
+startup attempts do not validate server readiness or UAV behavior, and 2768 is
+not a resolved supported-runtime selection.
 
 | Area | Command | Result | Notes |
 | --- | --- | --- | --- |
@@ -43,6 +46,7 @@ and 2768 is not a resolved supported-runtime selection.
 | Forge dedicated-server startup smoke | `.\gradlew.bat runServer --no-daemon` | HISTORICAL PARTIAL | An earlier run reported `Done` with McHeliCE, WingMan, RDP Core, and addon coremod, then a `RDPWorldSavedData.<init>(String)` failure. This is not current-checkout server evidence; the saved 2026-09-27 client run crashes before world entry. |
 | Isolated configured Forge 2768 server startup probe | `.\gradlew.bat runServer --no-daemon` from the isolated session-artifact copy | BLOCKED | Gradle reported `BUILD SUCCESSFUL`, but Minecraft stopped with “You need to agree to the EULA” and wrote `run\eula.txt` with `eula=false`; no world was loaded and no server readiness or gameplay was verified. The original repository `run\` directory was not used. This probe does not resolve whether 2768, 2859, or 2864 is the supported runtime. |
 | native aircraft method presence | `javap -classpath libs/mcheli-ce-1.5.1.jar -public com.norwood.mcheli.aircraft.MCH_EntityAircraft` | PASS | Verified public rotation and throttle methods; method presence is not physical-flight evidence |
+| Forge 14.23.5.2859 development-client startup | `run/logs/latest.log` and `run/crash-reports/crash-2026-10-06_13.37.40-client.txt` | FAIL (MOD LOAD) | McHeli CE 1.5.1 `ClientSoundRegistry.commitChanges` throws `IllegalAccessError` accessing `SoundHandler.loadSoundResource`; no world entry, no current-change-set behavior evidence |
 | official McHeliCE control-path comparison | `Warfactory-Official/McHeliCE@cbaff7f30e549ff75e485388c24c74a4316c2228` plus local 1.5.1 JAR | PASS | Official WingMan server handlers use bounded `setRotYaw`, `setRotPitch`, `setRotRoll`, `setThrottle`, and `updateControl`; local signatures match |
 | native server control shaping | `.\gradlew.bat test --tests net.vas.rdp.uav.NativeControlMathTest --no-daemon` | PASS | Yaw/pitch/roll rate limits, yaw wrap, helicopter collective behavior, and finite bounded commands are deterministic |
 | native server control ownership | source contract and `.\gradlew.bat test --no-daemon` | PASS | Mission lease is required; operator presence never fails an active mission. AI remains the authoritative native-control writer while the operator is observation-only |

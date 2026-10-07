@@ -105,6 +105,64 @@ public class MissionMovementAuthorityTest {
     }
 
     @Test
+    public void everyTerminalMissionTransitionReleasesItsLease() {
+        UUID aircraftId = UUID.randomUUID();
+        RDPMission aborted = mission(aircraftId);
+        assertTrue(MissionMovementAuthority.claimControl(aborted, aircraftId, 1L));
+        aborted.abort("OPERATOR_ABORT", 2L);
+        assertLeaseReleased(aircraftId, aborted, 2L);
+
+        RDPMission failed = mission(aircraftId);
+        assertTrue(MissionMovementAuthority.claimControl(failed, aircraftId, 3L));
+        failed.fail("MISSION_FAILURE", 4L);
+        assertLeaseReleased(aircraftId, failed, 4L);
+
+        RDPMission completed = mission(aircraftId);
+        advanceToParking(completed);
+        assertTrue(MissionMovementAuthority.claimControl(completed, aircraftId, 14L));
+        completed.complete(15L);
+        assertLeaseReleased(aircraftId, completed, 15L);
+
+        RDPMission detonated = mission(aircraftId);
+        advanceToKamikazeTarget(detonated);
+        assertTrue(MissionMovementAuthority.claimControl(detonated, aircraftId, 7L));
+        detonated.transitionTo(MissionState.KAMIKADZE_DETONATED, 8L);
+        assertLeaseReleased(aircraftId, detonated, 8L);
+
+        RDPMission lost = mission(aircraftId);
+        advanceToKamikazeTarget(lost);
+        assertTrue(MissionMovementAuthority.claimControl(lost, aircraftId, 7L));
+        lost.transitionTo(MissionState.AIRCRAFT_LOST, 8L);
+        assertLeaseReleased(aircraftId, lost, 8L);
+    }
+
+    @Test
+    public void activeHoldingAndLegacyLaunchStatesRetainMissionLease() {
+        UUID aircraftId = UUID.randomUUID();
+        RDPMission holding = mission(aircraftId);
+        advanceToReporting(holding);
+        assertTrue(MissionMovementAuthority.claimControl(holding, aircraftId, 10L));
+        holding.transitionTo(MissionState.HOLDING, 11L);
+
+        assertTrue(MissionMovementAuthority.nativeWingManRequired(holding));
+        assertTrue(MissionMovementAuthority.canIssueNativeControl(holding, aircraftId, 11L));
+        assertNotNull(MissionMovementAuthority.getActiveLease(aircraftId));
+        MissionMovementAuthority.releaseControl(aircraftId);
+
+        UUID launchAircraftId = UUID.randomUUID();
+        RDPMission launchPending = mission(launchAircraftId);
+        advanceToTargetLocked(launchPending);
+        assertTrue(MissionMovementAuthority.claimControl(launchPending, launchAircraftId, 6L));
+        launchPending.transitionTo(MissionState.DIRECT_LAUNCH_COMPLETE, 7L);
+
+        assertTrue(MissionMovementAuthority.nativeWingManRequired(launchPending));
+        assertTrue(MissionMovementAuthority.canIssueNativeControl(launchPending,
+                launchAircraftId, 7L));
+        assertNotNull(MissionMovementAuthority.getActiveLease(launchAircraftId));
+        MissionMovementAuthority.releaseControl(launchAircraftId);
+    }
+
+    @Test
     public void leaseMatchingRejectsMissingIdentitiesWithoutThrowing() {
         RDPMission mission = mission();
         UUID aircraftId = UUID.randomUUID();
@@ -161,6 +219,53 @@ public class MissionMovementAuthorityTest {
                 "switchblade", MissionType.RECONNAISSANCE,
                 TargetSpec.point(0.0D, 80.0D, 0.0D, TargetPriority.NORMAL),
                 false, false, false, 64.0D, 32.0D, 0L);
+    }
+
+    private static void assertLeaseReleased(UUID aircraftId, RDPMission mission, long tick) {
+        assertFalse(MissionMovementAuthority.canIssueNativeControl(mission, aircraftId, tick));
+        assertNull(MissionMovementAuthority.getActiveLease(aircraftId));
+        assertFalse(MissionMovementAuthority.nativeWingManRequired(mission));
+    }
+
+    private static void advanceToTargetLocked(RDPMission mission) {
+        mission.transitionTo(MissionState.DISPATCHED, 1L);
+        mission.transitionTo(MissionState.TAKEOFF, 2L);
+        mission.transitionTo(MissionState.CRUISE, 3L);
+        mission.transitionTo(MissionState.SEARCHING, 4L);
+        mission.transitionTo(MissionState.TARGET_ACQUIRED, 5L);
+        mission.lockPoint(6L);
+        mission.transitionTo(MissionState.TARGET_LOCKED, 6L);
+    }
+
+    private static void advanceToKamikazeTarget(RDPMission mission) {
+        mission.transitionTo(MissionState.DISPATCHED, 1L);
+        mission.transitionTo(MissionState.TAKEOFF, 2L);
+        mission.transitionTo(MissionState.CRUISE, 3L);
+        mission.transitionTo(MissionState.SEARCHING, 4L);
+        mission.transitionTo(MissionState.TARGET_ACQUIRED, 5L);
+        mission.lockTarget(UUID.randomUUID(), 6L);
+        mission.transitionTo(MissionState.KAMIKADZE_TARGET, 7L);
+    }
+
+    private static void advanceToReporting(RDPMission mission) {
+        mission.transitionTo(MissionState.DISPATCHED, 1L);
+        mission.transitionTo(MissionState.TAKEOFF, 2L);
+        mission.transitionTo(MissionState.CRUISE, 3L);
+        mission.transitionTo(MissionState.SEARCHING, 4L);
+        mission.transitionTo(MissionState.TARGET_ACQUIRED, 5L);
+        mission.lockPoint(6L);
+        mission.transitionTo(MissionState.APPROACHING, 7L);
+        mission.transitionTo(MissionState.ON_TARGET, 8L);
+        mission.transitionTo(MissionState.SCANNING, 9L);
+        mission.transitionTo(MissionState.REPORTING, 10L);
+    }
+
+    private static void advanceToParking(RDPMission mission) {
+        advanceToReporting(mission);
+        mission.transitionTo(MissionState.HOLDING, 11L);
+        mission.transitionTo(MissionState.RETURNING, 12L);
+        mission.transitionTo(MissionState.LANDING, 13L);
+        mission.transitionTo(MissionState.PARKING, 14L);
     }
 
     private static RDPMission mission() {

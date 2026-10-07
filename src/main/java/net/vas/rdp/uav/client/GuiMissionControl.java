@@ -548,7 +548,7 @@ public final class GuiMissionControl extends GuiScreen {
                 TargetSuggestion suggestion = threatSuggestions.get(suggestionIndex);
                 String missionId = selectedMissionId();
                 if (missionId != null) {
-                    RdpUavNetwork.assignRegistryTarget(missionId, suggestion.registryId);
+                    RdpUavNetwork.assignEntityTarget(missionId, suggestion.entityId);
                 } else {
                     RdpUavNetwork.lockAiTarget(suggestion.entityId);
                 }
@@ -593,17 +593,20 @@ public final class GuiMissionControl extends GuiScreen {
             status = "Target lock unavailable while the world is not loaded.";
             return;
         }
-        RayTraceResult hit = mc.objectMouseOver;
-        Entity target = hit == null ? null : hit.entityHit;
-        if (target == null || target.world == null || target.isDead) target = capturedCrosshairTarget();
-        if (target != null && target.world != null && !target.isDead) {
+        MCH_EntityAircraft aircraft = net.vas.rdp.uav.mission.UavControlAccess
+                .findControlledAircraft(mc.player);
+        ClientAimRayTracer.AimTarget aim = ClientAimRayTracer.trace(
+                mc, mc.getRenderPartialTicks(), mc.player, aircraft);
+        if (aim.isEntity()) {
+            Entity target = aim.getEntity();
             rememberCrosshairTarget(target);
             RdpUavNetwork.lockAiTarget(target.getUniqueID());
             status = "Target lock requested for " + target.getName() + ".";
             return;
         }
-        capturedCrosshairTargetId = null;
-        status = "No crosshair contact; aim directly at a valid target.";
+        status = aim.isBlock()
+                ? "Target lock not sent: the active camera ray hits a block."
+                : "Target lock not sent: no entity on the active camera ray.";
     }
 
     private void createEntityMission(boolean attack) {
@@ -849,9 +852,20 @@ public final class GuiMissionControl extends GuiScreen {
             if (guidedMode) drawString(fontRenderer, "PAYLOAD: " + guidanceSummary,
                     right, 80, 0x88FFAA);
             if (guidedWeaponRows.length > 0) {
-                drawString(fontRenderer, "GUIDED WEAPONS / PROJECTILES", right, 96, 0xB0D8FF);
-                for (int i = 0; i < guidedWeaponRows.length && i < 6; i++) {
-                    drawString(fontRenderer, guidedWeaponRows[i], right, 109 + i * 12, 0xFFFFFF);
+                drawString(fontRenderer, "GUIDED WEAPONS / PROJECTILES ("
+                        + guidedWeaponRows.length + ")", right, 96, 0xB0D8FF);
+                int shown = Math.min(guidedWeaponRows.length, 6);
+                for (int i = 0; i < shown; i++) {
+                    String row = guidedWeaponRows[i];
+                    int color = row.startsWith("BLOCKED:")
+                            ? 0xFFFF7777 : row.startsWith("AVAILABLE:")
+                            ? 0xFF88FFAA : 0xFFFFFFFF;
+                    drawString(fontRenderer, fontRenderer.trimStringToWidth(row, 224),
+                            right, 109 + i * 12, color);
+                }
+                if (guidedWeaponRows.length > shown) {
+                    drawString(fontRenderer, "+" + (guidedWeaponRows.length - shown)
+                            + " more rows", right, 109 + shown * 12, 0xFFCC66);
                 }
             }
             drawMissions(left, right);
