@@ -759,6 +759,16 @@ world behavior.
 
 ## 13. Safe contribution workflow
 
+AI coding agents are expected to work as architecture, planning,
+implementation, debugging, review, and collaboration partners—not merely
+generate isolated classes. They must trace the complete mission path, preserve
+authority boundaries, validate the requested behavior, and distinguish source
+or test evidence from live-runtime proof. A direct implementation request
+authorizes the stated scope; agents should ask only for materially consequential
+unresolved decisions. See the canonical
+[AI Agent Work Policy](docs/AI_AGENT_WORK_POLICY.md) and the
+[Copilot workflow](docs/GITHUB_COPILOT_WORKFLOW.md).
+
 Before changing code:
 
 1. identify whether the change is client-only, server-only, domain-only, or

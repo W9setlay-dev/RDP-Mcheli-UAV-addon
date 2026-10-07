@@ -39,6 +39,85 @@ public class MissionStateConsistencyTest {
     }
 
     @Test
+    public void manualControlOverridesWillNotBreakMissionStateConsistency() {
+        RDPMission mission = new RDPMission(
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                "test-aircraft",
+                MissionType.RECONNAISSANCE,
+                TargetSpec.point(0.0D, 10.0D, 20.0D, TargetPriority.NORMAL),
+                false,
+                false,
+                false,
+                100.0D,
+                120.0D,
+                1L);
+        mission.transitionTo(MissionState.DISPATCHED, 2L, "dispatch");
+        mission.transitionTo(MissionState.TAKEOFF, 3L, "takeoff");
+        mission.enterManualControl(4L);
+        mission.transitionTo(MissionState.CRUISE, 5L, "cruise");
+        mission.transitionTo(MissionState.SEARCHING, 6L, "search");
+
+        assertEquals(ControlOwner.MANUAL, mission.getControlOwner());
+        mission.validateStateConsistency();
+
+        mission.exitManualControl(7L);
+        assertEquals(ControlOwner.MISSION_AI, mission.getControlOwner());
+    }
+
+    @Test
+    public void recoveryStateTakesAuthorityFromOperatorOverride() {
+        RDPMission mission = new RDPMission(
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                "test-aircraft",
+                MissionType.RECONNAISSANCE,
+                TargetSpec.point(0.0D, 10.0D, 20.0D, TargetPriority.NORMAL),
+                false,
+                false,
+                false,
+                100.0D,
+                120.0D,
+                1L);
+        mission.transitionTo(MissionState.DISPATCHED, 2L, "dispatch");
+        mission.transitionTo(MissionState.TAKEOFF, 3L, "takeoff");
+        mission.enterSupervisedOperatorMode(4L);
+        mission.transitionTo(MissionState.CRUISE, 5L, "cruise");
+        mission.transitionTo(MissionState.WAITING_FOR_WORLD, 6L, "recovery");
+
+        assertEquals(ControlOwner.RECOVERY, mission.getControlOwner());
+        mission.validateStateConsistency();
+    }
+
+    @Test
+    public void terminalTransitionsOverrideManualControlWithSafetyOwner() {
+        RDPMission mission = new RDPMission(
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                "test-aircraft",
+                MissionType.RECONNAISSANCE,
+                TargetSpec.point(0.0D, 10.0D, 20.0D, TargetPriority.NORMAL),
+                false,
+                false,
+                false,
+                100.0D,
+                120.0D,
+                1L);
+        mission.transitionTo(MissionState.DISPATCHED, 2L, "dispatch");
+        mission.transitionTo(MissionState.TAKEOFF, 3L, "takeoff");
+        mission.enterManualControl(4L);
+        mission.transitionTo(MissionState.CRUISE, 5L, "cruise");
+        mission.fail("manual override lost authority", 6L);
+
+        assertEquals(MissionState.FAILED, mission.getState());
+        assertEquals(ControlOwner.SAFETY, mission.getControlOwner());
+        mission.validateStateConsistency();
+    }
+
+    @Test
     public void terminalTargetLockRejectsReplacementByUuid() {
         UUID originalTarget = UUID.randomUUID();
         UUID replacementTarget = UUID.randomUUID();

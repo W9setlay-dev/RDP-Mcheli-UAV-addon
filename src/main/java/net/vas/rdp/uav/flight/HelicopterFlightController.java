@@ -32,8 +32,9 @@ public final class HelicopterFlightController implements AirframeController {
             return NativeFlightControlCommand.unsupported("STALE_OR_INVALID_AIRCRAFT_STATE");
         }
 
+        double safeTargetY = WorkingAltitudePolicy.clampToProfile(profile, targetY);
         double dx = targetX - state.getX();
-        double dy = targetY - state.getY();
+        double dy = safeTargetY - state.getY();
         double dz = targetZ - state.getZ();
         double horizontalDistance = Math.hypot(dx, dz);
         float course = horizontalDistance < 0.5D

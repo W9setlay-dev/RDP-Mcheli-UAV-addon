@@ -43,6 +43,20 @@ public class MissionMovementAuthorityTest {
     }
 
     @Test
+    public void manualControlStateIsExplicitlyReturnedWhenStationOperatorIsPresent() {
+        RDPMission mission = mission();
+        MissionMovementAuthority.applyManualOperatorState(mission, true, 5L);
+        assertEquals(ControlOwner.MANUAL, mission.getControlOwner());
+        assertTrue(MissionMovementAuthority.operatorFlightInputAllowed(mission));
+        assertFalse(MissionMovementAuthority.nativeWingManRequired(mission));
+
+        MissionMovementAuthority.applyManualOperatorState(mission, false, 6L);
+        assertEquals(ControlOwner.MISSION_AI, mission.getControlOwner());
+        assertFalse(MissionMovementAuthority.operatorFlightInputAllowed(mission));
+        assertTrue(MissionMovementAuthority.nativeWingManRequired(mission));
+    }
+
+    @Test
     public void missionControlLeaseRejectsDuplicateAircraftClaim() {
         RDPMission first = mission();
         RDPMission second = mission();

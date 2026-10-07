@@ -201,6 +201,18 @@ public class MissionLifecycleContractTest {
     }
 
     @Test
+    public void supervisedOperatorControlSurvivesPersistenceRoundTrip() {
+        RDPMission source = mission(0);
+        source.transitionTo(MissionState.WAITING_FOR_TARGET, 1);
+        source.transitionTo(MissionState.SEARCHING, 2);
+        source.enterSupervisedOperatorMode(3);
+
+        RDPMission restored = MissionNbtCodec.read(MissionNbtCodec.write(source));
+
+        assertEquals(ControlOwner.SUPERVISED_OPERATOR, restored.getControlOwner());
+    }
+
+    @Test
     public void restoredTerminalMissionRetainsSafetyOwnership() {
         RDPMission source = mission(0);
         source.abort("OPERATOR_ABORT", 1);

@@ -6,6 +6,17 @@ existing **RDP UAV Architect** custom agent and the Plan/Agent controls visible
 in the app. Keep the original master prompt as the long-term requirements
 source; use this runbook to control how Copilot executes it.
 
+The agent's role, architecture invariants, end-to-end task loop, collaboration
+rules, and known limitations are defined in the canonical
+[AI Agent Work Policy](AI_AGENT_WORK_POLICY.md). This runbook covers the
+Copilot-specific workflow and validation handoff.
+
+The multi-phase flow below is intended for a broad architecture redesign or
+when the user explicitly asks for staged discovery and planning. It is not a
+mandatory gate for ordinary bug fixes, reviews, documentation changes, or
+bounded feature requests. For those tasks, follow the current request and the
+canonical work policy directly.
+
 ## Outcome and guardrails
 
 The goal is to move the addon toward a coherent Minecraft 1.12.2 / Forge /
@@ -20,10 +31,14 @@ that each proposed boundary fits this repository, Java 8, Forge 1.12.2, McHeli
 CE, WingMan, and RDP Core. Do not introduce frameworks, dependencies, class
 families, or machine learning without a demonstrated need.
 
-The user's approval is required before implementation and before material
-architecture or gameplay decisions. Approval applies only to the named phase
-and scope. Copilot must not infer approval from silence or from a request to
-inspect, plan, debug, or prepare a workflow.
+Follow the authorization in the user's current request. A request to inspect,
+plan, explain, or review without asking for implementation remains read-only.
+A direct implementation request authorizes work within its stated scope,
+including focused tests and directly related documentation; do not add an
+approval gate for those steps. Ask before expanding scope or when an unresolved
+choice materially affects gameplay, safety, persistence, compatibility, or
+authority. Resolve ordinary ambiguity using the safest repository-consistent
+assumption and state it in the handoff.
 
 ## Copilot app setup
 
@@ -40,14 +55,16 @@ inspect, plan, debug, or prepare a workflow.
 5. Keep the first run read-only. If sending the master prompt as a separate
    message, prefix it with: “Treat this as requirements only. Stay in Plan mode;
    do not change repository files. Wait for my Phase 0 discovery instructions.”
-6. Review the evidence and open questions. Reply with an explicit phase
-   approval only after the scope and decisions are clear.
-7. Switch to **Agent** mode only for a phase the user has approved. Keep the
+6. Review the evidence and open questions. If continuing this staged redesign,
+   resolve material architecture choices and identify the next bounded slice.
+7. Use **Agent** mode for the work authorized by the user's request. Keep the
    same chat for continuity when practical; start a new chat only if its first
-   message includes the approved scope and links/files needed to restore state.
+   message includes the scope and links/files needed to restore state.
 
-The custom agent has edit and shell tools. Selecting it does not itself grant
-approval to edit. The mode and the phase approval both matter.
+The custom agent's tool access does not expand the user's requested scope.
+Inspect and plan when asked to inspect or plan; implement when asked to
+implement; do not infer authorization for unrelated redesign or repository
+operations.
 
 GitHub describes Plan mode as researching a task and drafting an implementation
 plan before code changes, and Agent mode as carrying out a multi-step task with
@@ -58,12 +75,12 @@ and [Copilot Chat modes](https://docs.github.com/en/copilot/how-tos/chat-with-co
 
 | Stage | Copilot mode | Allowed work | Gate to continue |
 | --- | --- | --- | --- |
-| 0. Discover | Plan | Read-only repository and evidence audit | User approves the discovery result and scope for architecture decisions |
-| 1. Align architecture | Plan | Compare current design with target, resolve major choices, produce migration plan | User approves named decisions and a bounded implementation phase |
-| 2. Prepare baseline | Agent, after approval | Establish current Git/build/test baseline and safe change boundary | Baseline and file overlap are reported; user resolves material conflicts |
-| 3. Implement one slice | Agent | Make small changes only within approved scope; validate and update related records | Slice acceptance criteria pass or a real blocker is reported |
-| 4. Review and runtime | Ask/Plan for review; Agent only for approved checks/fixes | Inspect diff, regressions, runtime evidence, and remaining gaps | User accepts the completed slice or approves a specific follow-up |
-| 5. Resume next slice | Plan then Agent | Re-read project state and continue from the first unfinished approved task | Repeat phase approval for any new material scope |
+| 0. Discover | Plan or read-only mode | Repository and evidence audit | Scope and evidence are clear; ask only about consequential uncertainty |
+| 1. Align architecture | Plan | Compare current design with target; resolve major choices and produce a migration plan when requested | Decisions stay within user scope; seek direction for material unresolved choices |
+| 2. Prepare baseline | Agent for authorized implementation | Establish current Git/build/test baseline and safe change boundary | Baseline and file overlap are understood; preserve pre-existing user changes |
+| 3. Implement one slice | Agent | Complete the requested behavior with tests and related docs within scope | Acceptance criteria pass or a real blocker is reported |
+| 4. Review and runtime | Ask/Plan for review; Agent for checks/fixes within requested scope | Inspect diff, regressions, runtime evidence, and remaining gaps | Report verified outcome or a concrete blocker |
+| 5. Resume next slice | Plan then Agent as needed | Re-read project state and continue from the first unfinished requested task | Confirm authorization before expanding material scope |
 
 The full feature backlog is not one implementation phase. Work through it in
 dependency-aware slices, preserving existing behavior until a replacement is
@@ -86,7 +103,8 @@ HARD BOUNDARY: Do not edit, create, delete, rename, format, stage, commit, or
 revert any repository file. Do not run build, test, clean, deployment, or other
 commands that create/change project artifacts. Do not switch branches or
 worktrees. Read-only search and inspection are allowed. Do not begin
-implementation. Stop after the report and wait for explicit user approval.
+implementation. Stop after the report. Continue only if the user asks to proceed
+or otherwise authorizes implementation.
 
 First establish the present checkout state using read-only Git inspection.
 Preserve every pre-existing user change. In particular, the checkout was
@@ -170,7 +188,8 @@ execution; and isolate legacy McHeli/WingMan behavior behind verified adapter
 boundaries. Profiles describe capabilities; operational roles describe current
 assignment. Fixed-wing and rotary-wing behavior must be justified separately.
 
-Ask Copilot to produce an approval packet, not code:
+When the user requests staged architecture alignment, ask Copilot to produce a
+decision and implementation packet before coding:
 
 - chosen phase and explicit in/out-of-scope list;
 - decisions resolved, with decision IDs and user approval state;
@@ -198,8 +217,8 @@ included in the approval.
 
 ## Phase 2: establish a safe baseline
 
-Once a bounded implementation phase is approved, switch to Agent mode and require
-Copilot to:
+Once the user requests implementation of a bounded slice, switch to Agent mode
+and require Copilot to:
 
 1. Re-read the agreed project records and exact approval message.
 2. Capture `git status --short --branch`, `git diff --stat`, and the existing
@@ -209,38 +228,39 @@ Copilot to:
 4. Verify current Gradle, Java, Forge, McHeli CE, RDP Core, and test setup from
    checked-in files and installed artifacts. Reconcile historical documents;
    do not copy old version or test claims into the new baseline.
-5. Run the baseline checks only if included in the approved phase. Record exact
+5. Run relevant baseline checks. Record exact
    commands and results; distinguish environment failures from source failures.
-6. Report the safe edit boundary and begin only after it still matches approval.
+6. Report the safe edit boundary and proceed within the user's requested scope.
 
 Do not automatically switch branch/worktree, stage files, commit, push, or
 discard changes. If isolation is needed to protect existing work, explain the
 specific overlap and offer safe choices before taking that action.
 
-## Phase 3: implement an approved slice
+## Phase 3: implement the requested slice
 
 For each task, follow this loop:
 
-1. Reconfirm the task and acceptance criteria from the approved plan.
+1. Reconfirm the task and acceptance criteria from the user's request or
+   approved plan.
 2. Inspect the target class, callers, dependencies, state ownership, mutation
    sites, lifecycle/thread/tick side, runtime usage, and existing tests.
 3. Verify external APIs from the actual local jar/source when they matter. If
    unavailable, mark UNKNOWN and stop only the dependent task; continue
-   independent approved work where safe.
+   independent work within the user's scope where safe.
 4. State the intended behavior change and files to touch. Keep each change
    cohesive and narrow. Do not add unrelated cleanup or speculative abstractions.
-5. Implement; add or update tests only for the approved behavior and repository
+5. Implement; add or update tests only for the requested behavior and repository
    conventions. Run focused checks first, then the agreed regression/build
    checks. Do not treat source tests as live flight proof.
 6. Inspect `git diff` and `git diff --check`; verify no pre-existing change was
    lost, staged, or silently included. Do not use reset/clean/revert on user work.
-7. Update the existing relevant design, phase, and verification records when
-   approved. Avoid creating eight overlapping project-memory files; identify a
-   canonical location and link to existing records.
-8. Continue through all tasks in the approved phase. At a genuine blocker,
+7. Update existing relevant design, phase, and verification records when the
+   task changes their documented contracts. Avoid overlapping project-memory
+   files; identify a canonical location and link to existing records.
+8. Continue through all tasks in the requested scope. At a genuine blocker,
    classify it (architecture, API, build, runtime, environment, or data), record
-   evidence, and continue independent approved work. Ask only for decisions that
-   materially affect behavior, safety, compatibility, authority, or scope.
+   evidence, and continue independent work within scope. Ask only for decisions
+   that materially affect behavior, safety, compatibility, authority, or scope.
 
 Important decisions include module boundaries, mission/target ownership,
 state-machine semantics, client/server authority, network contracts, flight
@@ -253,8 +273,9 @@ date, evidence, alternatives, rationale, affected areas, and approval.
 
 Debug from a reproducible symptom and evidence. Record reproduction steps,
 expected/actual behavior, logs/telemetry, environment, and whether the issue is
-source-, test-, build-, API-, or runtime-proven. Fix the cause within approved
-scope; do not paper over a failed native handoff with a fake success state.
+source-, test-, build-, API-, or runtime-proven. Fix the cause within the
+user-requested scope; do not paper over a failed native handoff with a fake
+success state.
 
 Validation should be layered and reported separately:
 
@@ -342,8 +363,8 @@ end-to-end feature being operational.
 - Give recommendations as recommendations, never as verified facts.
 - Keep progress reports concise at checkpoints; reserve exhaustive inventories
   for the architecture report and final phase review.
-- Continue through approved tasks; do not stop after the first passing test or
-  a trivial subtask. Pause only at a real approval gate or blocker.
+- Continue through the requested tasks; do not stop after the first passing
+  test or a trivial subtask. Pause only at a real authorization gate or blocker.
 
 ## Repository observations when this runbook was prepared
 

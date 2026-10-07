@@ -214,7 +214,10 @@ public final class MissionNbtCodec {
         }
         if (tag.hasKey("controlOwner")) {
             ControlOwner persistedOwner = enumValue(tag, "controlOwner", ControlOwner.class);
-            if (persistedOwner != mission.getControlOwner()) {
+            if ((persistedOwner == ControlOwner.MANUAL
+                    || persistedOwner == ControlOwner.SUPERVISED_OPERATOR) && !mission.isTerminal()) {
+                mission.setControlOwner(persistedOwner, mission.getLastUpdateTick());
+            } else if (persistedOwner != mission.getControlOwner()) {
                 throw new IllegalArgumentException("Mission control owner does not match state");
             }
         }

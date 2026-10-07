@@ -158,8 +158,25 @@ public final class WingManFlightAdapter {
                     aircraft.getUniqueID(), command.getReason(), state.getSampleTick());
             return;
         }
+
+        double operatorYawDelta = trim == null ? 0.0D : trim.getYawDegrees();
+        double operatorPitchDelta = trim == null ? 0.0D : trim.getPitchDegrees();
+        double operatorRollDelta = trim == null ? 0.0D : trim.getRollDegrees();
+        boolean operatorInStation = net.vas.rdp.uav.mission.UavControlAccess.hasOperatorInStation(aircraft);
+        boolean operatorAssistActive = Math.abs(operatorYawDelta) > 0.02D
+                || Math.abs(operatorPitchDelta) > 0.02D
+                || Math.abs(operatorRollDelta) > 0.02D;
+        MissionMovementAuthority.applyManualOperatorState(mission, operatorInStation, tick);
+        MissionMovementAuthority.applySupervisedOperatorState(mission, operatorAssistActive, tick);
+        if (!operatorAssistActive) {
+            OperatorTrimRegistry.clear(aircraft.getUniqueID(), mission.getMissionId());
+        }
+        NativeFlightControlCommand fusedCommand = MissionMovementAuthority.fuseAiAndOperator(
+                mission,
+                command,
+                operatorRollDelta);
         boolean applied = NativeAircraftControlAdapter.apply(world, missions, aircraft,
-                mission, command, tick);
+                mission, fusedCommand, tick);
         if (applied && tick % 20L == 0L) {
             RdpUavDebug.debug("FlightControl",
                     "controller=RDP_FLIGHT_COMPUTER controlOwner={} aircraft={} profile={} node={} pos=({},{},{}) "
@@ -171,9 +188,9 @@ public final class WingManFlightAdapter {
                     profile.getExecutionProfile(), state.getRouteNode(),
                     state.getX(), state.getY(), state.getZ(), state.getMotionX(),
                     state.getMotionY(), state.getMotionZ(), state.getYaw(),
-                    state.getGroundTrackYaw(), command.getDesiredTrack(),
-                    command.getCourseError(), aircraft.getPitch(), aircraft.getRoll(),
-                    aircraft.getThrottle(), command.getDesiredVerticalSpeed(),
+                    state.getGroundTrackYaw(), fusedCommand.getDesiredTrack(),
+                    fusedCommand.getCourseError(), aircraft.getPitch(), aircraft.getRoll(),
+                    aircraft.getThrottle(), fusedCommand.getDesiredVerticalSpeed(),
                     terrainPlan.getReason(), terrainPlan.getCurrentAgl(),
                     trim == null ? 0.0D : trim.getYawDegrees(),
                     trim == null ? 0.0D : trim.getPitchDegrees(),
@@ -182,7 +199,7 @@ public final class WingManFlightAdapter {
                     baseCommand.isSupported() ? baseCommand.getPitch() : Float.NaN,
                     baseCommand.isSupported() ? baseCommand.getRoll() : Float.NaN,
                     baseCommand.isSupported() ? baseCommand.getThrottle() : Double.NaN,
-                    command.getYaw(), command.getPitch(), command.getRoll(), command.getThrottle());
+                    fusedCommand.getYaw(), fusedCommand.getPitch(), fusedCommand.getRoll(), fusedCommand.getThrottle());
         }
     }
 

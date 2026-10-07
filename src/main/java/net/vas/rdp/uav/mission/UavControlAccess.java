@@ -64,6 +64,27 @@ public final class UavControlAccess {
         return rider != null && !(rider instanceof MCH_EntityUavStation);
     }
 
+    /**
+     * Returns true when the UAV is actively under a human-operated station or
+     * direct-rider control. This is distinct from a passive AI mission lease and
+     * is the correct operator-presence signal for manual authority handoff.
+     */
+    public static boolean hasOperatorInStation(MCH_EntityAircraft aircraft) {
+        if (aircraft == null) return false;
+        Entity rider = aircraft.getRiddenByEntity();
+        if (rider instanceof MCH_EntityUavStation) {
+            MCH_EntityUavStation station = (MCH_EntityUavStation) rider;
+            return station.getControlled() == aircraft && station.getOperator() != null;
+        }
+        if (rider != null) {
+            return true;
+        }
+        IUavStation station = aircraft.getUavStation();
+        return station != null
+                && aircraft == station.getControlled()
+                && station.getOperator() != null;
+    }
+
     private static boolean sameEntity(Entity first, Entity second) {
         return first == second || (first != null && second != null
                 && first.getUniqueID().equals(second.getUniqueID()));

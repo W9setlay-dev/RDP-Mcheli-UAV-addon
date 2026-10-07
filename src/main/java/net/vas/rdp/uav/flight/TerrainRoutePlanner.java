@@ -189,7 +189,9 @@ public final class TerrainRoutePlanner {
         double verticalTrim = Math.tan(Math.toRadians(clamp(pitchTrimDegrees,
                 -profile.getMaximumPitchCorrectionDegrees(),
                 profile.getMaximumPitchCorrectionDegrees()))) * 32.0D;
-        double y = clamp(highestSurface + cruiseAgl + verticalTrim, minimumY, maximumY);
+        double desiredY = clamp(highestSurface + cruiseAgl + verticalTrim, minimumY, maximumY);
+        double y = WorkingAltitudePolicy.enforceGroundSafety(profile, desiredY,
+                highestSurface, worldHeight);
         return new AltitudeDecision(true, y, "TERRAIN_CLEAR_TRANSIT");
     }
 

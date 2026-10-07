@@ -4,6 +4,7 @@ import com.norwood.mcheli.aircraft.MCH_EntityAircraft;
 import net.minecraft.entity.Entity;
 import net.vas.rdp.uav.RDPUavMod;
 import net.vas.rdp.uav.flight.NativeAircraftControlAdapter;
+import net.vas.rdp.uav.flight.NativeFlightControlCommand;
 
 import java.util.Map;
 import java.util.UUID;
@@ -22,15 +23,76 @@ public final class MissionMovementAuthority {
     private MissionMovementAuthority() { }
 
     public static boolean operatorFlightInputAllowed(RDPMission mission) {
-        return mission == null || mission.getControlOwner() == ControlOwner.MANUAL;
+        if (mission == null) return true;
+        ControlOwner owner = mission.getControlOwner();
+        return owner == ControlOwner.MANUAL
+                || owner == ControlOwner.SUPERVISED_OPERATOR;
+    }
+
+    public static void applyManualOperatorState(RDPMission mission, boolean operatorInStation, long tick) {
+        if (mission == null || tick < 0L) return;
+        ControlOwner owner = mission.getControlOwner();
+        if (operatorInStation && acceptsOperatorControl(owner)) {
+            mission.enterManualControl(tick);
+            return;
+        }
+        if (!operatorInStation && owner == ControlOwner.MANUAL) {
+            mission.exitManualControl(tick);
+        }
+    }
+
+    public static void applySupervisedOperatorState(RDPMission mission, boolean operatorAssistActive, long tick) {
+        if (mission == null || tick < 0L) return;
+        ControlOwner owner = mission.getControlOwner();
+        if (operatorAssistActive && (owner == ControlOwner.MISSION_AI
+                || owner == ControlOwner.SUPERVISED_OPERATOR)) {
+            mission.enterSupervisedOperatorMode(tick);
+            return;
+        }
+        if (!operatorAssistActive && owner == ControlOwner.SUPERVISED_OPERATOR) {
+            mission.exitSupervisedOperatorMode(tick);
+        }
+    }
+
+    private static boolean acceptsOperatorControl(ControlOwner owner) {
+        return owner == ControlOwner.MISSION_AI
+                || owner == ControlOwner.SUPERVISED_OPERATOR
+                || owner == ControlOwner.MANUAL;
     }
 
     public static boolean nativeWingManRequired(RDPMission mission) {
         if (mission == null) return false;
         ControlOwner owner = mission.getControlOwner();
         return owner == ControlOwner.MISSION_AI
+                || owner == ControlOwner.SUPERVISED_OPERATOR
                 || owner == ControlOwner.TERMINAL_GUIDANCE
                 || owner == ControlOwner.RECOVERY;
+    }
+
+    /**
+     * Hybrid flight control model: AI remains the baseline controller while
+     * operator assistance is blended into the selected axes. This keeps the
+     * aircraft moving without forcing an artificial neutral state.
+     */
+    public static NativeFlightControlCommand fuseAiAndOperator(RDPMission mission,
+                                                             NativeFlightControlCommand aiCommand,
+                                                             double operatorRollDelta) {
+        if (mission == null || aiCommand == null || !aiCommand.isSupported()
+                || mission.getControlOwner() != ControlOwner.SUPERVISED_OPERATOR) {
+            return aiCommand;
+        }
+        double deadband = net.vas.rdp.uav.flight.NativeControlMath.operatorDeadband();
+        double blendedRoll = net.vas.rdp.uav.flight.NativeControlMath.blendAxis(
+                aiCommand.getRoll(), operatorRollDelta, deadband, 6.0D);
+
+        return NativeFlightControlCommand.setpoints(
+                aiCommand.getYaw(),
+                aiCommand.getPitch(),
+                (float) net.vas.rdp.uav.flight.NativeControlMath.clamp(blendedRoll, -45.0D, 45.0D),
+                aiCommand.getThrottle(),
+                aiCommand.getDesiredTrack(),
+                aiCommand.getCourseError(),
+                aiCommand.getDesiredVerticalSpeed());
     }
 
     public static boolean claimControl(RDPMission mission, UUID aircraftId, long tick) {

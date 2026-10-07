@@ -29,6 +29,20 @@ Your job is not to add isolated features. Your job is to make the whole path
 coherent, observable, safe, testable, and compatible with Minecraft 1.12.2,
 Forge, McHeli CE, RDP Core, WingMan, and the existing project conventions.
 
+You are not merely a simple class writer. Act as the project's architect,
+planner, implementer, debugger, reviewer, and collaborator as the task requires.
+Own the requested outcome end to end: trace the real call path, implement all
+necessary wiring and lifecycle behavior, add regression coverage, validate it,
+and update directly related documentation. A new class is only useful if the
+complete requested behavior works through its callers and runtime boundary.
+
+Follow the canonical [AI Agent Work Policy](../../docs/AI_AGENT_WORK_POLICY.md)
+for task workflow, cross-layer ownership, authorization, collaboration, known
+limitations, evidence labels, and completion criteria. A direct implementation
+request authorizes work within its stated scope; ask only when a choice
+materially affects gameplay, safety, persistence, compatibility, authority, or
+scope.
+
 ## Operating principles
 
 1. **Understand before editing.** Trace callers, state ownership, persistence,

@@ -68,8 +68,10 @@ public final class FlightGuidancePlanner {
                 terminal ? 8.0D : 16.0D, terminal ? 48.0D : 96.0D);
         double waypointX = aircraft.getX() + desiredX / desiredLength * lookahead;
         double waypointZ = aircraft.getZ() + desiredZ / desiredLength * lookahead;
-        double waypointY = clamp(predictedY, profile.getMinimumExecutionAltitude(),
-                profile.getMaximumExecutionAltitude());
+        double terrainSurfaceY = Math.max(0.0D, aircraft.getY() - profile.getCruiseAgl());
+        double worldHeight = Math.max(256.0D, aircraft.getY() + 128.0D);
+        double waypointY = WorkingAltitudePolicy.maintainWorkingAltitude(
+                profile, predictedY, aircraft.getY(), terrainSurfaceY, worldHeight);
 
         boolean feasible = terminal || distance <= profile.getDetectionRange()
                 || profile.supportsLongRangeLock();

@@ -51,6 +51,7 @@ public final class RDPMission {
     private double squareWidth;
     private double squareDepth;
     private static final double PROGRESS_DISTANCE_THRESHOLD = 0.5D;
+    private static final long TARGET_LOSS_REACQUIRE_TICKS = 15L * 20L;
     private MissionPhase phase = MissionPhase.PLANNING;
     private ControlOwner controlOwner = ControlOwner.MISSION_AI;
     private MissionExecutionStage executionStage = MissionExecutionStage.PLANNING;
@@ -107,11 +108,17 @@ public final class RDPMission {
                     + state + " -> " + nextState + " for " + missionId);
         }
         MissionState previousState = state;
+        ControlOwner previousOwner = controlOwner;
         state = nextState;
         lastUpdateTick = tick;
         queued = false;
         phase = phaseFor(nextState);
-        controlOwner = ownerFor(nextState);
+        if ((previousOwner == ControlOwner.MANUAL || previousOwner == ControlOwner.SUPERVISED_OPERATOR)
+                && ownerFor(nextState) == ControlOwner.MISSION_AI) {
+            controlOwner = previousOwner;
+        } else {
+            controlOwner = ownerFor(nextState);
+        }
         executionStage = MissionExecutionStage.fromState(nextState, missionType);
         lastTransitionReason = reason.trim();
         validateStateConsistency();
@@ -136,6 +143,10 @@ public final class RDPMission {
             throw new IllegalStateException("Mission phase does not match state for "
                     + missionId + ": " + phase + " != " + expectedPhase + " for " + state);
         }
+        if (!isTerminal() && (controlOwner == ControlOwner.MANUAL
+                || controlOwner == ControlOwner.SUPERVISED_OPERATOR)) {
+            return;
+        }
         ControlOwner expectedOwner = ownerFor(state);
         if (controlOwner != expectedOwner) {
             throw new IllegalStateException("Mission control owner does not match state for "
@@ -143,11 +154,15 @@ public final class RDPMission {
         }
     }
 
+    private static boolean isTerminalState(MissionState value) {
+        return value == MissionState.COMPLETE || value == MissionState.ABORTED
+                || value == MissionState.FAILED
+                || value == MissionState.KAMIKADZE_DETONATED
+                || value == MissionState.AIRCRAFT_LOST;
+    }
+
     public boolean isTerminal() {
-        return state == MissionState.COMPLETE || state == MissionState.ABORTED
-                || state == MissionState.FAILED
-                || state == MissionState.KAMIKADZE_DETONATED
-                || state == MissionState.AIRCRAFT_LOST;
+        return isTerminalState(state);
     }
     public boolean isTimedOut(long tick, long timeoutTicks) {
         if (tick < createdTick || timeoutTicks < 1L) return false;
@@ -156,6 +171,52 @@ public final class RDPMission {
     public boolean isDestructiveAuthorized() { return destructiveAuthorized; }
     public MissionPhase getPhase() { return phase; }
     public ControlOwner getControlOwner() { return controlOwner; }
+
+    public long getTargetLossReacquireWindowTicks() {
+        return TARGET_LOSS_REACQUIRE_TICKS;
+    }
+
+    public void setControlOwner(ControlOwner owner, long tick) {
+        if (owner != ControlOwner.MANUAL && owner != ControlOwner.SUPERVISED_OPERATOR)
+            throw new IllegalArgumentException("Only operator control overrides may be set directly");
+        if (tick < lastUpdateTick) {
+            throw new IllegalArgumentException("Control owner tick must not move backwards");
+        }
+        if (isTerminal() || ownerFor(state) != ControlOwner.MISSION_AI) {
+            throw new IllegalStateException("Operator control cannot override this mission state");
+        }
+        this.controlOwner = owner;
+        this.lastUpdateTick = tick;
+    }
+
+    public void enterManualControl(long tick) {
+        setControlOwner(ControlOwner.MANUAL, tick);
+    }
+
+    public void exitManualControl(long tick) {
+        if (controlOwner == ControlOwner.MANUAL) {
+            restoreMissionControl(tick);
+        }
+    }
+
+    public void enterSupervisedOperatorMode(long tick) {
+        setControlOwner(ControlOwner.SUPERVISED_OPERATOR, tick);
+    }
+
+    public void exitSupervisedOperatorMode(long tick) {
+        if (controlOwner == ControlOwner.SUPERVISED_OPERATOR) {
+            restoreMissionControl(tick);
+        }
+    }
+
+    private void restoreMissionControl(long tick) {
+        if (tick < lastUpdateTick) {
+            throw new IllegalArgumentException("Control owner tick must not move backwards");
+        }
+        controlOwner = ownerFor(state);
+        lastUpdateTick = tick;
+    }
+
     public void authorizeDestructiveAction() { destructiveAuthorized = true; }
     public void setDestructiveAuthorized(boolean value) { destructiveAuthorized = value; }
     public boolean isKamikazePayloadLaunched() { return kamikazePayloadLaunched; }
@@ -192,6 +253,10 @@ public final class RDPMission {
                 && !this.targetId.equals(targetId)) {
             throw new IllegalStateException("Terminal target cannot be replaced");
         }
+        if (this.targetId != null && !this.targetId.equals(targetId)
+                && controlOwner == ControlOwner.SUPERVISED_OPERATOR) {
+            throw new IllegalStateException("Operator-assisted supervision must keep the active target lock");
+        }
         this.targetId = targetId;
         this.targetLock = new TargetLock(targetId, "rdpuav:unknown", dimension,
                 0.0D, 0.0D, 0.0D, tick, ownerId, missionId);
@@ -214,6 +279,10 @@ public final class RDPMission {
         if (state == MissionState.KAMIKADZE_TARGET
                 && !targetId.equals(this.targetId)) {
             throw new IllegalArgumentException("Terminal target cannot be replaced");
+        }
+        if (this.targetId != null && !this.targetId.equals(targetId)
+                && controlOwner == ControlOwner.SUPERVISED_OPERATOR) {
+            throw new IllegalStateException("Operator-assisted supervision must keep the active target lock");
         }
         if (state == MissionState.SEARCHING) {
             transitionTo(MissionState.TARGET_ACQUIRED, tick);
@@ -376,6 +445,10 @@ public final class RDPMission {
                 && !this.targetId.equals(targetId)) {
             throw new IllegalStateException("Terminal target cannot be replaced");
         }
+        if (controlOwner == ControlOwner.SUPERVISED_OPERATOR && this.targetId != null
+                && !this.targetId.equals(targetId)) {
+            throw new IllegalStateException("Operator-assisted supervision must preserve the current target lock");
+        }
         this.targetId = targetId;
         if (targetLock == null || !targetLock.getEntityId().equals(targetId)) {
             targetLock = new TargetLock(targetId, "rdpuav:unknown", dimension,
@@ -392,6 +465,9 @@ public final class RDPMission {
         }
         if (state == MissionState.KAMIKADZE_TARGET && targetId != null) {
             throw new IllegalStateException("Terminal target cannot be cleared");
+        }
+        if (controlOwner == ControlOwner.SUPERVISED_OPERATOR && targetId != null) {
+            throw new IllegalStateException("Operator-assisted supervision must retain the current target lock");
         }
         if (targetId != null) lastTargetId = targetId;
         targetId = null;
