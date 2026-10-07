@@ -20,6 +20,12 @@ The server packet is `AiTargetLock` (message ID 9, client to server), carrying
 only a UUID string and `clear` boolean. Clearing is an explicit request;
 an empty UUID with `clear == false` is invalid and must not be treated as a
 clear operation.
+The server emits structured `ACCEPTED`, `REJECTED`, and `CLEARED` audit events.
+Resolution distinguishes `INVALID_TARGET`, `TARGET_NOT_LOADED`,
+`TARGET_DEAD`, and `TARGET_WRONG_DIMENSION`; range failures report
+`TARGET_OUT_OF_RANGE`. A UUID not present in the operator's loaded world is
+reported as not loaded; the server does not claim to know whether it exists in
+an unloaded chunk or another server world.
 
 The mission suggestion action uses `AiTargetLock.EntityTargetAssignment`
 (message ID 20, client to server). It sends the selected suggestion's entity
@@ -50,6 +56,13 @@ Only after validation does the server call
 Rejections return an explicit reason in the server chat/log path. Clearing is
 owner-authorized and aborts the active mission with
 `TARGET_LOCK_CLEARED`; a terminal-guidance commitment cannot be cleared.
+During mission execution, disappearance/out-of-range invalidation and expiry
+after the target-loss grace period emit one `LOCK_INVALIDATED` and
+`LOCK_EXPIRED` event respectively. `TargetLock.Validation` reports LOST or
+EXPIRED while `RDPMission.targetId` retains the committed UUID for a later
+same-identity reacquisition. Recovery emits `LOCK_REACQUIRED` and persists
+reason clearing. The status reason is persisted, but reloading does not restore
+a live lock or contact observation.
 
 ## Persistence and reacquisition
 

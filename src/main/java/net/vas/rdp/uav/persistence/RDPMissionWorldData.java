@@ -5,6 +5,7 @@ import net.minecraft.nbt.NBTTagList;
 import net.minecraft.world.World;
 import net.minecraft.world.storage.MapStorage;
 import net.minecraft.world.storage.WorldSavedData;
+import net.vas.rdp.uav.RdpUavDebug;
 import net.vas.rdp.uav.mission.MissionRepository;
 import net.vas.rdp.uav.mission.RDPMission;
 import org.jetbrains.annotations.NotNull;
@@ -62,8 +63,25 @@ public final class RDPMissionWorldData extends WorldSavedData {
     public void readFromNBT(NBTTagCompound compound) {
         repository.clear();
         NBTTagList list = compound.getTagList("missions", 10);
+        int rejectedRecords = 0;
+        String firstRejection = null;
         for (int i = 0; i < list.tagCount(); i++) {
-            repository.add(MissionNbtCodec.read(list.getCompoundTagAt(i)));
+            try {
+                repository.add(MissionNbtCodec.read(list.getCompoundTagAt(i)));
+            } catch (IllegalArgumentException malformed) {
+                rejectedRecords++;
+                if (firstRejection == null) {
+                    String reason = malformed.getMessage();
+                    if (reason == null) reason = "unspecified";
+                    if (reason.length() > 160) reason = reason.substring(0, 157) + "...";
+                    firstRejection = "index=" + i + " reason=" + reason;
+                }
+            }
+        }
+        if (rejectedRecords > 0) {
+            markDirty();
+            RdpUavDebug.warn("MissionPersistence", "Rejected " + rejectedRecords
+                    + " malformed saved mission record(s); first " + firstRejection);
         }
     }
 

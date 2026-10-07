@@ -7,6 +7,7 @@ public final class TargetLock {
         UNVALIDATED,
         VALID,
         LOST,
+        EXPIRED,
         IDENTITY_MISMATCH
     }
 
@@ -70,6 +71,20 @@ public final class TargetLock {
     public void markIdentityMismatch() {
         validation = Validation.IDENTITY_MISMATCH;
         confidence = 0.0D;
+    }
+
+    public void markLost() {
+        if (validation != Validation.EXPIRED
+                && validation != Validation.IDENTITY_MISMATCH) {
+            validation = Validation.LOST;
+        }
+    }
+
+    public void markExpired() {
+        if (validation != Validation.IDENTITY_MISMATCH) {
+            validation = Validation.EXPIRED;
+            confidence = 0.0D;
+        }
     }
 
     public void updateIdentity(String registryId, int dimension) {

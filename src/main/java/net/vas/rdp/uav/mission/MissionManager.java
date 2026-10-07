@@ -88,21 +88,24 @@ public final class MissionManager {
     }
 
     /**
-     * McHeli's UAV station is the ownership boundary. Re-registering the
-     * currently operated craft makes authorization survive server reloads
-     * without allowing a player who is not operating it to claim the craft.
+     * McHeli's UAV station is the ownership boundary. Refreshing the current
+     * operator's runtime snapshot recovers after reload without replacing its
+     * owner or active mission reservation.
      */
     public boolean ensureAuthorized(MCH_EntityAircraft aircraft, EntityPlayer player) {
-        if (aircraft == null || player == null) return true;
+        if (aircraft == null || player == null || aircraft.isDead
+                || aircraft.world == null || aircraft.world.isRemote
+                || !UavControlAccess.isOperator(aircraft, player)) return true;
+        if (aircraft.getAcInfo() == null) return true;
         AircraftRecord existing = this.aircraft.find(aircraft.getUniqueID());
         if (existing == null) {
-            if (aircraft.getAcInfo() == null) return true;
             registerAircraft(new AircraftRecord(aircraft.getUniqueID(), player.getUniqueID(),
                     aircraft.dimension, aircraft.getAcInfo().name, true, true));
             return false;
         }
-        return !existing.getOwnerId().equals(player.getUniqueID())
-                || existing.getDimension() != aircraft.dimension;
+        return !this.aircraft.refreshRuntimeState(aircraft.getUniqueID(),
+                player.getUniqueID(), aircraft.dimension, aircraft.getAcInfo().name,
+                true, true);
     }
 
     public void create(World world, RDPMission mission) {
@@ -249,10 +252,8 @@ public final class MissionManager {
                 aircraft.register(record);
             }
             if (record.getMissionId() == null) {
-                try {
-                    aircraft.assign(mission.getAircraftId(), mission.getMissionId(),
-                            mission.getOwnerId());
-                } catch (IllegalStateException unavailable) {
+                if (!aircraft.restoreAssignment(mission.getAircraftId(),
+                        mission.getMissionId(), mission.getOwnerId())) {
                     mission.fail("AIRCRAFT_RESTORE_UNAVAILABLE", mission.getLastUpdateTick());
                     release(mission);
                     data.markDirty();

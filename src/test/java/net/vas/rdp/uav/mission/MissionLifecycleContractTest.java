@@ -1,6 +1,7 @@
 package net.vas.rdp.uav.mission;
 
 import net.vas.rdp.uav.target.TargetPriority;
+import net.vas.rdp.uav.target.TargetLock;
 import net.vas.rdp.uav.target.TargetSelectionMode;
 import net.vas.rdp.uav.target.TargetSpec;
 import net.vas.rdp.uav.persistence.MissionNbtCodec;
@@ -210,6 +211,62 @@ public class MissionLifecycleContractTest {
         RDPMission restored = MissionNbtCodec.read(MissionNbtCodec.write(source));
 
         assertEquals(ControlOwner.SUPERVISED_OPERATOR, restored.getControlOwner());
+    }
+
+    @Test
+    public void lastKnownTargetPositionPersistsWithoutRestoringLiveLockEvidence() {
+        RDPMission source = mission(0);
+        UUID targetId = UUID.randomUUID();
+        source.transitionTo(MissionState.DISPATCHED, 1);
+        source.transitionTo(MissionState.TAKEOFF, 2);
+        source.transitionTo(MissionState.CRUISE, 3);
+        source.transitionTo(MissionState.SEARCHING, 4);
+        source.transitionTo(MissionState.TARGET_ACQUIRED, 5);
+        source.lockTarget(targetId, 6);
+        source.updateTargetLock("minecraft:zombie", 2, 15.5D, 72.0D, -9.25D, 7);
+
+        RDPMission restored = MissionNbtCodec.read(MissionNbtCodec.write(source));
+
+        assertEquals(targetId, restored.getTargetId());
+        assertNull(restored.getTargetLock());
+        assertNotNull(restored.getLastKnownTargetPosition());
+        assertEquals(targetId, restored.getLastKnownTargetPosition().getTargetId());
+        assertEquals(2, restored.getLastKnownTargetPosition().getDimension());
+        assertEquals(15.5D, restored.getLastKnownTargetPosition().getX(), 0.0D);
+        assertEquals(72.0D, restored.getLastKnownTargetPosition().getY(), 0.0D);
+        assertEquals(-9.25D, restored.getLastKnownTargetPosition().getZ(), 0.0D);
+        assertEquals(7L, restored.getLastKnownTargetPosition().getObservedTick());
+    }
+
+    @Test
+    public void targetLockInvalidationExpiresAndRecoversOnlyForTheSameIdentity() {
+        RDPMission mission = mission(0);
+        UUID targetId = UUID.randomUUID();
+        mission.transitionTo(MissionState.DISPATCHED, 1);
+        mission.transitionTo(MissionState.TAKEOFF, 2);
+        mission.transitionTo(MissionState.CRUISE, 3);
+        mission.transitionTo(MissionState.SEARCHING, 4);
+        mission.transitionTo(MissionState.TARGET_ACQUIRED, 5);
+        mission.lockTarget(targetId, 6);
+
+        assertTrue(mission.markTargetLockUnavailable("TARGET_NOT_LOADED", false));
+        assertEquals(TargetLock.Validation.LOST,
+                mission.getTargetLock().getValidation());
+        assertFalse(mission.markTargetLockUnavailable("TARGET_NOT_LOADED", false));
+        assertTrue(mission.markTargetLockUnavailable("TARGET_STALE", true));
+        assertEquals(TargetLock.Validation.EXPIRED,
+                mission.getTargetLock().getValidation());
+
+        RDPMission restored = MissionNbtCodec.read(MissionNbtCodec.write(mission));
+        assertEquals(targetId, restored.getTargetId());
+        assertNull(restored.getTargetLock());
+        assertEquals("TARGET_STALE", restored.getLastTargetReason());
+        assertFalse(restored.markTargetLockUnavailable("TARGET_STALE", true));
+
+        restored.updateTargetLock("minecraft:zombie", 0, 3.0D, 65.0D, 4.0D, 7);
+        assertEquals(TargetLock.Validation.VALID,
+                restored.getTargetLock().getValidation());
+        assertNull(restored.getLastTargetReason());
     }
 
     @Test

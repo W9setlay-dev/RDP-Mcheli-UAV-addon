@@ -11,6 +11,13 @@ public final class AircraftRegistry {
     public synchronized void register(AircraftRecord record) { records.put(record.getAircraftId(), record); }
     public synchronized void unregister(UUID id) { records.remove(id); }
     public synchronized AircraftRecord find(UUID id) { return records.get(id); }
+    public synchronized boolean refreshRuntimeState(UUID aircraftId, UUID ownerId,
+                                                    int dimension, String type,
+                                                    boolean loaded, boolean operational) {
+        AircraftRecord record = records.get(aircraftId);
+        return record != null && record.refreshRuntimeState(
+                ownerId, dimension, type, loaded, operational);
+    }
     public synchronized boolean canAssign(UUID aircraftId, UUID ownerId) {
         AircraftRecord record = records.get(aircraftId);
         return record != null && record.availableFor(ownerId);
@@ -19,6 +26,17 @@ public final class AircraftRegistry {
         AircraftRecord record = records.get(aircraftId);
         if (record == null || !record.availableFor(ownerId)) throw new IllegalStateException("AIRCRAFT_UNAVAILABLE");
         record.assign(missionId);
+    }
+    public synchronized boolean restoreAssignment(UUID aircraftId, UUID missionId,
+                                                  UUID ownerId) {
+        AircraftRecord record = records.get(aircraftId);
+        if (record == null || missionId == null || ownerId == null
+                || !ownerId.equals(record.getOwnerId())
+                || record.getMissionId() != null || !record.isOperational()) {
+            return false;
+        }
+        record.assign(missionId);
+        return true;
     }
     public synchronized void release(UUID aircraftId) {
         AircraftRecord record = records.get(aircraftId);

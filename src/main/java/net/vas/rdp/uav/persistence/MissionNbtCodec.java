@@ -16,7 +16,7 @@ import net.vas.rdp.uav.target.TargetSpec;
 import java.util.UUID;
 
 public final class MissionNbtCodec {
-    private static final int CURRENT_SCHEMA = 8;
+    private static final int CURRENT_SCHEMA = 9;
     private MissionNbtCodec() {
     }
 
@@ -65,6 +65,18 @@ public final class MissionNbtCodec {
         tag.setString("childMissionId", mission.getChildMissionId() == null
                 ? "" : mission.getChildMissionId().toString());
         tag.setString("targetUuid", mission.getTargetId() == null ? "" : mission.getTargetId().toString());
+        tag.setString("lastTargetReason", mission.getLastTargetReason() == null
+                ? "" : mission.getLastTargetReason());
+        net.vas.rdp.uav.mission.LastKnownTargetPosition lastKnownPosition =
+                mission.getLastKnownTargetPosition();
+        if (lastKnownPosition != null) {
+            tag.setString("lastKnownTargetUuid", lastKnownPosition.getTargetId().toString());
+            tag.setInteger("lastKnownTargetDimension", lastKnownPosition.getDimension());
+            tag.setDouble("lastKnownTargetX", lastKnownPosition.getX());
+            tag.setDouble("lastKnownTargetY", lastKnownPosition.getY());
+            tag.setDouble("lastKnownTargetZ", lastKnownPosition.getZ());
+            tag.setLong("lastKnownTargetTick", lastKnownPosition.getObservedTick());
+        }
         tag.setString("failureReason", mission.getFailureReason() == null ? "" : mission.getFailureReason());
         tag.setString("lastTransitionReason", mission.getLastTransitionReason() == null
                 ? "" : mission.getLastTransitionReason());
@@ -135,6 +147,25 @@ public final class MissionNbtCodec {
                 targetUuid.isEmpty() ? null : parseUuid(targetUuid, "targetUuid"),
                 tag.getLong("lastUpdateTick"), failureReason.isEmpty() ? null : failureReason,
                 report.isEmpty() ? null : report);
+        if (tag.hasKey("lastKnownTargetUuid")) {
+            if (!tag.hasKey("lastKnownTargetDimension")
+                    || !tag.hasKey("lastKnownTargetX")
+                    || !tag.hasKey("lastKnownTargetY")
+                    || !tag.hasKey("lastKnownTargetZ")
+                    || !tag.hasKey("lastKnownTargetTick")) {
+                throw new IllegalArgumentException(
+                        "Incomplete mission last-known target position");
+            }
+            mission.restoreLastKnownTargetPosition(
+                    new net.vas.rdp.uav.mission.LastKnownTargetPosition(
+                            parseUuid(tag.getString("lastKnownTargetUuid"),
+                                    "lastKnownTargetUuid"),
+                            tag.getInteger("lastKnownTargetDimension"),
+                            finiteDouble(tag, "lastKnownTargetX"),
+                            finiteDouble(tag, "lastKnownTargetY"),
+                            finiteDouble(tag, "lastKnownTargetZ"),
+                            tag.getLong("lastKnownTargetTick")));
+        }
         MissionExecutionStage executionStage = tag.hasKey("executionStage")
                 ? enumValue(tag, "executionStage", MissionExecutionStage.class)
                 : MissionExecutionStage.fromState(restoredState, mission.getMissionType());
@@ -170,6 +201,7 @@ public final class MissionNbtCodec {
                         ? tag.getLong("lastMeaningfulProgressTick") : mission.getCreatedTick());
         mission.restoreLastTargetTick(tag.hasKey("lastTargetTick")
                 ? tag.getLong("lastTargetTick") : -1L);
+        mission.restoreLastTargetReason(tag.getString("lastTargetReason"));
         if (tag.hasKey("policyDomain") && !"ENTITY".equals(tag.getString("policyDomain"))) {
             throw new IllegalArgumentException("Unsupported target policy domain");
         }

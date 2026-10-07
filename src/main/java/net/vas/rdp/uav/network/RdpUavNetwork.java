@@ -1655,21 +1655,26 @@ public final class RdpUavNetwork {
                                 || !aircraft.getUniqueID().equals(mission.getAircraftId())) {
                             throw new IllegalArgumentException("Mission is not assignable");
                         }
-                        net.minecraft.entity.Entity target =
-                                TARGET_RESOLVER.findLoaded(player.world, targetId);
-                        if (target == null || target == aircraft || target == player
-                                || !target.canBeCollidedWith()
+                        net.vas.rdp.uav.target.TargetResolver.Resolution resolution =
+                                TARGET_RESOLVER.resolveLoaded(player.world, targetId);
+                        net.minecraft.entity.Entity target = resolution.getEntity();
+                        if (target == null) {
+                            throw new IllegalArgumentException(resolution.getCode().name());
+                        }
+                        if (target == aircraft || target == player || !target.canBeCollidedWith()
                                 || !net.vas.rdp.uav.target.TargetPolicy.isSelectableExactContact(
                                 player.world, target, player)) {
-                            throw new IllegalArgumentException("Target is not selectable");
+                            throw new IllegalArgumentException("INVALID_TARGET");
                         }
                         net.vas.rdp.uav.profile.UavVehicleProfile profile =
                                 aircraft.getAcInfo() == null ? null
                                 : net.vas.rdp.uav.profile.UavVehicleProfiles.forAircraft(
                                 aircraft.getAcInfo().name);
-                        if (profile == null || !profile.supportsTargetLock()
-                                || target.getDistance(aircraft) > profile.getLockRange()) {
-                            throw new IllegalArgumentException("Target is outside lock range");
+                        if (profile == null || !profile.supportsTargetLock()) {
+                            throw new IllegalArgumentException("PROFILE_UNSUPPORTED");
+                        }
+                        if (target.getDistance(aircraft) > profile.getLockRange()) {
+                            throw new IllegalArgumentException("TARGET_OUT_OF_RANGE");
                         }
                         if (!net.vas.rdp.uav.target.TargetPolicy.hasLineOfSight(
                                 player.world, aircraft, target)) {
@@ -1690,7 +1695,9 @@ public final class RdpUavNetwork {
                                 "UAV entity target assigned: " + target.getUniqueID()));
                     } catch (IllegalArgumentException failure) {
                         player.sendMessage(new net.minecraft.util.text.TextComponentString(
-                                "UAV entity target rejected: invalid mission or target."));
+                                "UAV entity target rejected: "
+                                        + (failure.getMessage() == null
+                                        ? "INVALID_TARGET" : failure.getMessage()) + "."));
                     }
                 });
                 return null;
@@ -2973,7 +2980,7 @@ public final class RdpUavNetwork {
                     return;
                 }
                 if (message.isInvalidLockRequest()) {
-                    rejectTargetLock(player, aircraft, message.targetId, "INVALID_TARGET_ID");
+                    rejectTargetLock(player, aircraft, message.targetId, "INVALID_TARGET");
                     return;
                 }
                 try {
@@ -2985,18 +2992,23 @@ public final class RdpUavNetwork {
                         rejectTargetLock(player, aircraft, message.targetId, "PROFILE_UNSUPPORTED");
                         return;
                     }
-                    java.util.UUID targetId = message.targetId == null
-                            || message.targetId.trim().isEmpty() ? null
-                            : java.util.UUID.fromString(message.targetId);
-                    net.minecraft.entity.Entity target = targetId == null ? null
-                            : TARGET_RESOLVER.findLoaded(player.world, targetId);
-                    if (target == null || target == aircraft || target == player
-                            || !target.canBeCollidedWith()
-                            || aircraft.getAcInfo() == null) {
-                        rejectTargetLock(player, aircraft, message.targetId, "TARGET_UNAVAILABLE",
+                    java.util.UUID targetId = java.util.UUID.fromString(message.targetId);
+                    net.vas.rdp.uav.target.TargetResolver.Resolution resolution =
+                            TARGET_RESOLVER.resolveLoaded(player.world, targetId);
+                    net.minecraft.entity.Entity target = resolution.getEntity();
+                    if (target == null) {
+                        rejectTargetLock(player, aircraft, message.targetId,
+                                resolution.getCode().name(),
                                 target == null ? null : net.minecraft.entity.EntityList.getKey(target),
                                 target == null ? null : (double) target.getDistance(aircraft),
                                 false, "NOT_CHECKED");
+                        return;
+                    }
+                    if (target == aircraft || target == player || !target.canBeCollidedWith()
+                            || aircraft.getAcInfo() == null) {
+                        rejectTargetLock(player, aircraft, message.targetId, "INVALID_TARGET",
+                                net.minecraft.entity.EntityList.getKey(target),
+                                (double) target.getDistance(aircraft), true, "NOT_CHECKED");
                         return;
                     }
                     if (!net.vas.rdp.uav.target.TargetPolicy.isSelectableExactContact(
@@ -3007,7 +3019,7 @@ public final class RdpUavNetwork {
                         return;
                     }
                     if (target.getDistance(aircraft) > profile.getLockRange()) {
-                        rejectTargetLock(player, aircraft, message.targetId, "OUT_OF_RANGE",
+                        rejectTargetLock(player, aircraft, message.targetId, "TARGET_OUT_OF_RANGE",
                                 net.minecraft.entity.EntityList.getKey(target),
                                 (double) target.getDistance(aircraft), true, "ACCEPTED");
                         return;
@@ -3061,7 +3073,7 @@ public final class RdpUavNetwork {
                             player.getUniqueID(), aircraft.getUniqueID(), targetId,
                             key, mission.getMissionId());
                 } catch (IllegalArgumentException failure) {
-                    rejectTargetLock(player, aircraft, message.targetId, "INVALID_TARGET_ID",
+                    rejectTargetLock(player, aircraft, message.targetId, "INVALID_TARGET",
                             null, null, false, "NOT_CHECKED");
                     RdpUavDebug.debug("Network", "AI target lock rejected invalid target={}",
                             message.targetId);
@@ -3100,7 +3112,8 @@ public final class RdpUavNetwork {
                     "filterResult", filterResult);
             String rejection = "UAV target lock rejected: "
                     + reason.toLowerCase().replace('_', ' ');
-            if ("OUT_OF_RANGE".equals(reason) && distance != null && Double.isFinite(lockRange)) {
+            if ("TARGET_OUT_OF_RANGE".equals(reason)
+                    && distance != null && Double.isFinite(lockRange)) {
                 rejection += String.format(java.util.Locale.ROOT,
                         " (%.1f blocks; profile limit %.1f).", distance, lockRange);
             } else {

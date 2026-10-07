@@ -13,8 +13,14 @@ Mission diagnostics use the existing `RdpUavDebug` logger and add
 
 - `MISSION_DISPATCH_ATTEMPT`: sampled dispatch availability and mission state.
 - `TARGET_LOOKUP`: sampled target presence and formatted target identity/position.
-- `ROUTE_DISPATCH`: native route command acceptance, route size, mission index,
-  node timer, and current node.
+- `ROUTE_DISPATCH`: route creation and acceptance into `WingmanRegistry`,
+  route size, mission index, node timer, and current node. Acceptance means
+  the RDP adapter installed the entry; it does not prove that the native
+  handler advanced a node or moved the aircraft.
+- `ROUTE_NODE_ADVANCED`: sampled server observation that `WingmanEntry`'s
+  mission index advanced, with the new index/current node and native
+  `AutonomousState`. This is evidence of observed node progression, not proof
+  of a world effect.
 - `ROUTE_REFRESH`: waypoint replacement acceptance and native route state.
 - `TerminalGuidance/WAYPOINT_UPDATE_ACCEPTED`: terminal replacement of only the
   active immutable `FLY_TO` node. The route suffix, mission index, and node
@@ -24,6 +30,14 @@ Mission diagnostics use the existing `RdpUavDebug` logger and add
 - `TargetLock/REQUEST`, `TargetLock/ACCEPTED`, and `TargetLock/REJECTED`:
   server-side lock authorization, validated target identity, mission identity,
   range, dimension, and the exact rejection reason.
+- `TargetLock/LOCK_INVALIDATED` and `TargetLock/LOCK_EXPIRED`: a committed
+  target UUID became unavailable/out of range and later exceeded its
+  observation grace window. These events do not clear or replace the mission
+  UUID; a later observation can restore the lock projection for the same UUID.
+- `TargetLock/LOCK_REACQUIRED`: the committed UUID was observed again after a
+  recorded unavailability; the prior reason is included as `previousReason`.
+- `TargetLock/CLEARED`: an authorized explicit operator clear request was
+  processed; mission terminal guidance still rejects clearing.
 - `MISSION_SNAPSHOT`: every five world ticks while active, including mission
   state/phase/owner, aircraft position/yaw/pitch/motion, target position and
   distance, target UUID, route size, mission index/node timer, native target
@@ -32,6 +46,12 @@ Mission diagnostics use the existing `RdpUavDebug` logger and add
 These fields distinguish a command being issued or accepted from observed
 aircraft state. They do not imply that the native controller moved the vehicle
 or that a weapon affected the target.
+
+Dispatch exceptions retain the retry/failure reason and include the original
+exception in the lifecycle error log. An absent aircraft is treated as
+unavailable outside terminal self-destruct confirmation because an unloaded
+entity cannot be distinguished from a destroyed one using this world's loaded
+entity list alone.
 
 The server-side projectile bridge also emits a bounded outcome record when a
 projectile that was observed by the addon disappears without an authoritative
@@ -47,7 +67,8 @@ Every accepted `RDPMission.transitionTo(...)` emits one structured debug event:
 ```text
 [DEBUG][MissionLifecycle] event=MISSION_STATE_TRANSITION
 mission=<uuid> aircraft=<uuid> from=<state> to=<state>
-phase=<phase> controlOwner=<owner> tick=<world-tick> target=<uuid|null>
+phase=<phase> controlOwner=<owner> tick=<world-tick>
+dimension=<dimension> target=<uuid|null> reason=<reason>
 ```
 
 This event is transition-based rather than tick-based. Repeated assignments to

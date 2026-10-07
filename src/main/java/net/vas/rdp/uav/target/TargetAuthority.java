@@ -35,6 +35,10 @@ public final class TargetAuthority {
         return resolver.findLoaded(world, targetId);
     }
 
+    public TargetResolver.Resolution resolveLoaded(World world, UUID targetId) {
+        return resolver.resolveLoaded(world, targetId);
+    }
+
     public Entity findLoadedByRegistryId(World world, String registryId) {
         return resolver.findLoadedByRegistryId(world, registryId);
     }

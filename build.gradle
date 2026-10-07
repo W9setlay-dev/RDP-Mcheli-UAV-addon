@@ -48,7 +48,7 @@ def mcheliAccessTransformer = file("$buildDir/generated/mcheli/META-INF/mcheli_a
 tasks.register('extractMcheliAccessTransformer', Copy) {
     from zipTree(mcheliJar)
     include 'META-INF/mcheli_at.cfg'
-    into mcheliAccessTransformer.parentFile
+    into mcheliAccessTransformer.parentFile.parentFile
 }
 
 dependencies {

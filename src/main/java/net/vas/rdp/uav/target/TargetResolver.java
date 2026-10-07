@@ -13,14 +13,23 @@ import java.util.UUID;
 
 public final class TargetResolver {
     public Entity findLoaded(World world, UUID targetId) {
-        if (world == null || targetId == null) return null;
-        for (Entity entity : world.loadedEntityList) {
-            if (entity != null && !entity.isDead && targetId.equals(entity.getUniqueID())
-                    && entity.dimension == world.provider.getDimension()) {
-                return entity;
-            }
+        return resolveLoaded(world, targetId).getEntity();
+    }
+
+    public Resolution resolveLoaded(World world, UUID targetId) {
+        if (world == null || targetId == null) {
+            return new Resolution(Resolution.Code.INVALID_TARGET, null);
         }
-        return null;
+        for (Entity entity : world.loadedEntityList) {
+            if (entity == null || !targetId.equals(entity.getUniqueID())) continue;
+            if (entity.isDead) return new Resolution(Resolution.Code.TARGET_DEAD, null);
+            if (entity.world != world
+                    || entity.dimension != world.provider.getDimension()) {
+                return new Resolution(Resolution.Code.TARGET_WRONG_DIMENSION, null);
+            }
+            return new Resolution(Resolution.Code.LOADED, entity);
+        }
+        return new Resolution(Resolution.Code.TARGET_NOT_LOADED, null);
     }
 
     public Entity findLoadedByRegistryId(World world, String registryId) {
@@ -102,5 +111,26 @@ public final class TargetResolver {
         public UUID getUuid() { return entity.getUniqueID(); }
         public String getRegistryId() { return registryId; }
         public double getDistanceSquared() { return distanceSquared; }
+    }
+
+    public static final class Resolution {
+        public enum Code {
+            LOADED,
+            INVALID_TARGET,
+            TARGET_NOT_LOADED,
+            TARGET_DEAD,
+            TARGET_WRONG_DIMENSION
+        }
+
+        private final Code code;
+        private final Entity entity;
+
+        private Resolution(Code code, Entity entity) {
+            this.code = code;
+            this.entity = entity;
+        }
+
+        public Code getCode() { return code; }
+        public Entity getEntity() { return entity; }
     }
 }

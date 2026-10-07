@@ -29,6 +29,7 @@ public final class RDPMission {
     private MissionState state;
     private UUID targetId;
     private TargetLock targetLock;
+    private LastKnownTargetPosition lastKnownTargetPosition;
     private UUID lastTargetId;
     private String lastTargetReason;
     private long lastTargetTick = -1L;
@@ -140,6 +141,7 @@ public final class RDPMission {
                 "phase", phase,
                 "controlOwner", controlOwner,
                 "tick", tick,
+                "dimension", dimension,
                 "target", targetId,
                 "reason", lastTransitionReason);
     }
@@ -271,6 +273,7 @@ public final class RDPMission {
         this.targetLock = new TargetLock(targetId, "rdpuav:unknown", dimension,
                 0.0D, 0.0D, 0.0D, tick, ownerId, missionId);
         this.lastTargetId = targetId;
+        this.lastTargetReason = null;
         this.lastTargetTick = tick;
         transitionTo(MissionState.TARGET_LOCKED, tick);
     }
@@ -281,6 +284,7 @@ public final class RDPMission {
         }
         targetId = null;
         targetLock = null;
+        lastTargetReason = null;
         transitionTo(MissionState.TARGET_LOCKED, tick);
     }
 
@@ -324,6 +328,7 @@ public final class RDPMission {
                     0.0D, 0.0D, 0.0D, tick, ownerId, missionId);
         }
         this.lastTargetId = targetId;
+        this.lastTargetReason = null;
         this.lastTargetTick = tick;
         this.lastUpdateTick = tick;
         if (state == MissionState.TARGET_ACQUIRED) {
@@ -465,6 +470,7 @@ public final class RDPMission {
                     0.0D, 0.0D, 0.0D, tick, ownerId, missionId);
         }
         this.lastTargetId = targetId;
+        this.lastTargetReason = null;
         this.lastTargetTick = tick;
         this.lastUpdateTick = tick;
     }
@@ -485,6 +491,19 @@ public final class RDPMission {
         lastTargetReason = reason;
         lastTargetTick = tick;
         lastUpdateTick = tick;
+    }
+
+    public boolean markTargetLockUnavailable(String reason, boolean expired) {
+        if (reason == null || reason.trim().isEmpty()) {
+            throw new IllegalArgumentException("Target lock status reason is required");
+        }
+        if (targetId == null || reason.equals(lastTargetReason)) return false;
+        lastTargetReason = reason.trim();
+        if (targetLock != null && targetId.equals(targetLock.getEntityId())) {
+            if (expired) targetLock.markExpired();
+            else targetLock.markLost();
+        }
+        return true;
     }
 
     public void recordProgress(long tick, double previousRouteProgress,
@@ -842,21 +861,28 @@ public final class RDPMission {
         if (tick < lastUpdateTick) {
             throw new IllegalArgumentException("Target observation is before mission activity");
         }
+        if (targetId == null) return;
+        LastKnownTargetPosition observedPosition = new LastKnownTargetPosition(
+                targetId, targetDimension, x, y, z, tick);
         if (targetLock == null || !targetLock.getEntityId().equals(targetId)) {
-            if (targetId == null) return;
             targetLock = new TargetLock(targetId,
                     registryId == null || registryId.trim().isEmpty()
                             ? "rdpuav:unknown" : registryId,
                     targetDimension, x, y, z, tick, ownerId, missionId);
-            lastTargetId = targetId;
-            lastTargetTick = tick;
-            return;
         }
         targetLock.updateIdentity(registryId == null || registryId.trim().isEmpty()
                 ? targetLock.getRegistryId() : registryId, targetDimension);
         targetLock.update(x, y, z, tick);
+        lastKnownTargetPosition = observedPosition;
         lastTargetId = targetId;
+        lastTargetReason = null;
         lastTargetTick = tick;
+    }
+    public LastKnownTargetPosition getLastKnownTargetPosition() {
+        return lastKnownTargetPosition;
+    }
+    public void restoreLastKnownTargetPosition(LastKnownTargetPosition position) {
+        lastKnownTargetPosition = position;
     }
     public UUID getLastTargetId() { return lastTargetId; }
     public String getLastTargetReason() { return lastTargetReason; }
@@ -864,6 +890,10 @@ public final class RDPMission {
     public void restoreLastTargetTick(long tick) {
         if (tick < -1L) throw new IllegalArgumentException("Invalid target observation tick");
         lastTargetTick = tick;
+    }
+    public void restoreLastTargetReason(String reason) {
+        lastTargetReason = reason == null || reason.trim().isEmpty()
+                ? null : reason.trim();
     }
     public String getFailureReason() { return failureReason; }
     public String getLastTransitionReason() { return lastTransitionReason; }

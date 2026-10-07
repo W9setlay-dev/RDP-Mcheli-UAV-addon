@@ -14,23 +14,77 @@ runtime is not covered by that result.
 ```text
 CONFIGURED FORGE BUILD (INCLUDING REOBF JAR): PASS (14.23.5.2859)
 FOCUSED TESTS (--rerun-tasks): PASS
-FULL GRADLE TEST SUITE: PASS
+FULL GRADLE TEST SUITE: PASS (317 TESTS, 0 FAILURES, 0 ERRORS)
+UNLOADED AIRCRAFT RESTORE RESERVATION REGRESSION: PASS
 EXACT ENTITY-ASSIGNMENT UUID PACKET ROUND-TRIP: PASS
+TARGET LOCK INVALIDATION, EXPIRY, SAME-UUID RECOVERY, AND PERSISTED REASON: PASS
+MISSION WORLD-DATA MALFORMED-RECORD ISOLATION: PASS
+PHASE 6 ROUTE/NATIVE EXECUTION SOURCE AUDIT: PASS
+PHASE 6 IN-WORLD EXECUTION: RUNTIME-UNVERIFIED
 MCHELI CE 1.5.1 PUBLIC API SIGNATURES: VERIFIED WITH JAVAP
-FORGE 2859 DEV CLIENT STARTUP (2026-10-06): FAILED DURING MCHELI MOD LOADING
+MCHELI ACCESS-TRANSFORMER EXTRACTION: FIXED AND APPLIED
+FORGE 2859 ISOLATED DEV CLIENT (2026-10-07): MAIN MENU REACHED; INTERACTIVE USABILITY BLOCKED BY MODULARUI MIXINS
 MATCHING DEDICATED SERVER STARTUP: NOT ATTEMPTED
 CURRENT-CHANGESET GUI, LOCK, HUD, FLIGHT, AND WEAPON BEHAVIOR: NOT ATTEMPTED
 LIVE OPERATOR-STATION, CAMERA, TARGETING, AND WEAPON BEHAVIOR: NOT VERIFIED
 ```
 
-The existing `run/crash-reports/crash-2026-10-06_13.37.40-client.txt` and
-`run/logs/latest.log` record a Forge `14.23.5.2859` development-client attempt
-with McHeli CE `1.5.1`, RDP Core `1.0.0`, and the addon. Mod loading failed in
-`com.norwood.mcheli.sound.ClientSoundRegistry.commitChanges` with an
-`IllegalAccessError` accessing `SoundHandler.loadSoundResource`; the client
-did not reach a world. This is prior startup evidence, not a validation of the
-current change set or of in-game behavior. The local `run/` directory also
-contains an existing saved world, so it was not relaunched during this review.
+Fresh final artifact:
+
+```text
+build\libs\rdp-uav-addon-0.1.0.jar
+SHA-256: 120E5235286C321F8268ACDB3744F5E47524EE67F2880EDFFC4CEC8994332012
+Size: 736,502 bytes
+```
+
+The McHeli access-transformer path fix is verified: ForgeGradle applied the
+`SoundHandler.loadSoundResource` rule. The earlier isolated
+`NetworkRegistry.newChannel:207` `NullPointerException` was not reproduced in
+later launches and is retained as historical evidence, not the current
+blocker.
+
+The latest default ForgeGradle client launch reached `GuiMainMenu` after FML
+construction, mod initialization, resource loading, and sound startup, then
+crashed during screen-event processing with
+`NotImplementedException: KeyBindingMap getHASH()` from ModularUI 3.0.5's
+`KeyBindAccess` stub. The crash report is in the isolated
+`runtime-usability-class-trace` evidence directory under session state.
+Inspection confirmed that ModularUI's manifest declares
+`com.cleanroommc.modularui.core.ModularUICore`, which registers
+`mixin.modularui.json` through `IEarlyMixinLoader`, but this development
+launch's `fml.coreMods.load` property omits that coremod.
+
+Diagnostic-only launches added `ModularUICore`. The config was then
+registered, but the released ModularUI jar's SRG references did not resolve
+against ForgeGradle's MCP-named `-recomp.jar` classes; the key accessor still
+failed and the client crashed with `NoSuchMethodError`. Disabling Mixin's
+refmap allowed `KeyBindAccess` to apply and the client remained at the main
+menu during passive observation, but other ModularUI GUI mixins still failed
+and no actual mouse/keyboard interaction was performed. A separate attempt
+to provide ForgeGradle's SRG-to-MCP mapping file did not resolve the mismatch.
+These diagnostic launch properties are not a verified fix and were not added
+to the repository. Wrapping the dependency with ForgeGradle 3.0.197's
+`fg.deobf` in a temporary init script also left the original cached
+`modularui-3.0.5.jar` on the `runClient` process classpath, so it did not
+provide a remapped runtime. No world entry, GUI action, packet exchange,
+mission, or flight behavior was tested.
+
+For the historical launch that produced the `NetworkRegistry` NPE, exact Forge
+2859 mapped source and bytecode locate the failure at
+`channels.get(side).put(name, channel)` in `NetworkRegistry.java:207`. The
+constructor initializes entries for both `Side.CLIENT` and `Side.SERVER`;
+why that earlier runtime lookup was null remains unresolved. The McHeli
+access-transformer rules do not target `NetworkRegistry`,
+`FMLEmbeddedChannel`, or `Side`. Later client launches reached the main menu
+without reproducing this NPE. No FML or addon network code was changed on this
+evidence.
+
+The existing `run/` directory contains a user world. An initial attempt to
+override only the Gradle task working directory did not isolate Minecraft's
+actual game directory; that startup attempt updated `run/logs`, mod config
+files, and generated McHeli language files, but did not load or change the
+world. Those runtime files were left in place, not restored or deleted. The
+subsequent test used a separate session-state runtime directory.
 
 Commands run for this checkout:
 
@@ -40,7 +94,10 @@ Commands run for this checkout:
 .\gradlew.bat test --no-daemon --rerun-tasks
 .\gradlew.bat build --no-daemon
 .\gradlew.bat build --no-daemon --rerun-tasks
+.\gradlew.bat test --tests net.vas.rdp.uav.RdpUavCoreTest --no-daemon
+.\gradlew.bat build --no-daemon --rerun-tasks
 git diff --check
+.\gradlew.bat runClient --init-script <session-state set-isolated-runclient.gradle> --no-daemon --console=plain
 ```
 
 The installed McHeli CE 1.5.1 and RDP Core 1.0.0 jars are present under

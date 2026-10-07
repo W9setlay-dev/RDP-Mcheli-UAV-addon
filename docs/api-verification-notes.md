@@ -60,8 +60,13 @@
   projectile motion or steers a spawned bullet itself; if the public
   guidance system is unavailable, the seeker decision is explicitly
   unsupported.
-- No stable native camera/seat projection API was present in the verified jar.
-  The client HUD remains marker-only when projection is unavailable.
+- McHeli CE 1.5.1 exposes camera-view state, camera-position metadata,
+  night/thermal display modes, and a UAV camera-feed widget. The inspected
+  public surface does not establish raw image pixels or a server-authoritative
+  camera pose/detection contract. The addon uses Minecraft's active client
+  render-view entity for aim requests, while the server sightline remains a
+  conservative aircraft/target bounds ray. This is not proof of camera/HUD
+  projection parity; see `mcheli-api-verification.md`.
 - `MissionNode` has no speed field and `WingmanEntry` has no speed setter in
   McHeliCE 1.5.1. The addon flight computer derives a throttle setpoint from
   the configured profile and observed velocity; these profile envelopes are

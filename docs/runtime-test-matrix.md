@@ -5,10 +5,14 @@
 Rows below are cumulative, dated historical records unless explicitly
 revalidated against the current checkout. The saved 2026-09-27 development
 client log reaches addon hook initialization but crashes during client model
-loading, before entering a world. A later Forge 14.23.5.2859 development
-client attempt on 2026-10-06 failed during McHeli CE mod loading with an
-`IllegalAccessError` in `ClientSoundRegistry.commitChanges`, also before world
-entry. The root `logs/latest.log` contains three test-worker hook messages only.
+loading, before entering a world. The 2026-10-06 Forge 14.23.5.2859 attempt
+failed in McHeli CE `ClientSoundRegistry.commitChanges` with an
+`IllegalAccessError`; the McHeli access-transformer copy-path defect is now
+fixed, and that error no longer reproduces. The subsequent isolated 2026-10-07
+attempt reaches FML channel registration but fails at
+`NetworkRegistry.newChannel` before world entry; the cause of that NPE remains
+unresolved. The root `logs/latest.log` contains three test-worker hook messages
+only.
 On 2026-10-02 an isolated copy of the project was used for a Forge 2768
 `runServer` startup probe; Forge and coremods initialized, then Minecraft
 stopped at the EULA prompt (`eula=false`) before world/server startup. These
@@ -46,11 +50,14 @@ not a resolved supported-runtime selection.
 | Forge dedicated-server startup smoke | `.\gradlew.bat runServer --no-daemon` | HISTORICAL PARTIAL | An earlier run reported `Done` with McHeliCE, WingMan, RDP Core, and addon coremod, then a `RDPWorldSavedData.<init>(String)` failure. This is not current-checkout server evidence; the saved 2026-09-27 client run crashes before world entry. |
 | Isolated configured Forge 2768 server startup probe | `.\gradlew.bat runServer --no-daemon` from the isolated session-artifact copy | BLOCKED | Gradle reported `BUILD SUCCESSFUL`, but Minecraft stopped with “You need to agree to the EULA” and wrote `run\eula.txt` with `eula=false`; no world was loaded and no server readiness or gameplay was verified. The original repository `run\` directory was not used. This probe does not resolve whether 2768, 2859, or 2864 is the supported runtime. |
 | native aircraft method presence | `javap -classpath libs/mcheli-ce-1.5.1.jar -public com.norwood.mcheli.aircraft.MCH_EntityAircraft` | PASS | Verified public rotation and throttle methods; method presence is not physical-flight evidence |
-| Forge 14.23.5.2859 development-client startup | `run/logs/latest.log` and `run/crash-reports/crash-2026-10-06_13.37.40-client.txt` | FAIL (MOD LOAD) | McHeli CE 1.5.1 `ClientSoundRegistry.commitChanges` throws `IllegalAccessError` accessing `SoundHandler.loadSoundResource`; no world entry, no current-change-set behavior evidence |
+| Forge 14.23.5.2859 development-client startup (2026-10-06, historical) | `run/crash-reports/crash-2026-10-06_13.37.40-client.txt` | SUPERSEDED FAILURE | McHeli CE 1.5.1 `ClientSoundRegistry.commitChanges` threw `IllegalAccessError` because the McHeli access-transformer copy task duplicated the `META-INF` path; after fixing the task, that error no longer reproduces |
+| Forge 14.23.5.2859 isolated development-client startup (2026-10-07) | `runtime-phase6-after-at/logs/latest.log` and `crash-reports/crash-2026-10-07_14.54.00-client.txt` in session-state | BLOCKED (FML CONSTRUCTION) | Sound access now passes; FML then throws `NullPointerException` in `NetworkRegistry.newChannel:207` during `FMLContainer.modConstruction`; no world entry or gameplay |
 | official McHeliCE control-path comparison | `Warfactory-Official/McHeliCE@cbaff7f30e549ff75e485388c24c74a4316c2228` plus local 1.5.1 JAR | PASS | Official WingMan server handlers use bounded `setRotYaw`, `setRotPitch`, `setRotRoll`, `setThrottle`, and `updateControl`; local signatures match |
 | native server control shaping | `.\gradlew.bat test --tests net.vas.rdp.uav.NativeControlMathTest --no-daemon` | PASS | Yaw/pitch/roll rate limits, yaw wrap, helicopter collective behavior, and finite bounded commands are deterministic |
 | native server control ownership | source contract and `.\gradlew.bat test --no-daemon` | PASS | Mission lease is required; operator presence never fails an active mission. AI remains the authoritative native-control writer while the operator is observation-only |
 | native physical flight response | controlled Forge/McHeliCE runtime | LIVE_VALIDATION_REQUIRED | The source-compatible server path is implemented, but visible turning, climb, bank, stall, collision, and recovery still require runtime observation |
+| Phase 6 route/native execution | matching Forge 1.12.2 / McHeli CE 1.5.1 world with mission diagnostics | RUNTIME-UNVERIFIED | Source traces route creation/registry acceptance, observed node-index advances, native state, aircraft motion, failure and timeout; no current world entry or physical response was observed. Missing aircraft outside terminal effect confirmation remains unavailable because unload and destruction cannot be distinguished from loaded-list absence. |
+| Existing `run/` data preservation | repository `run/` file timestamps | PARTIAL INCIDENT | The initial isolation override was ineffective and updated runtime logs, mod configs, and generated language assets; no world files changed. These files were left untouched afterward; retry was correctly isolated under session-state. |
 | observed aircraft state estimator | `.\gradlew.bat test --tests net.vas.rdp.uav.AircraftStateTest --no-daemon` | PASS | Captures finite position history, velocity, horizontal/vertical speed, mission owner, lease validity, route node, and target distance without issuing controls |
 | terminal approach geometry | `.\gradlew.bat test --tests net.vas.rdp.uav.TerminalApproachPlannerTest --no-daemon` | PASS | Selects bounded 20/30/40/50/60 degree terminal angles, finite dive runs, and bounded climb behavior when the UAV starts below the target |
 | square-strike route geometry | `.\gradlew.bat test --no-daemon` | PASS | Boustrophedon passes use configured heading/spacing and append a finite terminal approach leg before the one-way payload gate |
@@ -90,7 +97,8 @@ not a resolved supported-runtime selection.
 | Slow approach accumulates progress | loaded waypoint with measured reductions under 0.5 blocks/tick | PENDING_DEVELOPER_IN_GAME_TEST | Confirm cumulative distance improvement refreshes the progress timer and does not falsely enter `REPLAN` |
 | Genuine route stall and recovery budget | stationary aircraft with valid target/route | PENDING_DEVELOPER_IN_GAME_TEST | Confirm each timeout increments `recoveryAttempts`, accepted routes do not clear it, and only measured movement resets it |
 | Recovery exhaustion and cleanup | force more than five no-progress recovery cycles | PENDING_DEVELOPER_IN_GAME_TEST | Confirm terminal reason contains `_RECOVERY_EXHAUSTED`, lease/route are released, and mission remains persisted as `FAILED` |
-| Active mission save/load | save and reload while in SEARCHING or REPLAN | PENDING_DEVELOPER_IN_GAME_TEST | Confirm the selected revision's codec retains progress/recovery fields without resetting or exhausting the mission; the current worktree codec reports schema 7 but is locally modified. |
+| Active mission save/load | save and reload while in SEARCHING or REPLAN | PENDING_DEVELOPER_IN_GAME_TEST | Confirm the codec retains progress/recovery fields without resetting or exhausting the mission; schema 9 stores last-known target position and loss reason as inert metadata, not a fresh lock. |
+| Malformed saved mission records | `.\gradlew.bat test --tests net.vas.rdp.uav.persistence.RDPMissionWorldDataTest --no-daemon` | PASS (SOURCE) | Invalid UUID/enum records are rejected with a bounded warning while valid missions remain loadable; actual world-load recovery remains unverified. |
 
 ## Developer live handoff
 
@@ -402,3 +410,28 @@ hit/miss result, and a short clip. This matrix has not yet been run in-game.
 | Main checkout build (Forge 2768) | `gradlew.bat build --no-daemon --console=plain` | PASS | Includes jar and reobfuscation. Artifact hash is recorded in `BUILD_VALIDATION_REPORT.md`. |
 | Updated source compile/package (Forge 2864, isolated FG3) | `gradlew.bat compileJava compileTestJava jar reobfJar --rerun-tasks` | PASS | Updated main checkout `src` was copied into the preserved FG3.0.197 probe; compile, test compilation, jar, and reobfuscation all reran successfully. Tests were not rerun here. |
 | Swarm GUI/client/server runtime acceptance | not run | NOT RUN | GUI layout, snapshot/command packets, formation flight, patrol, target sharing, restart persistence, and strike authorization require an authorized live Forge/McHeli instance. The disposable server remains at `eula=false`; no EULA was accepted. |
+
+## Forge 2859 client usability probe — 2026-10-07
+
+All launches below used newly named directories under session-state; none
+loaded the repository's existing `run/world`.
+
+| Boundary | Attempt | Result | Evidence |
+| --- | --- | --- | --- |
+| Forge/FML startup and menu construction | Default isolated ForgeGradle `runClient`, configured Forge 14.23.5.2859 / ModularUI 3.0.5 | PASS to `GuiMainMenu` | FML construction, mod lifecycle, resources, and sound initialized; `NetworkRegistry.newChannel` NPE did not reproduce |
+| Default menu input event processing | Same launch, no world loaded | FAIL | Crash during `Updating screen events`: `NotImplementedException: KeyBindingMap getHASH()` from `KeyBindAccess`; crash report `runtime-usability-class-trace\crash-reports\crash-2026-10-07_15.20.44-client.txt` |
+| Register ModularUI coremod explicitly | Diagnostic `fml.coreMods.load` also included `com.cleanroommc.modularui.core.ModularUICore` | FAIL | `mixin.modularui.json` registered, but its SRG target `field_74514_b` did not match MCP field `KeyBinding.HASH` in ForgeGradle's `-recomp.jar`; crash report `runtime-usability-modularui-core\crash-reports\crash-2026-10-07_15.26.27-client.txt` |
+| Disable refmap in the development launch | Diagnostic only; no repository configuration change | PARTIAL | `KeyBindAccess` applied and the client remained at the menu during passive observation; other ModularUI GUI mixins still failed (`GuiContainer`/`GuiButton`). No click or keyboard action was tested |
+| Supply ForgeGradle SRG-to-MCP mapping file | Diagnostic only; no repository configuration change | FAIL | ModularUI accessor still failed to resolve; the launch was stopped without a world or user interaction |
+| Wrap ModularUI with ForgeGradle 3.0.197 `fg.deobf` | Diagnostic init script; no repository configuration change | FAIL | `runClient` still placed the original cached `modularui-3.0.5.jar` on its process classpath; the same GUI mixin resolution failures remained |
+| World entry, client/server interaction, mission execution | Not attempted | NOT ATTEMPTED | No world, packet exchange, target lock, route, aircraft movement, payload, or HUD behavior was tested |
+
+The default development run's `fml.coreMods.load` property omits
+`ModularUICore`, although ModularUI 3.0.5's manifest declares it and the plugin
+provides the early mixin configuration. Explicit registration exposes a
+separate development-mapping mismatch: the released dependency contains SRG
+references while the ForgeGradle `-recomp.jar` exposes MCP names. The
+refmap-disabled launch is not a complete fix because other ModularUI mixins
+still fail. Phase 6 therefore remains runtime-unverified; the previous
+`NetworkRegistry.newChannel` NPE is historical and was not reproduced in
+these later launches.

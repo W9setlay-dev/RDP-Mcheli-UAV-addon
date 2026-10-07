@@ -6,6 +6,7 @@ import net.vas.rdp.uav.flight.SquareStrikePlan;
 import net.vas.rdp.uav.mission.AircraftAssignmentRegistry;
 import net.vas.rdp.uav.mission.AircraftRecord;
 import net.vas.rdp.uav.mission.AircraftRegistry;
+import net.vas.rdp.uav.mission.AircraftStatus;
 import net.vas.rdp.uav.mission.MissionState;
 import net.vas.rdp.uav.mission.MissionType;
 import net.vas.rdp.uav.mission.MissionManager;
@@ -353,6 +354,50 @@ public class RdpUavCoreTest {
         assertFalse(manager.isAircraftUnavailable(aircraft, owner));
         manager.findAircraft(aircraft).assign(UUID.randomUUID());
         assertTrue(manager.isAircraftUnavailable(aircraft, owner));
+    }
+
+    @Test
+    public void aircraftRuntimeRefreshRecoversLoadedStateWithoutDroppingMissionOwnership() {
+        UUID aircraftId = UUID.randomUUID();
+        UUID ownerId = UUID.randomUUID();
+        UUID missionId = UUID.randomUUID();
+        AircraftRegistry registry = new AircraftRegistry();
+        registry.register(new AircraftRecord(
+                aircraftId, ownerId, 0, "switchblade", false, true));
+
+        assertFalse(registry.canAssign(aircraftId, ownerId));
+        assertTrue(registry.restoreAssignment(aircraftId, missionId, ownerId));
+        assertEquals(missionId, registry.find(aircraftId).getMissionId());
+        assertFalse(registry.restoreAssignment(
+                aircraftId, UUID.randomUUID(), ownerId));
+        assertFalse(registry.restoreAssignment(
+                UUID.randomUUID(), missionId, ownerId));
+        assertFalse(registry.restoreAssignment(
+                aircraftId, missionId, UUID.randomUUID()));
+        assertFalse(registry.canAssign(aircraftId, ownerId));
+        registry.release(aircraftId, missionId);
+        assertFalse(registry.canAssign(aircraftId, ownerId));
+
+        assertTrue(registry.refreshRuntimeState(
+                aircraftId, ownerId, 2, "switchblade-v2", true, true));
+        assertTrue(registry.canAssign(aircraftId, ownerId));
+        assertEquals(2, registry.find(aircraftId).getDimension());
+        assertEquals("switchblade-v2", registry.find(aircraftId).getType());
+
+        registry.assign(aircraftId, missionId, ownerId);
+        assertTrue(registry.refreshRuntimeState(
+                aircraftId, ownerId, 3, "switchblade-v3", true, true));
+        assertEquals(missionId, registry.find(aircraftId).getMissionId());
+        assertEquals(AircraftStatus.ON_MISSION, registry.find(aircraftId).getStatus());
+        assertFalse(registry.canAssign(aircraftId, ownerId));
+
+        assertFalse(registry.refreshRuntimeState(
+                aircraftId, UUID.randomUUID(), 4, "switchblade", true, true));
+        assertEquals(ownerId, registry.find(aircraftId).getOwnerId());
+        assertEquals(3, registry.find(aircraftId).getDimension());
+
+        registry.release(aircraftId, missionId);
+        assertTrue(registry.canAssign(aircraftId, ownerId));
     }
 
     @Test

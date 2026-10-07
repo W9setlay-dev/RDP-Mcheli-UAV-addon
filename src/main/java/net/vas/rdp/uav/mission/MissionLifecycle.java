@@ -299,6 +299,8 @@ public final class MissionLifecycle {
                         formatTarget(target), tick);
             }
         } catch (RuntimeException failure) {
+            LOGGER.error("Mission {} dispatch failed aircraft={} tick={}",
+                    mission.getMissionId(), mission.getAircraftId(), tick, failure);
             defer(world, mission, failure.getMessage() == null
                 ? "MISSION_DISPATCH_RETRY_REQUIRED" : failure.getMessage(),
                 MissionState.EXECUTION_STALLED, tick);
@@ -880,12 +882,27 @@ public final class MissionLifecycle {
                         Math.pow(aircraft.posX - routeEntry.autoTargetX, 2.0D)
                                 + Math.pow(aircraft.posY - routeEntry.autoTargetY, 2.0D)
                                 + Math.pow(aircraft.posZ - routeEntry.autoTargetZ, 2.0D));
+        double previousRouteProgress = mission.getRouteProgress();
+        boolean routeNodeAdvanced = currentRouteProgress > previousRouteProgress;
         boolean recoveryChanged = mission.recordObservedProgress(tick,
-                mission.getRouteProgress(),
+                previousRouteProgress,
                 currentRouteProgress,
                 currentDistanceToTarget,
                 currentDistanceToWaypoint,
                 progressExpected(mission.getState()));
+        if (routeNodeAdvanced) {
+            RdpUavDebug.event("MissionRuntime", "ROUTE_NODE_ADVANCED",
+                    "mission", mission.getMissionId(),
+                    "aircraft", aircraft.getUniqueID(),
+                    "tick", tick,
+                    "previousProgress", previousRouteProgress,
+                    "routeIndex", currentRouteProgress,
+                    "routeSize", routeEntry == null || routeEntry.mission == null
+                            ? 0 : routeEntry.mission.size(),
+                    "node", routeEntry == null || routeEntry.currentNode() == null
+                            ? null : routeEntry.currentNode().type,
+                    "nativeState", routeEntry == null ? null : routeEntry.autoState);
+        }
         if (recoveryChanged) RDPMissionWorldData.get(world).markDirty();
         if (mission.isTerminal()) return true;
 
@@ -1208,7 +1225,9 @@ public final class MissionLifecycle {
     }
 
     private Target reacquire(World world, MCH_EntityAircraft aircraft, RDPMission mission, long tick) {
-        Entity current = targets.findLoaded(world, mission.getTargetId());
+        TargetResolver.Resolution resolution =
+                targets.resolveLoaded(world, mission.getTargetId());
+        Entity current = resolution.getEntity();
         UavVehicleProfile vehicleProfile = profile(aircraft);
         if (current != null && targetDistance(aircraft, Target.entity(current))
                 <= vehicleProfile.getLockRange()
@@ -1220,6 +1239,25 @@ public final class MissionLifecycle {
         }
         if (mission.getTargetId() != null) {
             targets.markLost(mission.getTargetId(), tick);
+            ContactSnapshot contact = targets.get(mission.getTargetId());
+            long lastObservedTick = mission.getLastTargetTick();
+            if (contact != null) {
+                lastObservedTick = Math.max(lastObservedTick, contact.getLastDetectionTick());
+            }
+            boolean expired = lastObservedTick >= 0L
+                    && tick - lastObservedTick > TARGET_LOSS_GRACE_TICKS;
+            String reason = current != null ? "TARGET_OUT_OF_RANGE"
+                    : resolution.getCode().name();
+            String statusReason = expired ? "TARGET_STALE" : reason;
+            if (mission.markTargetLockUnavailable(statusReason, expired)) {
+                RdpUavDebug.event("TargetLock", expired ? "LOCK_EXPIRED" : "LOCK_INVALIDATED",
+                        "mission", mission.getMissionId(),
+                        "aircraft", mission.getAircraftId(),
+                        "target", mission.getTargetId(),
+                        "dimension", world.provider.getDimension(),
+                        "tick", tick, "reason", statusReason);
+                RDPMissionWorldData.get(world).markDirty();
+            }
             // A tracked identity may be reacquired, but it must never be
             // replaced by an unrelated nearby entity after disappearing.
             return null;
@@ -1341,8 +1379,18 @@ public final class MissionLifecycle {
         if (world == null || mission == null || target == null || mission.getTargetId() == null
                 || !mission.getTargetId().equals(target.getUniqueID())) return;
         net.minecraft.util.ResourceLocation key = EntityList.getKey(target);
+        String unavailableReason = mission.getLastTargetReason();
         mission.updateTargetLock(key == null ? "rdpuav:unknown" : key.toString(),
                 world.provider.getDimension(), target.posX, target.posY, target.posZ, tick);
+        if (unavailableReason != null) {
+            RdpUavDebug.event("TargetLock", "LOCK_REACQUIRED",
+                    "mission", mission.getMissionId(),
+                    "aircraft", mission.getAircraftId(),
+                    "target", mission.getTargetId(),
+                    "dimension", world.provider.getDimension(),
+                    "tick", tick, "previousReason", unavailableReason);
+            RDPMissionWorldData.get(world).markDirty();
+        }
         net.vas.rdp.uav.RDPUavMod.swarms().publishValidatedObservation(world,
                 mission.getAircraftId(), target.getUniqueID(), world.provider.getDimension(),
                 target.posX, target.posY, target.posZ, tick);
@@ -1391,15 +1439,14 @@ public final class MissionLifecycle {
         return false;
     }
 
-    public boolean clearContact(World world, MCH_EntityAircraft aircraft) {
-        if (world == null || aircraft == null) return false;
+    public void clearContact(World world, MCH_EntityAircraft aircraft) {
+        if (world == null || aircraft == null) return;
         for (RDPMission mission : RDPMissionWorldData.get(world).getRepository().snapshot()) {
             if (mission.getAircraftId().equals(aircraft.getUniqueID()) && !mission.isTerminal()) {
                 operatorContacts.remove(aircraft.getUniqueID());
-                return true;
+                return;
             }
         }
-        return false;
     }
 
     private MissionSafety.RouteDecision evaluateApproach(World world, MCH_EntityAircraft aircraft,

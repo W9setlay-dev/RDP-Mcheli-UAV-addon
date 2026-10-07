@@ -5,10 +5,10 @@ import java.util.UUID;
 public final class AircraftRecord {
     private final UUID aircraftId;
     private final UUID ownerId;
-    private final int dimension;
-    private final String type;
-    private final boolean loaded;
-    private final boolean operational;
+    private int dimension;
+    private String type;
+    private boolean loaded;
+    private boolean operational;
     private AircraftStatus status;
     private UUID missionId;
 
@@ -29,6 +29,22 @@ public final class AircraftRecord {
     public boolean availableFor(UUID playerId) {
         return loaded && operational && ownerId.equals(playerId) && missionId == null
                 && (status == AircraftStatus.READY || status == AircraftStatus.PARKED);
+    }
+    public boolean refreshRuntimeState(UUID requestingOwnerId, int dimension, String type,
+                                       boolean loaded, boolean operational) {
+        if (!ownerId.equals(requestingOwnerId) || type == null || type.trim().isEmpty()) {
+            return false;
+        }
+        this.dimension = dimension;
+        this.type = type.trim();
+        this.loaded = loaded;
+        this.operational = operational;
+        if (missionId == null) {
+            status = operational ? AircraftStatus.READY : AircraftStatus.UNAVAILABLE;
+        } else {
+            status = operational ? AircraftStatus.ON_MISSION : AircraftStatus.UNAVAILABLE;
+        }
+        return true;
     }
     public void assign(UUID missionId) {
         if (missionId == null || this.missionId != null || !operational) {

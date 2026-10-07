@@ -60,7 +60,12 @@ movement.
 - `MissionDefinition` represents operator intent and configuration validation;
   it is not a live mission and cannot authorize execution on its own.
 - `MissionManager` owns aircraft assignment, authorization checks, and queue
-  behavior. It creates and reserves runtime missions on the server.
+  behavior. It creates and reserves runtime missions on the server. When an
+  owner is verified as the current McHeli operator, it refreshes the existing
+  in-memory aircraft runtime snapshot without replacing its owner or active
+  mission reservation. Persisted active missions restore their reservation
+  even while the aircraft entity is unloaded; the runtime availability gate
+  remains closed until the operator is verified against the loaded entity.
 - `RDPMission` owns persisted mission identity, lifecycle state, target UUID /
   `TargetLock`, and mission outcome metadata. `MissionState` constrains legal
   transitions.
@@ -68,8 +73,13 @@ movement.
   conversion of server observations into mission transitions. It is the
   production executor; planning/tasking proposals do not replace it.
 - `RDPMissionWorldData` and `MissionNbtCodec` own mission world persistence.
-  The current worktree codec reports schema 7; that source file has local
-  modifications, so this is not a clean-revision or runtime migration claim.
+  `RDPMission` is the durable domain record; `MissionLifecycle` rebuilds
+  per-world entity indexes and live target locks after load. The codec persists
+  a separately tagged last-known target-position   snapshot for reporting, and a durable last-target reason, but
+  does not restore it as a live `TargetLock` or fresh observation. Schema
+  version 9 remains backward-compatible with records that lack the optional
+  fields. Malformed individual mission records are rejected with a warning
+  while valid records continue loading.
 - `RDPMission.getPhase()` and `getControlOwner()` expose compatibility projections for
   flight ownership without replacing the persisted `MissionState` graph. A
   `KAMIKADZE_TARGET` mission is owned by terminal guidance; ordinary target
@@ -107,6 +117,10 @@ movement.
   lifecycle, confidence, and entity bounds, but does not replace mission lock
   identity. Client camera selection is a request input; the HUD renders
   synchronized server telemetry and does not create or authorize a lock.
+- `TargetResolver.resolveLoaded` returns an exact UUID resolution status.
+  Runtime target loss changes the lock projection to LOST and then EXPIRED
+  after its grace window; it never substitutes a same-type entity. The
+  committed mission UUID remains available for same-UUID reacquisition.
 
 ## Flight and execution architecture
 
@@ -201,11 +215,14 @@ movement.
 | `RdpUavDebug` | diagnostics | verbose server-side logging |
 
 Threat suggestions in `GuiMissionControl` retain the discovered entity UUID
-and registry ID instead of being display-only text. Clicking a suggestion sends
-the UUID through `RdpUavNetwork.lockAiTarget`; the existing server-side
-operator, range, target-policy, and identity validation path remains
-authoritative. No client-side target assignment or second target registry is
-introduced.
+and registry ID instead of being display-only text. Clicking a suggestion for
+an existing mission sends the exact UUID and mission ID through
+`RdpUavNetwork.assignEntityTarget`; without a selected mission it uses the
+standard UUID lock request. Both server paths resolve the selected UUID rather
+than substituting a same-registry entity. The mission-assignment handler also
+applies target policy, profile range, terminal-target immutability, and the
+conservative aircraft-to-target bounds sightline check. No client-side target
+assignment or second target registry is introduced.
 
 Square-strike missions now persist their configured width/depth in
 `RDPMission` and `MissionNbtCodec`. Terminal geometry uses the existing

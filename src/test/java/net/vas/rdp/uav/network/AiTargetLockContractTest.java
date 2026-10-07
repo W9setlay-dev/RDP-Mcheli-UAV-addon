@@ -54,4 +54,15 @@ public class AiTargetLockContractTest {
             buffer.release();
         }
     }
+
+    @Test
+    public void loadedTargetResolutionCodesKeepMissingAndInvalidIdentityDistinct() {
+        net.vas.rdp.uav.target.TargetResolver resolver =
+                new net.vas.rdp.uav.target.TargetResolver();
+
+        assertEquals(net.vas.rdp.uav.target.TargetResolver.Resolution.Code.INVALID_TARGET,
+                resolver.resolveLoaded(null, UUID.randomUUID()).getCode());
+        assertEquals(net.vas.rdp.uav.target.TargetResolver.Resolution.Code.INVALID_TARGET,
+                resolver.resolveLoaded(null, null).getCode());
+    }
 }

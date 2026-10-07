@@ -21,7 +21,10 @@ public final class ContactTracker {
     public void observe(World world, Entity entity, double distance, long tick,
                         ContactLifecycle requestedState) {
         if (world == null || entity == null || entity.isDead) return;
-        String registry = EntityList.getKey(entity) == null ? "" : Objects.requireNonNull(EntityList.getKey(entity)).toString();
+        String registry = EntityList.getKey(entity) == null ? "" : Objects
+                .requireNonNull(
+                        EntityList.getKey(entity)).toString();
+
         net.minecraft.util.math.AxisAlignedBB bounds = entity.getEntityBoundingBox();
         observe(world.provider.getDimension(), entity.getUniqueID(), registry,
                 entity.posX, entity.posY, entity.posZ, bounds.minX, bounds.minY, bounds.minZ,
