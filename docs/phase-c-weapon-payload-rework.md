@@ -9,9 +9,12 @@ Phase C makes guided payload support explicit and fail-closed.
   reason instead of relying on a boolean alone.
 - `GuidedWeaponRegistry` resolves exact definition/type pairs first. Native
   type fallback is deterministic by definition and type ordering.
-- `tvmissile` remains unsupported for addon AI guidance. Legacy configuration
-  cannot re-enable it because registry loading forcibly clears its behavior
-  and objective set.
+- `tvmissile` now resolves to `COORDINATE_TV_LASER` for entity and square
+  objectives. Legacy `UNSUPPORTED` configuration values are normalized to the
+  native TV contract. A transformer hook applies the server mission target at
+  `MCH_EntityTvMissile.onUpdateMotion()` before McHeli's camera/wire update and
+  then delegates steering to `onLaserGuide()`. Exact JAR hook shape is tested;
+  in-game trajectory and impact remain unverified.
 - Projectile disappearance is never treated as impact. It produces
   `OUTCOME_UNKNOWN`.
 - Impact and effect confirmation are separate server-authoritative event

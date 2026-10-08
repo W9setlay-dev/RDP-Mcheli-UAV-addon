@@ -32,6 +32,8 @@ public final class GuiMissionControl extends GuiScreen {
     private static java.util.UUID capturedCrosshairTargetId;
     private String[] missionRows = new String[0];
     private String[] missionIds = new String[0];
+    private int missionPage;
+    private int missionPageCount = 1;
     private int selected = -1;
     private boolean help;
     private int filterMode;
@@ -106,22 +108,32 @@ public final class GuiMissionControl extends GuiScreen {
 
     private static final class TargetSuggestion {
         private final java.util.UUID entityId;
-        private final String registryId;
         private final String label;
 
         private TargetSuggestion(java.util.UUID entityId, String registryId, String label) {
             this.entityId = entityId;
-            this.registryId = registryId;
             this.label = label;
         }
     }
 
     public static void receiveMissionData(String[] rows, String[] ids,
                                           String[] weaponRows, String[] weaponNames) {
+        receiveMissionData(rows, ids, weaponRows, weaponNames, 0, 1);
+    }
+
+    public static void receiveMissionData(String[] rows, String[] ids,
+                                          String[] weaponRows, String[] weaponNames,
+                                          int page, int pageCount) {
         if (active == null) return;
+        if (page == 0 && pageCount > 1 && active.missionPage > 0) {
+            RdpUavNetwork.requestMissionData(active.missionPage);
+            return;
+        }
         String selectedId = selectedMissionId();
         active.missionRows = rows == null ? new String[0] : rows;
         active.missionIds = ids == null ? new String[0] : ids;
+        active.missionPage = Math.max(0, page);
+        active.missionPageCount = Math.max(1, pageCount);
         active.selected = -1;
         active.guidedWeaponRows = weaponRows == null ? new String[0] : weaponRows;
         if (weaponNames == null) {
@@ -150,7 +162,9 @@ public final class GuiMissionControl extends GuiScreen {
         return active.missionIds[active.selected];
     }
 
-    public static void requestRefresh() { RdpUavNetwork.requestMissionData(); }
+    public static void requestRefresh() {
+        RdpUavNetwork.requestMissionData(active == null ? 0 : active.missionPage);
+    }
 
     public static void authorizeSelected() {
         String id = selectedMissionId();
@@ -323,9 +337,13 @@ public final class GuiMissionControl extends GuiScreen {
         }
         for (int i = 0, shown = 0; i < missionRows.length && shown < 11; i++) {
             if (matchesFilter(missionRows[i])) continue;
-            buttonList.add(new GuiButton(100 + i, left, 108 + shown * 17, 205, 15,
+            buttonList.add(new GuiButton(100 + i, left, 128 + shown * 17, 205, 15,
                     (i == selected ? "> " : "  ") + missionRows[i]));
             shown++;
+        }
+        if (missionPageCount > 1) {
+            buttonList.add(new GuiButton(34, left + 164, 108, 20, 16, "<"));
+            buttonList.add(new GuiButton(35, left + 187, 108, 20, 16, ">"));
         }
         boolean actionable = selectedMissionIsActionable();
         boolean hasSelection = selected >= 0 && selected < missionRows.length;
@@ -348,6 +366,10 @@ public final class GuiMissionControl extends GuiScreen {
             } else if (button.id == 9) {
                 // A new area mission is independent of the selected record.
                 button.enabled = uavMode;
+            } else if (button.id == 34) {
+                button.enabled = missionPage > 0;
+            } else if (button.id == 35) {
+                button.enabled = missionPage + 1 < missionPageCount;
             }
         }
     }
@@ -420,7 +442,7 @@ public final class GuiMissionControl extends GuiScreen {
         return fields.length < 2 ? "" : fields[1];
     }
 
-    private void requestData() { RdpUavNetwork.requestMissionData(); }
+    private void requestData() { RdpUavNetwork.requestMissionData(missionPage); }
 
     protected void actionPerformed(GuiButton button) {
         if (button.id == 290) {
@@ -428,6 +450,12 @@ public final class GuiMissionControl extends GuiScreen {
             rebuildButtons();
         } else if (button.id == 291) {
             tabPage = Math.min((MissionGuiTab.values().length - 1) / 5, tabPage + 1);
+            rebuildButtons();
+        } else if (button.id == 34 || button.id == 35) {
+            missionPage = Math.max(0, Math.min(missionPageCount - 1,
+                    missionPage + (button.id == 34 ? -1 : 1)));
+            selected = -1;
+            requestData();
             rebuildButtons();
         } else if (button.id >= 300 && button.id < 300 + MissionGuiTab.values().length) {
             activeTab = MissionGuiTab.values()[button.id - 300];
@@ -877,11 +905,12 @@ public final class GuiMissionControl extends GuiScreen {
         int panelTop = 108;
         drawRect(left - 4, panelTop, left + 209, height - 113, 0x66000000);
         drawRect(right - 4, panelTop, right + 224, height - 113, 0x66000000);
-        drawString(fontRenderer, "SERVER MISSIONS", left, panelTop + 2, 0xB0D8FF);
+        drawString(fontRenderer, "SERVER MISSIONS (" + (missionPage + 1)
+                + "/" + missionPageCount + ")", left, panelTop + 2, 0xB0D8FF);
         if (missionRows.length == 0) {
             drawString(fontRenderer, "No missions assigned.", left, panelTop + 20, 0xAAAAAA);
         } else {
-            int y = panelTop + 20;
+            int y = panelTop + 36;
             for (String row : missionRows) {
                 if (matchesFilter(row)) continue;
                 drawString(fontRenderer, fontRenderer.trimStringToWidth(row, 205), left, y, 0xFFFFFF);

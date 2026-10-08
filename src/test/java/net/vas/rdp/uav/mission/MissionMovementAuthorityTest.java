@@ -43,6 +43,17 @@ public class MissionMovementAuthorityTest {
     }
 
     @Test
+    public void nullRiderDoesNotCountAsManualPilotTakeover() {
+        assertFalse(UavControlAccess.isDirectEntityRider(null));
+        assertFalse(MissionMovementAuthority.operatorFlightInputAllowed(mission()));
+    }
+
+    @Test
+    public void directAircraftRiderDoesCountAsManualPilotTakeover() {
+        assertTrue(UavControlAccess.isDirectEntityRider(new Object()));
+    }
+
+    @Test
     public void manualControlStateIsExplicitlyReturnedWhenStationOperatorIsPresent() {
         RDPMission mission = mission();
         MissionMovementAuthority.applyManualOperatorState(mission, true, 5L);

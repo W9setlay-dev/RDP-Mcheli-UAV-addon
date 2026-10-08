@@ -116,7 +116,6 @@ public final class RDPMission {
         phase = phaseFor(nextState);
         if ((previousOwner == ControlOwner.MANUAL || previousOwner == ControlOwner.SUPERVISED_OPERATOR)
                 && ownerFor(nextState) == ControlOwner.MISSION_AI) {
-            controlOwner = previousOwner;
         } else {
             controlOwner = ownerFor(nextState);
         }

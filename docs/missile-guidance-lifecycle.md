@@ -219,14 +219,15 @@ MCH_EntityASMissile.targetPosY
 MCH_EntityASMissile.targetPosZ
 ```
 
-For AS missiles, these writes are the active native steering handoff. The
-default registry forcibly marks `tvmissile` as `UNSUPPORTED`, so the TV writer
-is dormant for ordinary AI missions even though the class and code path exist.
-The local MCheliCE 1.5.1 bytecode confirms that the TV laser branch reads its
-target fields, but its native laser-control update can also refresh those
-fields. Field presence and reads do not prove stable addon ownership or tick
-ordering. Do not enable TV in the registry until that end-to-end handoff is
-validated.
+For AS missiles, these writes are the active native steering handoff. For TV,
+writing the fields at world-tick end is too late: McHeliCE 1.5.1 recomputes
+camera/wire aim inside `onUpdateMotion()` before native steering. The addon now
+hooks that exact method for AI-owned TV projectiles, applies the authoritative
+mission target there, and calls the existing `onLaserGuide()` steering step.
+The world-tick controller leaves TV coordinate writes to this hook so native
+camera aim cannot overwrite them. Player-guided/unassigned TV missiles retain
+the original method. The source/JAR hook is covered by a transformer test;
+physical trajectory and impact still require live validation.
 
 If no safe detour exists, `chooseAimPoint(...)` now emits
 `native_guidance_fallback` and returns the requested point. It must not return
@@ -238,8 +239,10 @@ write and cause a TV missile to continue on its launch vector.
 McHeli owns the actual projectile tick. In McHeli CE 1.5.1:
 
 * `MCH_EntityTvMissile.onUpdateMotion()` chooses wire or laser guidance and
-  eventually consumes the native target point. The addon TV path remains
-  disabled in `GuidedWeaponRegistry` pending ownership/update-order validation.
+  consumes the native target point. For an AI assignment, the transformed
+  entry claims the update, applies the server target, and calls
+  `onLaserGuide()` before returning; without an AI assignment the native
+  wire/laser code continues unchanged.
 * `MCH_EntityTvMissile.onLaserGuide()` checks the target `BlockPos` and steers
   when the native target resolves to a movement-blocking block.
 * `MCH_EntityASMissile` consumes its target fields using its native ballistic

@@ -21,6 +21,8 @@ public final class RdpUavTransformer implements net.minecraft.launchwrapper.ICla
             "com.norwood.mcheli.wingman.handler.AutonomousFlightHandler";
     private static final String MCH_BULLET_TARGET =
             "com.norwood.mcheli.weapon.MCH_EntityBaseBullet";
+    private static final String MCH_TV_MISSILE_TARGET =
+            "com.norwood.mcheli.weapon.MCH_EntityTvMissile";
     private static final String MCH_EXPLOSION_TARGET = "com.norwood.mcheli.MCH_Explosion";
     private static final String RDP_CORE_PREFIX = "net.vas.rdpcore.";
 
@@ -39,14 +41,17 @@ public final class RdpUavTransformer implements net.minecraft.launchwrapper.ICla
                 || MCH_AIRCRAFT_TARGET.equals(name);
         boolean isMchBullet = MCH_BULLET_TARGET.equals(transformedName)
                 || MCH_BULLET_TARGET.equals(name);
+        boolean isMchTvMissile = MCH_TV_MISSILE_TARGET.equals(transformedName)
+                || MCH_TV_MISSILE_TARGET.equals(name);
         boolean isMchExplosion = MCH_EXPLOSION_TARGET.equals(transformedName)
                 || MCH_EXPLOSION_TARGET.equals(name);
         if (!isUavStation && !isControlPacket && !isWingmanTick
                 && !isAutonomousFlight && !isMchAircraft
-                && !isMchBullet && !isMchExplosion) return compatibleClass;
+                && !isMchBullet && !isMchTvMissile && !isMchExplosion) return compatibleClass;
         if (compatibleClass != basicClass) basicClass = compatibleClass;
         final boolean[] preDestructionHookFound = {false};
         final boolean[] missileImpactHookFound = {false};
+        final boolean[] tvGuidanceHookFound = {false};
         final boolean[] missileExplosionHookFound = {false};
         ClassReader reader = new ClassReader(basicClass);
         // The injected branch changes the control-flow graph; recompute all
@@ -58,6 +63,26 @@ public final class RdpUavTransformer implements net.minecraft.launchwrapper.ICla
             public MethodVisitor visitMethod(int access, String methodName, String descriptor,
                                              String signature, String[] exceptions) {
                 MethodVisitor delegate = super.visitMethod(access, methodName, descriptor, signature, exceptions);
+                if (isMchTvMissile && "onUpdateMotion".equals(methodName)
+                        && "()V".equals(descriptor)) {
+                    tvGuidanceHookFound[0] = true;
+                    return new MethodVisitor(Opcodes.ASM5, delegate) {
+                        @Override
+                        public void visitCode() {
+                            super.visitCode();
+                            super.visitVarInsn(Opcodes.ALOAD, 0);
+                            super.visitMethodInsn(Opcodes.INVOKESTATIC,
+                                    "net/vas/rdp/uav/weapon/MissileGuidanceController",
+                                    "handleNativeTvGuidance",
+                                    "(Lcom/norwood/mcheli/weapon/MCH_EntityTvMissile;)Z",
+                                    false);
+                            Label nativeGuidance = new Label();
+                            super.visitJumpInsn(Opcodes.IFEQ, nativeGuidance);
+                            super.visitInsn(Opcodes.RETURN);
+                            super.visitLabel(nativeGuidance);
+                        }
+                    };
+                }
                 if (isMchBullet && "onImpact".equals(methodName)
                         && "(Lnet/minecraft/util/math/RayTraceResult;F)V".equals(descriptor)) {
                     missileImpactHookFound[0] = true;
@@ -224,6 +249,15 @@ public final class RdpUavTransformer implements net.minecraft.launchwrapper.ICla
             } else {
                 LOGGER.warn("McHeliCE missile impact observer was not installed; "
                         + "the loaded MCH_EntityBaseBullet signature differs from the verified 1.5.1 build.");
+            }
+        }
+        if (isMchTvMissile) {
+            if (tvGuidanceHookFound[0]) {
+                LOGGER.info("Installed AI TV guidance handoff before native McHeliCE "
+                        + "MCH_EntityTvMissile.onUpdateMotion");
+            } else {
+                LOGGER.warn("McHeliCE TV guidance hook was not installed; the loaded "
+                        + "MCH_EntityTvMissile signature differs from the verified 1.5.1 build.");
             }
         }
         if (isMchExplosion) {

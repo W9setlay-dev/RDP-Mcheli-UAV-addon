@@ -35,16 +35,16 @@ coordinateCorrectionInterval=2
 [weapon.tvmissile]
 type=tvmissile
 supportsUnloadedTargetExecution=false
-behavior=UNSUPPORTED
-objectives=
+behavior=COORDINATE_TV_LASER
+objectives=ENTITY,SQUARE
 maximumAircraftSpeed=0
 minimumAltitude=0
 maximumAltitude=4096
 noOrbit=true
 
-# TV/wire guidance is intentionally unsupported for autonomous AI. The local
-# 1.5.1 class reads targetPosX/Y/Z, but its own laser path also refreshes those
-# fields; stable addon ownership and tick ordering remain unverified.
+# TV guidance uses the addon handoff before McHeli's native camera/laser target
+# calculation. Existing UNSUPPORTED values resolve to this native TV guidance
+# contract when the weapon type is tvmissile.
 # COORDINATE_BALLISTIC preserves the weapon's native gravity and collision;
 # the addon only validates the release corridor and submits the target point.
 

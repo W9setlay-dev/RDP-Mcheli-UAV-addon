@@ -162,7 +162,11 @@ public final class WingManFlightAdapter {
         double operatorYawDelta = trim == null ? 0.0D : trim.getYawDegrees();
         double operatorPitchDelta = trim == null ? 0.0D : trim.getPitchDegrees();
         double operatorRollDelta = trim == null ? 0.0D : trim.getRollDegrees();
-        boolean operatorInStation = net.vas.rdp.uav.mission.UavControlAccess.hasOperatorInStation(aircraft);
+        // A passive UAV station is not a direct pilot takeover. Treating the
+        // station worker as a full manual-control handoff drops the mission's
+        // native movement lease and can stall an in-flight route on the next
+        // dispatch tick.
+        boolean operatorInStation = net.vas.rdp.uav.mission.UavControlAccess.hasDirectAircraftRider(aircraft);
         boolean operatorAssistActive = Math.abs(operatorYawDelta) > 0.02D
                 || Math.abs(operatorPitchDelta) > 0.02D
                 || Math.abs(operatorRollDelta) > 0.02D;

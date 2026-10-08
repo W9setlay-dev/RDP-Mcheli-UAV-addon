@@ -198,20 +198,21 @@ generic execution stall. `aamissile` and `atmissile` remain native entity-seeker
 weapons and accept entity objectives. `asmissile` is native
 coordinate/ballistic guidance:
 the addon validates and submits a point/square objective but does not turn it
-into a UAV-like entity hunter. `tvmissile` is currently unsupported for addon
-AI guidance. The bundled MCheliCE 1.5.1 bytecode consumes its `targetPosX/Y/Z`
-fields in the laser branch, and the addon contains a coordinate writer, but the
-projectile also refreshes those fields from the native laser-control path. That
-does not prove stable ownership or tick ordering for an AI handoff. AI
-ownership overrides camera input
-only while the mission is active; abort/takeover clears the addon assignment
-and returns control to McHeli's native player guidance where supported.
+into a UAV-like entity hunter. `tvmissile` supports entity and square objectives
+through the McHeli native TV steering step. For an AI-owned projectile, the
+server applies the validated mission target before McHeli's per-update camera/
+laser target calculation, so player camera mouse input cannot overwrite AI
+guidance. An unassigned/player-owned TV missile retains McHeli's native camera
+guidance. Target loss holds the last native motion instead of falling back to
+stale camera aim; abort/takeover clears AI ownership. Neither path teleports
+the projectile or writes its motion directly.
 Obstacle avoidance is best-effort and weapon-family specific. Native seekers
 keep McHeli's own seeker behavior. The enabled ASM coordinate path uses a fixed
 budget of terrain samples and a small set of temporary lateral/climb/descent
 native target offsets when the direct corridor is blocked; the offset expires
-and the original objective is reacquired. TV contains a similar experimental
-writer but is disabled until its native laser ownership path is validated.
+and the original objective is reacquired. The TV path now uses this bounded
+native-target planner at the projectile's per-update guidance handoff; live
+TV steering and impact behavior still require an in-game run.
 Unloaded terrain is treated
 conservatively and a `NATIVE_AVOIDANCE_UNAVAILABLE` result is reported when
 no safe candidate exists. This is not a guarantee against every geometry or
@@ -438,10 +439,14 @@ MCheliCE's normal physics update.
 Copy `config/rdp-uav-guided-weapons.cfg.example` to the instance config
 directory to authorize McHeli weapon definition/type pairs. `aamissile` and
 `atmissile` are entity-seeker weapons; `asmissile` is coordinate/ballistic.
-`tvmissile` is explicitly unsupported for addon AI guidance, even if an older
-configuration advertises coordinate/TV/laser objectives. Its native coordinate
-fields are consumed, but the projectile's own laser path can rewrite them, so
-the server handoff remains unverified. During an authorized
+`tvmissile` uses the addon's verified McHeliCE 1.5.1 `onUpdateMotion` handoff:
+the server's authoritative aim is applied before native TV camera/laser
+guidance can overwrite it, then McHeli's existing TV steering, physics,
+collision, fuse, and impact remain in control. Existing `UNSUPPORTED` TV
+configuration values are resolved to the native TV capability; configure
+`ENTITY,SQUARE` objectives for its supported lock/point forms. An AI assignment
+suppresses camera aim as a guidance input only for that projectile; native
+player-guided TV missiles retain their existing behavior. During an authorized
 active mission, only capabilities with a proven native handoff are accepted.
 Abort removes the AI ownership and returns to native player guidance where
 McHeli supports it. `asmissile` pursuit uses bounded server-side 3D obstacle

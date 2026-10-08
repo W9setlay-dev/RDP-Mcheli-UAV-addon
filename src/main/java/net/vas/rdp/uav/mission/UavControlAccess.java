@@ -1,7 +1,6 @@
 package net.vas.rdp.uav.mission;
 
 import com.norwood.mcheli.aircraft.MCH_EntityAircraft;
-import com.norwood.mcheli.uav.MCH_EntityUavStation;
 import com.norwood.mcheli.uav.IUavStation;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.EntityPlayer;
@@ -12,6 +11,8 @@ import net.minecraft.world.World;
  * the aircraft is controlled by the station and is not ridden by the player.
  */
 public final class UavControlAccess {
+    private static final String UAV_STATION_CLASS_NAME = "com.norwood.mcheli.uav.MCH_EntityUavStation";
+
     private UavControlAccess() { }
 
     public static boolean isOperator(MCH_EntityAircraft aircraft, EntityPlayer player) {
@@ -21,10 +22,11 @@ public final class UavControlAccess {
         if (!aircraft.isUAV()) return aircraft.isPilot(player);
         if (aircraft.isPilot(player)) return true;
         Entity mount = player.getRidingEntity();
-        if (mount instanceof MCH_EntityUavStation) {
-            MCH_EntityUavStation station = (MCH_EntityUavStation) mount;
-            return aircraft == station.getControlled()
-                    && sameEntity(station.getOperator(), player);
+        if (isUavStation(mount)) {
+            Entity stationOperator = stationOperator(mount);
+            return stationOperator != null
+                    && aircraft == controlledAircraft(mount)
+                    && sameEntity(stationOperator, player);
         }
         IUavStation station = aircraft.getUavStation();
         return station != null && aircraft == station.getControlled()
@@ -36,8 +38,8 @@ public final class UavControlAccess {
         MCH_EntityAircraft aircraft = MCH_EntityAircraft.getAircraft_RiddenOrControl(player);
         if (isOperator(aircraft, player)) return aircraft;
         Entity mount = player.getRidingEntity();
-        if (mount instanceof MCH_EntityUavStation) {
-            MCH_EntityAircraft controlled = ((MCH_EntityUavStation) mount).getControlled();
+        if (isUavStation(mount)) {
+            MCH_EntityAircraft controlled = controlledAircraft(mount);
             if (isOperator(controlled, player)) {
                 return controlled;
             }
@@ -58,31 +60,47 @@ public final class UavControlAccess {
      * aircraft's rider; that is an observation/control link, not a competing
      * aircraft pilot.
      */
+    public static boolean isDirectEntityRider(Object rider) {
+        return rider != null && !isUavStation(rider);
+    }
+
     public static boolean hasDirectAircraftRider(MCH_EntityAircraft aircraft) {
         if (aircraft == null) return false;
-        Entity rider = aircraft.getRiddenByEntity();
-        return rider != null && !(rider instanceof MCH_EntityUavStation);
+        return isDirectEntityRider(aircraft.getRiddenByEntity());
     }
 
     /**
-     * Returns true when the UAV is actively under a human-operated station or
-     * direct-rider control. This is distinct from a passive AI mission lease and
-     * is the correct operator-presence signal for manual authority handoff.
+     * Returns true only for a direct physical rider on the aircraft. Passive
+     * remote UAV-station presence is not a valid manual takeover signal: the
+     * mission lease must remain authoritative while the station is only
+     * observing or relaying control.
      */
     public static boolean hasOperatorInStation(MCH_EntityAircraft aircraft) {
-        if (aircraft == null) return false;
-        Entity rider = aircraft.getRiddenByEntity();
-        if (rider instanceof MCH_EntityUavStation) {
-            MCH_EntityUavStation station = (MCH_EntityUavStation) rider;
-            return station.getControlled() == aircraft && station.getOperator() != null;
+        return hasDirectAircraftRider(aircraft);
+    }
+
+    private static boolean isUavStation(Object entity) {
+        return entity != null && UAV_STATION_CLASS_NAME.equals(entity.getClass().getName());
+    }
+
+    private static MCH_EntityAircraft controlledAircraft(Entity mount) {
+        if (!isUavStation(mount)) return null;
+        try {
+            Object controlled = mount.getClass().getMethod("getControlled").invoke(mount);
+            return controlled instanceof MCH_EntityAircraft ? (MCH_EntityAircraft) controlled : null;
+        } catch (Exception ignored) {
+            return null;
         }
-        if (rider != null) {
-            return true;
+    }
+
+    private static Entity stationOperator(Entity mount) {
+        if (!isUavStation(mount)) return null;
+        try {
+            Object operator = mount.getClass().getMethod("getOperator").invoke(mount);
+            return operator instanceof Entity ? (Entity) operator : null;
+        } catch (Exception ignored) {
+            return null;
         }
-        IUavStation station = aircraft.getUavStation();
-        return station != null
-                && aircraft == station.getControlled()
-                && station.getOperator() != null;
     }
 
     private static boolean sameEntity(Entity first, Entity second) {

@@ -123,8 +123,10 @@ weapon release.
   station, and remote-view cameras. Existing source projection is not evidence
   of correct visible alignment.
 - For each supported missile, verify native guidance/seeker acquisition,
-  projectile tracking, impact callback, and effect confirmation. Coordinate or
-  TV guidance that lacks a verified native seeker remains unsupported.
+  projectile tracking, impact callback, and effect confirmation. TV coordinate
+  guidance now has a source-verified per-update server handoff; live camera
+  input isolation, steering, impact, and effect confirmation remain runtime
+  checks rather than established behavior.
 - Compare `desiredTrack`, `courseError`, position, motion, body yaw, pitch, roll,
   throttle, route node, and owner from server logs with the visible aircraft
   trajectory. Server logs alone cannot establish visual trajectory or reliable

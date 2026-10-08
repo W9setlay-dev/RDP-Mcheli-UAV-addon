@@ -20,6 +20,11 @@ Phase E makes client presentation reflect the server-owned mission lifecycle.
   compatibility, but is no longer a competing GUI path.
 - GUI labels distinguish `Abort mission` from `Archive selected/all`; archive
   releases active resources but retains the server audit record.
+- Mission lists are owner-filtered on the server and sent in bounded
+  11-record pages. The page request is presentation intent only; the server
+  clamps it to the current result set and returns the authoritative page count.
+  This keeps the packet decoder bound aligned with the server output without
+  dropping older mission history.
 
 ## Runtime boundary
 

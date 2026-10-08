@@ -315,22 +315,9 @@ public final class MissileGuidanceController {
             ProjectileGuidanceMission projectile =
                     projectileMission(missile, shooter, assignment);
 
+            if (missile instanceof MCH_EntityTvMissile) continue;
+            updateFilteredTarget(world, missile, shooter, assignment);
             projectile.nativeGuidanceActive();
-
-            if (assignment.filter != null && assignment.objective.getType() == GuidedObjectiveType.ENTITY) {
-                Entity selected = assignment.filter.select(world, missile);
-                if (selected != null && !selected.getUniqueID().equals(assignment.objective.getContactId())) {
-                    RdpUavDebug.debug("Guidance", "aircraft={} objective-switch old={} new={}",
-                            shooter.getUniqueID(), assignment.objective.getContactId(),
-                            selected.getUniqueID());
-                    assignment.objective.switchContact(selected.getUniqueID(), selected.posX,
-                            selected.posY, selected.posZ, world.getTotalWorldTime());
-                    RdpUavDebug.event("Guidance", "target_switched",
-                            "aircraft", shooter.getUniqueID(), "projectile", missile.getUniqueID(),
-                            "objective", assignment.objective.getObjectiveId(),
-                            "target", selected.getUniqueID());
-                }
-            }
             apply(world, missile, assignment);
         }
         synchronized (MissileGuidanceController.class) {
@@ -397,8 +384,66 @@ public final class MissileGuidanceController {
                 && (!(missile instanceof MCH_EntityASMissile) || !"asmissile".equalsIgnoreCase(weapon));
     }
 
-    private static void apply(World world, MCH_EntityBaseBullet missile,
-                              Assignment assignment) {
+    /**
+     * Called from McHeli's native TV projectile update before its normal camera/
+     * laser target calculation. The return value claims the update for an AI
+     * assignment even when its target is lost, preventing a stale camera aim
+     * from taking over that projectile.
+     */
+    public static boolean handleNativeTvGuidance(MCH_EntityTvMissile missile) {
+        if (missile == null || missile.world == null || missile.world.isRemote) return false;
+        Entity shooter = missile.shootingAircraft == null
+                ? missile.shootingEntity : missile.shootingAircraft;
+        if (shooter == null) return false;
+        Assignment assignment;
+        synchronized (MissileGuidanceController.class) {
+            assignment = ASSIGNMENTS.get(shooter.getUniqueID());
+        }
+        if (assignment == null || assignment.mode != GuidanceControlMode.AI_GUIDANCE
+                || matches(assignment.weapon, missile)) return false;
+
+        ProjectileGuidanceMission projectile = projectileMission(missile, shooter, assignment);
+        boolean firstHandoff = projectile.getState() == ProjectileGuidanceState.ASSIGNED;
+        updateFilteredTarget(missile.world, missile, shooter, assignment);
+        boolean targetAvailable = apply(missile.world, missile, assignment);
+        if (firstHandoff) {
+            RdpUavDebug.event("Guidance", "tv_guidance_takeover",
+                    "aircraft", shooter.getUniqueID(), "projectile", missile.getUniqueID(),
+                    "objective", assignment.objective.getObjectiveId(),
+                    "cameraMouseInput", "NON_AUTHORITATIVE");
+        }
+        if (targetAvailable && projectile.getState() != ProjectileGuidanceState.AVOIDANCE_ACTIVE) {
+            projectile.nativeGuidanceActive();
+        }
+        if (targetAvailable) {
+            // Keep McHeli responsible for missile movement, gravity, collision,
+            // fuse, and impact; only its existing native aim/steering step runs.
+            missile.onLaserGuide();
+        }
+        return true;
+    }
+
+    private static void updateFilteredTarget(World world, MCH_EntityBaseBullet missile,
+                                             Entity shooter, Assignment assignment) {
+        if (assignment.filter == null
+                || assignment.objective.getType() != GuidedObjectiveType.ENTITY) return;
+        Entity selected = assignment.filter.select(world, missile);
+        if (selected == null || selected.getUniqueID().equals(assignment.objective.getContactId())) {
+            return;
+        }
+        RdpUavDebug.debug("Guidance", "aircraft={} objective-switch old={} new={}",
+                shooter.getUniqueID(), assignment.objective.getContactId(),
+                selected.getUniqueID());
+        assignment.objective.switchContact(selected.getUniqueID(), selected.posX,
+                selected.posY, selected.posZ, world.getTotalWorldTime());
+        RdpUavDebug.event("Guidance", "target_switched",
+                "aircraft", shooter.getUniqueID(), "projectile", missile.getUniqueID(),
+                "objective", assignment.objective.getObjectiveId(),
+                "target", selected.getUniqueID());
+    }
+
+    private static boolean apply(World world, MCH_EntityBaseBullet missile,
+                                 Assignment assignment) {
         GuidedStrikeObjective objective = assignment.objective;
         ProjectileGuidanceMission projectile = projectileMission(missile,
                 missile.shootingAircraft == null ? missile.shootingEntity
@@ -423,7 +468,7 @@ public final class MissileGuidanceController {
                 }
                 RdpUavDebug.debug("Guidance", "aircraft={} projectile target lost weapon={}",
                         shooterId(missile), assignment.weapon);
-                return;
+                return false;
             }
         }
         AimPoint aim = chooseAimPoint(world, missile, x, y, z);
@@ -507,6 +552,7 @@ public final class MissileGuidanceController {
                     "target", objective.getContactId(),
                     "x", x, "y", y, "z", z);
         }
+        return true;
     }
 
     private static CoordinatePoint applyCoordinatePolicy(World world,

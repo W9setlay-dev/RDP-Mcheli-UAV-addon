@@ -22,12 +22,8 @@ public final class GuidedWeaponRegistry {
                 "ENTITY");
         register(config, "asmissile", "asmissile", GuidedNativeBehavior.COORDINATE_BALLISTIC,
                 "SQUARE");
-        // MCheliCE 1.5.1's TV projectile reads targetPosX/Y/Z in its laser
-        // branch, but its own update also refreshes those fields from native
-        // laser control. Keep addon launch disabled until ownership and tick
-        // ordering are proven end-to-end for the active weapon definition.
-        register(config, "tvmissile", "tvmissile", GuidedNativeBehavior.UNSUPPORTED,
-                "");
+        register(config, "tvmissile", "tvmissile", GuidedNativeBehavior.COORDINATE_TV_LASER,
+                "ENTITY,SQUARE");
         for (String category : config.getCategoryNames()) {
             if (!category.startsWith("weapon.") || isBuiltIn(category.substring("weapon.".length()))) {
                 continue;
@@ -77,21 +73,7 @@ public final class GuidedWeaponRegistry {
         boolean noOrbit = c.getBoolean("noOrbit", category, true, "No terminal loiter");
         boolean unloadedTargetExecution = c.getBoolean("supportsUnloadedTargetExecution",
                 category, false, "Native projectile can execute against an unloaded target region.");
-        GuidedNativeBehavior behavior;
-        try { behavior = GuidedNativeBehavior.valueOf(behaviorName.trim().toUpperCase(Locale.ROOT)); }
-        catch (IllegalArgumentException e) { behavior = GuidedNativeBehavior.UNSUPPORTED; }
-        if ("tvmissile".equalsIgnoreCase(type)) {
-            // Legacy configs advertised TV coordinate guidance. Field reads
-            // exist in the JAR, but a stable AI handoff is still unverified.
-            behavior = GuidedNativeBehavior.UNSUPPORTED;
-            objectiveNames = "";
-        }
-        EnumSet<GuidedObjectiveType> objectives = EnumSet.noneOf(GuidedObjectiveType.class);
-        for (String value : objectiveNames.split(",")) {
-            try { objectives.add(GuidedObjectiveType.valueOf(value.trim().toUpperCase(Locale.ROOT))); }
-            catch (IllegalArgumentException ignored) { }
-        }
-        register(new GuidedWeaponCapability(definition, type, behavior, objectives,
+        register(configuredCapability(definition, type, behaviorName, objectiveNames,
                 new GuidedTerminalProfile(maxSpeed, minAltitude, maxAltitude,
                         maxCorrection, correctionInterval, noOrbit), unloadedTargetExecution));
     }
@@ -102,7 +84,7 @@ public final class GuidedWeaponRegistry {
         definition = c.getString("definition", category, definition, "Exact McHeli weapon definition name");
         String type = c.getString("type", category, key, "McHeli MCH_WeaponInfo.type");
         String behaviorName = c.getString("behavior", category, defaultBehavior.name(),
-                "Verified native guidance boundary");
+                "Native guidance behavior installed by McHeliCE or the addon");
         String objectiveNames = c.getString("objectives", category, defaultObjectives,
                 "Comma-separated ENTITY and/or SQUARE");
         double maxSpeed = c.get(category, "maximumAircraftSpeed", 0.0,
@@ -123,22 +105,36 @@ public final class GuidedWeaponRegistry {
                 "Do not append a loiter node for terminal guidance.");
         boolean unloadedTargetExecution = c.getBoolean("supportsUnloadedTargetExecution",
                 category, false, "Native projectile can execute against an unloaded target region.");
+        GuidedWeaponCapability capability = configuredCapability(definition, type, behaviorName,
+                objectiveNames, new GuidedTerminalProfile(maxSpeed, minAltitude, maxAltitude,
+                        maxCorrection, correctionInterval, noOrbit), unloadedTargetExecution);
+        CAPABILITIES.put(key(definition, type), capability);
+    }
+
+    static GuidedWeaponCapability configuredCapability(String definition, String type,
+                                                        String behaviorName,
+                                                        String objectiveNames,
+                                                        GuidedTerminalProfile profile,
+                                                        boolean unloadedTargetExecution) {
         GuidedNativeBehavior behavior;
-        try { behavior = GuidedNativeBehavior.valueOf(behaviorName.trim().toUpperCase(Locale.ROOT)); }
-        catch (IllegalArgumentException e) { behavior = GuidedNativeBehavior.UNSUPPORTED; }
-        if ("tvmissile".equalsIgnoreCase(type)) {
+        try {
+            behavior = GuidedNativeBehavior.valueOf(behaviorName.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
             behavior = GuidedNativeBehavior.UNSUPPORTED;
-            objectiveNames = "";
+        }
+        if ("tvmissile".equalsIgnoreCase(type)) {
+            // This native type uses the addon's onUpdateMotion handoff; legacy
+            // UNSUPPORTED config values must not disable the verified path.
+            behavior = GuidedNativeBehavior.COORDINATE_TV_LASER;
+            if (objectiveNames.trim().isEmpty()) objectiveNames = "ENTITY,SQUARE";
         }
         EnumSet<GuidedObjectiveType> objectives = EnumSet.noneOf(GuidedObjectiveType.class);
         for (String value : objectiveNames.split(",")) {
             try { objectives.add(GuidedObjectiveType.valueOf(value.trim().toUpperCase(Locale.ROOT))); }
             catch (IllegalArgumentException ignored) { }
         }
-        GuidedWeaponCapability capability = new GuidedWeaponCapability(definition, type, behavior,
-                objectives, new GuidedTerminalProfile(maxSpeed, minAltitude, maxAltitude,
-                        maxCorrection, correctionInterval, noOrbit), unloadedTargetExecution);
-        CAPABILITIES.put(key(definition, type), capability);
+        return new GuidedWeaponCapability(definition, type, behavior, objectives,
+                profile, unloadedTargetExecution);
     }
 
     public static void register(GuidedWeaponCapability capability) {

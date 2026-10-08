@@ -242,6 +242,69 @@ public class RdpUavTransformerTest {
     }
 
     @Test
+    public void exactMcheli151TvMissileUsesAddonGuidanceBeforeNativeCameraAim() throws IOException {
+        byte[] original = getBytes("com/norwood/mcheli/weapon/MCH_EntityTvMissile.class");
+        byte[] transformed = new RdpUavTransformer().transform(
+                "com.norwood.mcheli.weapon.MCH_EntityTvMissile",
+                "com.norwood.mcheli.weapon.MCH_EntityTvMissile",
+                original);
+
+        final boolean[] foundMethod = {false};
+        final boolean[] hasAiGuidanceHook = {false};
+        final boolean[] hasNativeFallbackBranch = {false};
+        final boolean[] retainsNativePath = {false};
+        final int[] callOrder = {0};
+        final int[] hookOrder = {-1};
+        final int[] nativeGuidanceOrder = {-1};
+        new ClassReader(transformed).accept(new ClassVisitor(Opcodes.ASM5) {
+            @Override
+            public MethodVisitor visitMethod(int access, String name, String descriptor,
+                                             String signature, String[] exceptions) {
+                MethodVisitor visitor = super.visitMethod(access, name, descriptor,
+                        signature, exceptions);
+                if (!"onUpdateMotion".equals(name) || !"()V".equals(descriptor)) return visitor;
+                foundMethod[0] = true;
+                return new MethodVisitor(Opcodes.ASM5, visitor) {
+                    @Override
+                    public void visitJumpInsn(int opcode, org.objectweb.asm.Label label) {
+                        hasNativeFallbackBranch[0] |= opcode == Opcodes.IFEQ;
+                        super.visitJumpInsn(opcode, label);
+                    }
+
+                    @Override
+                    public void visitMethodInsn(int opcode, String owner, String method,
+                                                String methodDescriptor, boolean isInterface) {
+                        int currentOrder = callOrder[0]++;
+                        if (opcode == Opcodes.INVOKESTATIC
+                                && "net/vas/rdp/uav/weapon/MissileGuidanceController".equals(owner)
+                                && "handleNativeTvGuidance".equals(method)) {
+                            hasAiGuidanceHook[0] = true;
+                            hookOrder[0] = currentOrder;
+                        }
+                        if ("handleLaserGuidance".equals(method)
+                                || "handleWireGuidance".equals(method)) {
+                            retainsNativePath[0] = true;
+                            if (nativeGuidanceOrder[0] < 0) {
+                                nativeGuidanceOrder[0] = currentOrder;
+                            }
+                        }
+                        super.visitMethodInsn(opcode, owner, method,
+                                methodDescriptor, isInterface);
+                    }
+                };
+            }
+        }, 0);
+
+        assertTrue("verified McHeliCE 1.5.1 TV motion method must be found", foundMethod[0]);
+        assertTrue("AI guidance guard must be installed before the native camera path",
+                hasAiGuidanceHook[0] && hookOrder[0] < nativeGuidanceOrder[0]);
+        assertTrue("unassigned missiles must branch into the unchanged native path",
+                hasNativeFallbackBranch[0]);
+        assertTrue("unassigned/manual TV missiles must retain native guidance",
+                retainsNativePath[0]);
+    }
+
+    @Test
     public void exactMcheli151ExplosionResultPathHasNativeEffectObserver() throws IOException {
         byte[] original = getBytes("com/norwood/mcheli/MCH_Explosion.class");
         byte[] transformed = new RdpUavTransformer().transform(

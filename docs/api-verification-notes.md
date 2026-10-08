@@ -111,17 +111,24 @@ successful current world-load run.
 weapon-set definition and `MCH_WeaponInfo.type`. The verified native mapping is
 `aamissile`/`atmissile` entity seekers and `asmissile` coordinate/ballistic.
 `atmissile` is entity-only until a native square-coordinate contract is
-verified. `tvmissile` is intentionally unsupported by the default AI
-capability matrix. The local 1.5.1 bytecode reads its `targetPosX/Y/Z` fields,
-but also has a native laser-control update path that can refresh those values;
-field reads and addon writes alone do not establish stable ownership or tick
-ordering. `GuidedWeaponAdapter` validates ammunition,
+verified. The bundled McHeliCE 1.5.1 `MCH_EntityTvMissile` exposes
+`onUpdateMotion()V`, `targetPosX/Y/Z`, and `onLaserGuide()V`. Bytecode inspection
+shows its ordinary update derives aim from native wire or camera/laser control,
+which previously overwrote the addon's end-of-world-tick coordinate update.
+The addon now transforms the verified `onUpdateMotion` entry: an active server
+AI assignment applies its authoritative target first and delegates steering
+back to `onLaserGuide`; unassigned and player-guided missiles keep the native
+path. This makes camera mouse aim non-authoritative for AI-assigned TV
+projectiles without globally disabling player mouse input. `GuidedWeaponAdapter` validates ammunition,
 objective form, speed policy, and server safety before dispatch. Entity seekers
 resolve the locked UUID in the loaded server world, assign it through the
 native guidance system, and invoke `MCH_WeaponSet.use(...)`; a missing lock is
 rejected as `GUIDED_TARGET_LOST`. Unsupported definition/type/objective
 combinations are rejected rather than presented as working autonomous
 guidance. The adapter does not create, steer, teleport, or mutate projectiles.
+The transformer regression test checks the exact class/method from the bundled
+1.5.1 JAR. Physical in-game TV convergence and camera presentation remain
+unverified until a controlled Forge world launch.
 ## Rework safety boundaries
 
 The addon now keeps target filtering server-authoritative: vehicle-classified

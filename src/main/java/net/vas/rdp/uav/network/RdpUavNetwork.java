@@ -31,6 +31,9 @@ import org.apache.logging.log4j.Logger;
 public final class RdpUavNetwork {
     private static final Logger LOGGER = LogManager.getLogger("RDP-UAV/Network");
     private static final int MAX_PACKET_STRING_LENGTH = 1024;
+    private static final int MISSION_PAGE_SIZE = 11;
+    private static final int MAX_MISSION_PAGE_COUNT =
+            Integer.MAX_VALUE / MISSION_PAGE_SIZE + 1;
     private static final SimpleNetworkWrapper CHANNEL = NetworkRegistry.INSTANCE.newSimpleChannel(
             new ResourceLocation(RDPUavMod.MOD_ID, "control").toString());
     private static final net.vas.rdp.uav.flight.WingManFlightAdapter FLIGHT_ADAPTER =
@@ -99,7 +102,11 @@ public final class RdpUavNetwork {
     }
 
     public static void requestMissionData() {
-        CHANNEL.sendToServer(new RequestMissionData());
+        requestMissionData(0);
+    }
+
+    public static void requestMissionData(int page) {
+        CHANNEL.sendToServer(new RequestMissionData(page));
     }
 
     public static void requestSwarmSnapshot(String selectedSwarmId) {
@@ -312,7 +319,11 @@ public final class RdpUavNetwork {
     }
 
     static void sendMissionData(EntityPlayerMP player) {
-        CHANNEL.sendTo(MissionData.from(player), player);
+        sendMissionData(player, 0);
+    }
+
+    static void sendMissionData(EntityPlayerMP player, int page) {
+        CHANNEL.sendTo(MissionData.from(player, page), player);
     }
 
     private static void reject(EntityPlayerMP player, String message) {
@@ -937,8 +948,26 @@ public final class RdpUavNetwork {
     }
 
     public static final class RequestMissionData implements IMessage {
-        public void fromBytes(ByteBuf buffer) { }
-        public void toBytes(ByteBuf buffer) { }
+        private int page;
+
+        public RequestMissionData() { }
+
+        public RequestMissionData(int page) {
+            if (page < 0) throw new IllegalArgumentException("Mission page cannot be negative");
+            this.page = page;
+        }
+
+        public int getPage() { return page; }
+
+        public void fromBytes(ByteBuf buffer) {
+            if (buffer.readableBytes() != 0 && buffer.readableBytes() != 4) {
+                throw new IllegalArgumentException("Invalid mission page request");
+            }
+            page = buffer.isReadable() ? buffer.readInt() : 0;
+            if (page < 0) throw new IllegalArgumentException("Mission page cannot be negative");
+        }
+
+        public void toBytes(ByteBuf buffer) { buffer.writeInt(page); }
     }
 
     public static final class AbortMission implements IMessage {
@@ -1798,22 +1827,29 @@ public final class RdpUavNetwork {
         private String[] ids = new String[0];
         private String[] weaponRows = new String[0];
         private String[] weaponNames = new String[0];
+        private int page;
+        private int pageCount = 1;
         public MissionData() { }
-        private MissionData(String[] rows, String[] ids, String[] weaponRows,
-                            String[] weaponNames) {
+        MissionData(String[] rows, String[] ids, String[] weaponRows,
+                    String[] weaponNames, int page, int pageCount) {
             this.rows = rows; this.ids = ids; this.weaponRows = weaponRows;
-            this.weaponNames = weaponNames;
+            this.weaponNames = weaponNames; this.page = page; this.pageCount = pageCount;
         }
-        static MissionData from(EntityPlayerMP player) {
+        static MissionData from(EntityPlayerMP player, int requestedPage) {
             java.util.List<net.vas.rdp.uav.mission.RDPMission> missions =
                     net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
                             .getRepository().byOwner(player.getUniqueID());
-            String[] rows = new String[missions.size()];
-            String[] ids = new String[missions.size()];
-            for (int i = 0; i < missions.size(); i++) {
+            int pageCount = missions.isEmpty() ? 1
+                    : (missions.size() - 1) / MISSION_PAGE_SIZE + 1;
+            int page = Math.max(0, Math.min(requestedPage, pageCount - 1));
+            int start = page * MISSION_PAGE_SIZE;
+            int end = Math.min(missions.size(), start + MISSION_PAGE_SIZE);
+            String[] rows = new String[end - start];
+            String[] ids = new String[end - start];
+            for (int i = start; i < end; i++) {
                 net.vas.rdp.uav.mission.RDPMission mission = missions.get(i);
-                ids[i] = mission.getMissionId().toString();
-                rows[i] = mission.getMissionId().toString().substring(0, 8) + "  "
+                ids[i - start] = mission.getMissionId().toString();
+                rows[i - start] = mission.getMissionId().toString().substring(0, 8) + "  "
                         + mission.getState().name() + "  " + mission.getAircraftType()
                         + (mission.getGuidedWeapon() == null ? ""
                         : "  WPN=" + mission.getGuidedWeapon())
@@ -1863,15 +1899,28 @@ public final class RdpUavNetwork {
                 }
             }
             return new MissionData(rows, ids, weaponRows.toArray(new String[0]),
-                    weaponNames.toArray(new String[0]));
+                    weaponNames.toArray(new String[0]), page, pageCount);
         }
         public String[] getRows() { return rows; }
         public String[] getIds() { return ids; }
         public String[] getWeaponRows() { return weaponRows; }
         public String[] getWeaponNames() { return weaponNames; }
+        public int getPage() { return page; }
+        public int getPageCount() { return pageCount; }
         public void fromBytes(ByteBuf buffer) {
+            rows = new String[0];
+            ids = new String[0];
+            weaponRows = new String[0];
+            weaponNames = new String[0];
+            page = 0;
+            pageCount = 1;
+            if (buffer.readableBytes() < 4) {
+                throw new IllegalArgumentException("Invalid mission row count");
+            }
             int count = buffer.readInt();
-            if (count < 0 || count > 256) throw new IllegalArgumentException("Invalid mission row count");
+            if (count < 0 || count > MISSION_PAGE_SIZE) {
+                throw new IllegalArgumentException("Invalid mission row count");
+            }
             rows = new String[count];
             ids = new String[count];
             for (int i = 0; i < count; i++) {
@@ -1879,8 +1928,6 @@ public final class RdpUavNetwork {
                 rows[i] = readString(buffer);
             }
             if (!buffer.isReadable()) {
-                weaponRows = new String[0];
-                weaponNames = new String[0];
                 return;
             }
             int weaponCount = buffer.readUnsignedByte();
@@ -1891,8 +1938,27 @@ public final class RdpUavNetwork {
                 weaponNames[i] = readString(buffer);
                 weaponRows[i] = readString(buffer);
             }
+            if (buffer.isReadable()) {
+                if (buffer.readableBytes() != 8) {
+                    throw new IllegalArgumentException("Invalid mission page metadata");
+                }
+                page = buffer.readInt();
+                pageCount = buffer.readInt();
+                if (pageCount < 1 || page > pageCount - 1 || page < 0) {
+                    throw new IllegalArgumentException("Invalid mission page metadata");
+                }
+            }
         }
         public void toBytes(ByteBuf buffer) {
+            if (rows == null || ids == null || weaponRows == null || weaponNames == null) {
+                throw new IllegalArgumentException("Invalid mission snapshot");
+            }
+            if (rows.length > MISSION_PAGE_SIZE || ids.length != rows.length
+                    || weaponRows.length > 64 || weaponNames.length > 64
+                    || weaponNames.length > weaponRows.length || page < 0 || pageCount < 1
+                    || page >= pageCount) {
+                throw new IllegalArgumentException("Invalid mission snapshot");
+            }
             buffer.writeInt(rows.length);
             for (int i = 0; i < rows.length; i++) {
                 writeString(buffer, ids[i]);
@@ -1904,6 +1970,8 @@ public final class RdpUavNetwork {
                 writeString(buffer, i < weaponNames.length ? weaponNames[i] : "");
                 writeString(buffer, weaponRows[i]);
             }
+            buffer.writeInt(page);
+            buffer.writeInt(pageCount);
         }
         private static String formatCoordinate(double value) {
             return String.format(java.util.Locale.ROOT, "%.1f", value);
@@ -2136,7 +2204,8 @@ public final class RdpUavNetwork {
     public static final class ServerMissionDataHandler implements IMessageHandler<RequestMissionData, IMessage> {
         public IMessage onMessage(RequestMissionData message, MessageContext context) {
             final EntityPlayerMP player = context.getServerHandler().player;
-            Objects.requireNonNull(player.getServer()).addScheduledTask(() -> sendMissionData(player));
+            Objects.requireNonNull(player.getServer()).addScheduledTask(
+                    () -> sendMissionData(player, message.getPage()));
             return null;
         }
     }
@@ -2474,9 +2543,8 @@ public final class RdpUavNetwork {
                             "Point task rejected: camera hit data is required. Use the updated point-task key."));
                     return;
                 }
-                if (!message.point && (message.target == null
-                        || !message.target.matches(
-                        "(?i)(mod=[A-Za-z0-9_.-]+|[A-Za-z0-9_.-]+:[A-Za-z0-9_./-]+)"))) {
+                if (message.target == null || !message.target.matches(
+                        "(?i)(mod=[A-Za-z0-9_.-]+|[A-Za-z0-9_.-]+:[A-Za-z0-9_./-]+)")) {
                     return;
                 }
 
@@ -3168,7 +3236,8 @@ public final class RdpUavNetwork {
         public IMessage onMessage(final MissionData message, MessageContext context) {
             net.minecraftforge.fml.client.FMLClientHandler.instance().getClient().addScheduledTask(() -> net.vas.rdp.uav.client.GuiMissionControl.receiveMissionData(
                     message.getRows(), message.getIds(),
-                    message.getWeaponRows(), message.getWeaponNames()));
+                    message.getWeaponRows(), message.getWeaponNames(),
+                    message.getPage(), message.getPageCount()));
             return null;
         }
 

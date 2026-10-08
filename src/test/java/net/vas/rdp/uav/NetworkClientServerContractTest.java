@@ -200,6 +200,8 @@ public class NetworkClientServerContractTest {
                     "mission-1  TARGET_LOCKED  switchblade",
                     "mission-2  COMPLETE  switchblade"
             }, snapshot.getRows());
+            assertEquals(0, snapshot.getPage());
+            assertEquals(1, snapshot.getPageCount());
 
             // This is the same client-side entry point used by the packet handler.
             new GuiMissionControl();
@@ -211,12 +213,65 @@ public class NetworkClientServerContractTest {
     }
 
     @Test
-    public void serverRejectsOversizedMissionSnapshotBeforeAllocatingRows() {
-        ByteBuf wire = Unpooled.buffer().writeInt(257);
+    public void missionSnapshotRequestsPreservePageAndAcceptLegacyEmptyRequests() {
+        RdpUavNetwork.RequestMissionData received = roundTrip(
+                new RdpUavNetwork.RequestMissionData(7),
+                new RdpUavNetwork.RequestMissionData());
+        assertEquals(7, received.getPage());
+
+        RdpUavNetwork.RequestMissionData legacy = new RdpUavNetwork.RequestMissionData();
+        legacy.fromBytes(Unpooled.EMPTY_BUFFER);
+        assertEquals(0, legacy.getPage());
+
+        ByteBuf invalid = Unpooled.buffer().writeByte(1);
+        try {
+            legacy.fromBytes(invalid);
+            fail("Partial mission page requests must be rejected");
+        } catch (IllegalArgumentException expected) {
+            assertEquals("Invalid mission page request", expected.getMessage());
+        } finally {
+            invalid.release();
+        }
+    }
+
+    @Test
+    public void serverMissionSnapshotDecodesPageMetadataAndRejectsInvalidMetadata() {
+        ByteBuf wire = Unpooled.buffer();
+        try {
+            wire.writeInt(1);
+            writeString(wire, "mission-12");
+            writeString(wire, "mission-12  COMPLETE  switchblade");
+            wire.writeByte(0);
+            wire.writeInt(1).writeInt(2);
+
+            RdpUavNetwork.MissionData snapshot = new RdpUavNetwork.MissionData();
+            snapshot.fromBytes(wire);
+            assertEquals(1, snapshot.getPage());
+            assertEquals(2, snapshot.getPageCount());
+            assertArrayEquals(new String[] {"mission-12"}, snapshot.getIds());
+        } finally {
+            wire.release();
+        }
+
+        ByteBuf invalid = Unpooled.buffer();
+        try {
+            invalid.writeInt(0).writeByte(0).writeInt(0).writeInt(0);
+            new RdpUavNetwork.MissionData().fromBytes(invalid);
+            fail("Mission page count must be positive");
+        } catch (IllegalArgumentException expected) {
+            assertEquals("Invalid mission page metadata", expected.getMessage());
+        } finally {
+            invalid.release();
+        }
+    }
+
+    @Test
+    public void serverRejectsMissionSnapshotLargerThanOnePageBeforeAllocatingRows() {
+        ByteBuf wire = Unpooled.buffer().writeInt(12);
         try {
             RdpUavNetwork.MissionData snapshot = new RdpUavNetwork.MissionData();
             snapshot.fromBytes(wire);
-            fail("Mission snapshots over the protocol limit must be rejected");
+            fail("Mission snapshots larger than one page must be rejected");
         } catch (IllegalArgumentException expected) {
             assertEquals("Invalid mission row count", expected.getMessage());
         } finally {
