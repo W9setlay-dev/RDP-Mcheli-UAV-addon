@@ -1276,7 +1276,7 @@ public final class MissionLifecycle {
                 break;
             }
         }
-        if (reacquired == null || selectedCandidate == null) return null;
+        if (reacquired == null) return null;
         targets.observe(world, reacquired,
                 Math.sqrt(selectedCandidate.getDistanceSquared()), tick, ContactLifecycle.SELECTABLE);
         if (mission.getTargetId() == null) mission.reacquireTarget(reacquired.getUniqueID(), tick);
@@ -1362,7 +1362,7 @@ public final class MissionLifecycle {
                 break;
             }
         }
-        if (selected == null || selectedCandidate == null) return null;
+        if (selected == null) return null;
         targets.observe(world, selected,
                 Math.sqrt(selectedCandidate.getDistanceSquared()), world.getTotalWorldTime(),
                 ContactLifecycle.SELECTABLE);

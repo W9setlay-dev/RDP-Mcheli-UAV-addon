@@ -17,6 +17,13 @@ import net.vas.rdp.uav.mission.MissionContext;
 import net.vas.rdp.uav.mission.MissionOrchestrator;
 import net.vas.rdp.uav.network.RdpUavNetwork;
 
+/**
+ * Forge entry point for the RDP UAV mission system.
+ *
+ * <p>The mod owns the authoritative mission registry, orbiting orchestration,
+ * swarm reconciliation, and native control lease updates for each server tick.
+ * Client GUIs are intentionally thin views of server-authoritative state.
+ */
 @Mod(modid = RDPUavMod.MOD_ID, name = "RDP UAV Missions", version = "0.1.0",
         dependencies = "required-after:mcheli@[1.5,);required-after:rdpcore")
 public final class RDPUavMod {
@@ -28,6 +35,11 @@ public final class RDPUavMod {
     private static final net.vas.rdp.uav.ai.AiTaskingService AI =
             new net.vas.rdp.uav.ai.AiTaskingService(MISSIONS);
 
+    /**
+     * Loads runtime config, vehicle profiles, and registry data before gameplay.
+     *
+     * @param event Forge pre-init event carrying the game configuration directory
+     */
     @Mod.EventHandler
     public void preInit(FMLPreInitializationEvent event) {
         RdpUavDebug.load(event.getModConfigurationDirectory());
@@ -40,6 +52,11 @@ public final class RDPUavMod {
         net.vas.rdp.uav.weapon.GuidedWeaponRegistry.load(event.getModConfigurationDirectory());
     }
 
+    /**
+     * Registers network hooks and client/server listeners used by the mission system.
+     *
+     * @param event Forge init event for the current side
+     */
     @Mod.EventHandler
     public void init(FMLInitializationEvent event) {
         RdpUavNetwork.init();
@@ -57,33 +74,71 @@ public final class RDPUavMod {
         net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(new ServerTickHandler());
     }
 
+    /**
+     * Registers the commands exposed to server operators and mission pilots.
+     *
+     * @param event the lifecycle event raised when the dedicated server starts
+     */
     @Mod.EventHandler
     public void serverStarting(FMLServerStartingEvent event) {
         event.registerServerCommand(new net.vas.rdp.uav.command.RdpUavCommand());
     }
 
+    /**
+     * @return the shared server-side mission registry for the addon
+     */
     public static MissionManager missions() {
         return MISSIONS;
     }
 
+    /**
+     * @return the AI tasking service used for autonomous mission planning
+     */
     public static net.vas.rdp.uav.ai.AiTaskingService ai() {
         return AI;
     }
 
+    /**
+     * @return the swarm manager that enforces assignment and reconciliation
+     */
     public static net.vas.rdp.uav.swarm.SwarmManager swarms() {
         return SWARMS;
     }
 
+    /**
+     * Resolves the last known contact snapshot for the supplied target UUID.
+     *
+     * @param targetId the authoritative entity identifier being queried
+     * @return the contact snapshot if present, otherwise {@code null}
+     */
     public static net.vas.rdp.uav.target.ContactSnapshot contact(java.util.UUID targetId) {
         return ORCHESTRATOR.contact(targetId);
     }
 
+    /**
+     * Cycles the active contact selection on a UAV by moving to the next or prior
+     * valid target in the local observation set.
+     *
+     * @param world the world containing the aircraft
+     * @param aircraft the aircraft whose contact list is being cycled
+     * @param next {@code true} to move forward, {@code false} to move backward
+     * @return {@code true} when the selection changed
+     */
     public static boolean cycleContact(net.minecraft.world.World world,
                                        com.norwood.mcheli.aircraft.MCH_EntityAircraft aircraft,
                                        boolean next) {
         return ORCHESTRATOR.cycleContact(world, aircraft, next);
     }
 
+    /**
+     * Cycles the contact selection while a specific operator is bound to the
+     * aircraft; this supports the player-driven mission UI flow.
+     *
+     * @param world the active game world
+     * @param aircraft the controlled aircraft
+     * @param operator the player making the request
+     * @param next {@code true} to advance the selection, otherwise restore the previous one
+     */
     public static void cycleContact(World world,
                                     MCH_EntityAircraft aircraft,
                                     EntityPlayer operator,
@@ -91,6 +146,13 @@ public final class RDPUavMod {
         ORCHESTRATOR.cycleContact(world, aircraft, operator, next);
     }
 
+    /**
+     * Clears the active contact on the supplied aircraft and lets the mission
+     * planner recover to a safe route state.
+     *
+     * @param world the world containing the aircraft
+     * @param aircraft the aircraft whose acquisition state should be cleared
+     */
     public static void clearContact(World world,
                                     MCH_EntityAircraft aircraft) {
         ORCHESTRATOR.clearContact(world, aircraft);
@@ -102,6 +164,8 @@ public final class RDPUavMod {
             if (event.world.isRemote) {
                 return;
             }
+            // Native attitude/throttle writes are intentionally staged at START so they
+            // run before mission orchestration and route validation on the same server tick.
             if (event.phase == TickEvent.Phase.START) {
                 ORCHESTRATOR.applyNativeControls(event.world);
                 return;

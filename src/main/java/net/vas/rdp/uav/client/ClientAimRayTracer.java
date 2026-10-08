@@ -16,7 +16,7 @@ import java.util.Locale;
 /** Client-only crosshair trace that follows the active Minecraft render camera. */
 @SideOnly(Side.CLIENT)
 public final class ClientAimRayTracer {
-    public static final double MAX_REACH = 500.0D;
+    public static final double MAX_REACH = 1028.0D;
     private static final double BROAD_PHASE_GROWTH = 1.0D;
 
     private ClientAimRayTracer() { }

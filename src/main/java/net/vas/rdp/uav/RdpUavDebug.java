@@ -24,6 +24,13 @@ public final class RdpUavDebug {
 
     private RdpUavDebug() { }
 
+    /**
+     * Reads the debug configuration from the mod config directory and initializes
+     * the runtime toggles used by mission and flight diagnostics.
+     *
+     * @param configDir the Forge config root for the mod; the generated file is
+     *                  stored as {@code rdp-uav-debug.cfg}
+     */
     public static void load(File configDir) {
         File file = new File(configDir, "rdp-uav-debug.cfg");
         Configuration config = new Configuration(file);
@@ -37,14 +44,26 @@ public final class RdpUavDebug {
         LOGGER.info("Debug logging initialized: enabled={} config={}", enabled, file.getPath());
     }
 
+    /**
+     * @return {@code true} when the general debug logger is active
+     */
     public static boolean isEnabled() {
         return enabled;
     }
 
+    /**
+     * @return {@code true} when the bounded mission telemetry stream is enabled
+     */
     public static boolean isMissionDiagnosticsEnabled() {
         return missionDiagnostics;
     }
 
+    /**
+     * Enables or disables the main diagnostic logger and persists the setting when
+     * a configuration file has already been created.
+     *
+     * @param value the new runtime state for the debug logger
+     */
     public static void setEnabled(boolean value) {
         synchronized (LOCK) {
             enabled = value;
@@ -59,6 +78,12 @@ public final class RdpUavDebug {
         LOGGER.info("Debug logging {}", value ? "enabled" : "disabled");
     }
 
+    /**
+     * Enables or disables the bounded mission telemetry stream and persists the
+     * toggle to the config file when available.
+     *
+     * @param value {@code true} to enable filtered mission lifecycle events
+     */
     public static void setMissionDiagnostics(boolean value) {
         synchronized (LOCK) {
             missionDiagnostics = value;
@@ -74,6 +99,9 @@ public final class RdpUavDebug {
         LOGGER.info("Mission diagnostics {}", value ? "enabled" : "disabled");
     }
 
+    /**
+     * Reloads the current debug config without restarting the mod.
+     */
     public static void reload() {
         File file = configFile;
         if (file == null) {
@@ -83,10 +111,24 @@ public final class RdpUavDebug {
         load(file.getParentFile());
     }
 
+    /**
+     * Writes a plain-text debug entry for a subsystem when general diagnostics are
+     * enabled.
+     *
+     * @param component the subsystem or feature label
+     * @param message the message body to log
+     */
     public static void debug(String component, String message) {
         if (enabled) LOGGER.info("[DEBUG][{}] {}", component, message);
     }
 
+    /**
+     * Writes a formatted debug entry when the general diagnostics flag is active.
+     *
+     * @param component the subsystem or feature label
+     * @param format the message template; supports {@code {}} placeholders
+     * @param arguments values applied to the template
+     */
     public static void debug(String component, String format, Object... arguments) {
         if (enabled) LOGGER.info("[DEBUG][{}] {}", component, formatMessage(format, arguments));
     }
@@ -94,6 +136,10 @@ public final class RdpUavDebug {
     /**
      * Emits a stable key/value event that can be filtered and correlated from
      * latest.log without requiring callers to hand-build format strings.
+     *
+     * @param component the subsystem or feature label
+     * @param event the canonical event name to log
+     * @param fields alternating key/value pairs to attach to the event
      */
     public static void event(String component, String event, Object... fields) {
         if (!enabled && !missionDiagnostics) return;
@@ -106,10 +152,19 @@ public final class RdpUavDebug {
         LOGGER.info("[DEBUG][{}] event={} {}", component, event, values.toString());
     }
 
+    /**
+     * Logs a warning for a subsystem without requiring the debug flag to be on.
+     *
+     * @param component the subsystem or feature label
+     * @param message the warning message to log
+     */
     public static void warn(String component, String message) {
         LOGGER.warn("[{}] {}", component, message);
     }
 
+    /**
+     * @return the runtime status string used by diagnostics and config screens
+     */
     public static String status() {
         return "debug=" + enabled + " missionDiagnostics=" + missionDiagnostics + " config="
                 + (configFile == null ? "<not loaded>" : configFile.getPath());

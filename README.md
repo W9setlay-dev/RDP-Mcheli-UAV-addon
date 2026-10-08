@@ -1,5 +1,18 @@
 # RDP UAV Missions
 
+## Current project state
+
+This branch is aligned to the checked-in Forge build and runtime dependency layout:
+
+- Minecraft 1.12.2
+- Forge target in `build.gradle`: 14.23.5.2859
+- McHeli CE 1.5.1 with merged WingMan classes
+- RDP Core 1.0.0
+- Java source/target compatibility 8
+- Runtime jars expected under `libs/` or via `RDP_MCHELI_JAR` / `RDP_CORE_JAR`
+
+These values stay aligned with the.gradle configuration and are the version basis for the architecture notes under `docs/`.
+
 ## RDP hostile-world mission utility
 
 This addon is intended to behave as a persistent autonomous support system for a dangerous, dynamic RDP world. In a hostile environment, the highest-value behaviors are not generic aircraft movement tricks but practical mission utility:
@@ -32,6 +45,7 @@ The architecture and audit notes for this rework are recorded in `docs/`:
 - `docs/phase-g-validation-and-marker-rework.md`
 - `docs/ai-lock-movement-validation.md`
 - `docs/ai-flight-control-ownership.md`
+- `docs/software-reference-universe.md`
 - `docs/UAV_AI_FRAMEWORK_REWORK_REPORT.md`
 - `docs/superb-warfare-reference-design.md`
 - `docs/changelog.md`

@@ -202,6 +202,26 @@ public class MissionLifecycleContractTest {
     }
 
     @Test
+    public void aircraftWideReleaseDoesNotDropAnActiveMissionLease() {
+        UUID aircraftId = UUID.randomUUID();
+        RDPMission mission = mission(0, aircraftId);
+        mission.transitionTo(MissionState.DISPATCHED, 1);
+        mission.transitionTo(MissionState.TAKEOFF, 2);
+        mission.transitionTo(MissionState.CRUISE, 3);
+        mission.transitionTo(MissionState.SEARCHING, 4);
+
+        assertTrue(MissionMovementAuthority.claimControl(mission, aircraftId, 5));
+        assertTrue(MissionMovementAuthority.canIssueNativeControl(mission, aircraftId, 5));
+
+        MissionMovementAuthority.releaseControl(aircraftId);
+
+        assertTrue(MissionMovementAuthority.canIssueNativeControl(mission, aircraftId, 5));
+
+        MissionMovementAuthority.releaseControl(aircraftId, mission.getMissionId());
+        assertFalse(MissionMovementAuthority.canIssueNativeControl(mission, aircraftId, 5));
+    }
+
+    @Test
     public void supervisedOperatorControlSurvivesPersistenceRoundTrip() {
         RDPMission source = mission(0);
         source.transitionTo(MissionState.WAITING_FOR_TARGET, 1);
@@ -429,7 +449,11 @@ public class MissionLifecycleContractTest {
     }
 
     private static RDPMission mission(long createdTick) {
-        return new RDPMission(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
+        return mission(createdTick, UUID.randomUUID());
+    }
+
+    private static RDPMission mission(long createdTick, UUID aircraftId) {
+        return new RDPMission(UUID.randomUUID(), UUID.randomUUID(), aircraftId,
                 "switchblade", MissionType.RECONNAISSANCE,
                 TargetSpec.point(0, 80, 0, TargetPriority.NORMAL),
                 false, false, false, 64, 32, createdTick);

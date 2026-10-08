@@ -126,8 +126,17 @@ public final class MissionMovementAuthority {
                 && active.getMissionId().equals(mission.getMissionId());
     }
 
+    /**
+     * Releasing by aircraft alone is intentionally conservative. Route resets or
+     * WingMan bookkeeping may clear the underlying route state without owning the
+     * mission handoff; dropping the active lease here would allow a replan loop to
+     * stall on a valid mission. Only the mission-aware release path may revoke an
+     * active control lease for a live aircraft.
+     */
     public static void releaseControl(UUID aircraftId) {
-        if (aircraftId != null) {
+        if (aircraftId == null) return;
+        AircraftControlLease active = ACTIVE_LEASES.get(aircraftId);
+        if (active == null) {
             ACTIVE_LEASES.remove(aircraftId);
         }
     }
