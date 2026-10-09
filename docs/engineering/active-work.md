@@ -45,6 +45,7 @@ than restarting or replacing it.
 | 7. Persistence, networking, and operator UI | Persist authoritative state; validate commands; synchronize projections; connect UI to backend | Phases 1-6 as applicable | Existing source/tests are documented; live client/server behavior unverified |
 | 8. Telemetry, RDPCore, reliability, and performance | Failure observability, verified optional/core integration, bounded work, lifecycle cleanup | Phases 1-7 | RDPCore behavior and runtime/performance evidence require further verification |
 | 9. Runtime acceptance and release gates | Exercise the integrated execution path in the target runtime; preserve evidence and unresolved gaps | Phases 1-8 | **Not verified**; requires runtime evidence from the configured Minecraft/McHeli environment |
+| MV-01. Client pixel-perception foundation | Bounded capture of McHeli UAV-feed pixels, narrow detector, image-space tracking, diagnostics, and runtime evidence | Verified feed render path | **Implemented and unit-tested**; GL source binding, accuracy, and measured in-game behavior remain unverified |
 
 Dependencies are directional: phase 1 is a prerequisite for authoritative
 execution; phases 2-4 establish target, capability, and control contracts;
@@ -64,13 +65,16 @@ has been independently re-audited in this session.
 | Target identity and lock | Server-owned UUID identity and supporting source/tests are documented; live invalidation/reacquisition is unverified. |
 | Networking and authority | Server-authoritative paths and contract tests are documented; live replay, synchronization, and multi-client behavior are unverified. |
 | Operator UI | GUI and HUD paths are documented; in-game interaction, scaling, and synchronized behavior are unverified. |
+| Client pixel perception | Client-only bounded feed capture, tinted-beam feature scoring, image-space tracking, and optional diagnostics are implemented and covered by automated tests; runtime framebuffer binding, accuracy, and performance are unverified. |
 | Telemetry and observability | Diagnostic source and reports exist; runtime diagnostic completeness is not established here. |
 | RDPCore integration | **UNKNOWN** at this baseline: no integration behavior was independently confirmed in this session. |
 | Performance and reliability | Source and regression tests exist; runtime performance and complete world/entity lifecycle coverage are not established here. |
 
 ## Current phase and slice
 
-- Current phase: **Phase 1 — Mission lifecycle hardening**.
+- Current master roadmap phase: **Phase 1 — Mission lifecycle hardening**;
+  no Phase 1 completion is implied by the separate machine-vision slice.
+- Current focused work: **MV-01 — Client pixel-perception foundation**.
 - Completed slice: added a focused regression contract in
   `src/test/java/net/vas/rdp/uav/persistence/RDPMissionWorldDataTest.java`.
   It verifies that `RDPMissionWorldData.restoreQueued` restores persisted
@@ -84,7 +88,14 @@ has been independently re-audited in this session.
 - The recent control-lease change in commit `d2d5439` is existing repository
   work, not a change made by this checkpoint. The pre-existing
   `TargetLock.java` edit remains user-owned.
-- No production mission behavior was changed in this slice.
+- No production mission behavior was changed in the original lifecycle slice.
+- MV-01 adds client-only feed-frame capture, a pixel detector, bounded tracking,
+  and optional diagnostics. This is not server-authoritative perception and is
+  not connected to mission targeting or execution.
+- MV-01 verification: `.\gradlew.bat build` **PASS**, including compilation,
+  the full JUnit suite, jar assembly, and reobfuscation. The detector/tracker
+  and worker tests use synthetic frames; no in-game frame, accuracy rate, or
+  runtime frame-time measurement was collected.
 
 ## Known defects, questions, and blockers
 
@@ -106,25 +117,24 @@ has been independently re-audited in this session.
 
 ## Next exact implementation action
 
-Continue Phase 1 with a focused regression for
-`MissionManager.restoreAssignments`: restore two nonterminal missions claiming
-the same aircraft and prove the conflict mission becomes `FAILED` with
-`AIRCRAFT_RESTORE_CONFLICT` while the first mission retains the aircraft
-reservation. Verify the real 1.12.2 `World`/`MapStorage` test construction
-before writing the fixture; do not add a production test seam solely to avoid
-that API. If the existing behavior fails, patch only the first broken
-production boundary. Avoid duplicating reconciliation behavior already
-described in `docs/phase-d-authority-persistence-rework.md`.
+Next MV-01 action: run the documented in-game procedure and capture the
+requested logs, screenshot, build hash, and before/after frame-time evidence.
+The code/build/test gate is complete; framebuffer binding, detector accuracy,
+and runtime performance remain unverified until those artifacts exist. Then
+resume the Phase 1 mission-restoration regression below; machine-vision work
+does not replace or complete it.
 
 Acceptance for that slice:
 
-1. The restoration conflict and first broken layer are exercised through the
-   actual manager and world-data path.
-2. The first mission's reservation remains intact and the conflicting mission
-   has an explicit failure reason without releasing the winner's assignment.
-3. A focused regression test covers any defect found and the existing test
-   suite remains green.
-4. The diff and `git diff --check` are reviewed; the checkpoint and defect
-   status are updated with only verified claims.
-5. Runtime-only claims remain explicitly unverified until runtime evidence is
-   supplied or collected.
+1. MV-01 client capture remains bounded, optional, pixel-only, and isolated
+   from server authority; its code compiles and automated tests pass.
+2. GL render-state restoration, source/world resets, and capture/worker failure
+   reporting are reviewed; runtime-only claims remain unverified.
+3. The machine-vision design page contains the architecture, limits, current
+   validation status, and an exact manual evidence procedure.
+4. Then the assignment-restoration conflict is exercised through the actual
+   manager and world-data path, preserving the winner's reservation while the
+   conflict mission fails explicitly; do not add a test seam just to avoid
+   verifying the actual 1.12.2 `World`/`MapStorage` API.
+5. Review `git diff --check` and update this checkpoint with verified evidence
+   only. Preserve the pre-existing `TargetLock.java` change.

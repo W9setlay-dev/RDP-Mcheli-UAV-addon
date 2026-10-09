@@ -65,11 +65,20 @@ public final class RDPUavMod {
         net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(
                 new net.vas.rdp.uav.flight.KamikazeDetonationHandler());
         if (event.getSide() == Side.CLIENT) {
+            java.io.File gameDir = net.minecraftforge.fml.client.FMLClientHandler
+                    .instance().getClient().gameDir;
+            net.vas.rdp.uav.client.vision.VisionClientConfig.load(
+                    new java.io.File(gameDir, "config"));
             net.vas.rdp.uav.client.RdpUavClientKeys.register();
             net.vas.rdp.uav.client.RdpUavHudConfig.load(
                     net.minecraftforge.fml.client.FMLClientHandler.instance().getClient().gameDir);
             net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(
                     net.vas.rdp.uav.client.RdpUavTargetHud.instance());
+            net.vas.rdp.uav.client.vision.VisionClientEvents visionEvents =
+                    new net.vas.rdp.uav.client.vision.VisionClientEvents();
+            net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(visionEvents);
+            net.minecraftforge.fml.common.FMLCommonHandler.instance().bus()
+                    .register(visionEvents);
         }
         net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(new ServerTickHandler());
     }
