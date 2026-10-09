@@ -1,4 +1,4 @@
-2package net.vas.rdp.uav.target;
+package net.vas.rdp.uav.target;
 
 import java.util.UUID;
 
