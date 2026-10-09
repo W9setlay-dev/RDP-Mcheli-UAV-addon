@@ -2,7 +2,9 @@ package net.vas.rdp.uav.persistence;
 
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.nbt.NBTTagList;
+import net.vas.rdp.uav.mission.MissionQueue;
 import net.vas.rdp.uav.mission.MissionRepository;
+import net.vas.rdp.uav.mission.MissionState;
 import net.vas.rdp.uav.mission.MissionType;
 import net.vas.rdp.uav.mission.RDPMission;
 import net.vas.rdp.uav.target.TargetPriority;
@@ -14,6 +16,7 @@ import java.util.UUID;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
 
 public class RDPMissionWorldDataTest {
     @Test
@@ -41,6 +44,24 @@ public class RDPMissionWorldDataTest {
         assertNull(repository.find(malformed.getMissionId()));
         assertEquals(1, data.writeToNBT(new NBTTagCompound())
                 .getTagList("missions", 10).tagCount());
+    }
+
+    @Test
+    public void restoresOnlyPersistedQueuedMissionsAndDoesNotDuplicateThem() {
+        RDPMission queued = MissionNbtCodec.read(MissionNbtCodec.write(mission()));
+        RDPMission active = mission();
+        active.transitionTo(MissionState.DISPATCHED, 2L);
+
+        RDPMissionWorldData data = new RDPMissionWorldData();
+        data.getRepository().add(queued);
+        data.getRepository().add(active);
+        MissionQueue queue = new MissionQueue();
+
+        data.restoreQueued(queue);
+        data.restoreQueued(queue);
+
+        assertEquals(1, queue.size());
+        assertSame(queued, queue.peek());
     }
 
     private static RDPMission mission() {
