@@ -141,6 +141,15 @@ public final class MissionMovementAuthority {
         }
     }
 
+    /** Release the lease immediately when it is clearly stale for the current tick. */
+    public static void releaseControl(UUID aircraftId, long tick) {
+        if (aircraftId == null || tick < 0L) return;
+        AircraftControlLease active = ACTIVE_LEASES.get(aircraftId);
+        if (active == null || active.isExpired(tick)) {
+            ACTIVE_LEASES.remove(aircraftId);
+        }
+    }
+
     /** Release only the lease owned by this mission; a newer mission may already own the aircraft. */
     public static void releaseControl(UUID aircraftId, UUID missionId) {
         if (aircraftId == null || missionId == null) return;

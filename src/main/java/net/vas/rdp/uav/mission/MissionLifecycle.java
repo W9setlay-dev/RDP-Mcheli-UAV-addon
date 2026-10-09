@@ -79,6 +79,8 @@ public final class MissionLifecycle {
 
     public void tick(World world) {
         if (world == null || world.isRemote) return;
+        long tick = world.getTotalWorldTime();
+        MissionMovementAuthority.releaseExpiredControls(tick);
         aircraftThisTick = indexAircraft(world);
         restoreQueue(world);
         dispatchQueued(world);
@@ -88,6 +90,7 @@ public final class MissionLifecycle {
     public void applyNativeControls(World world) {
         if (world == null || world.isRemote) return;
         long tick = world.getTotalWorldTime();
+        MissionMovementAuthority.releaseExpiredControls(tick);
         for (Entity entity : world.loadedEntityList) {
             if (!(entity instanceof MCH_EntityAircraft)) continue;
             MCH_EntityAircraft aircraft = (MCH_EntityAircraft) entity;
@@ -445,16 +448,20 @@ public final class MissionLifecycle {
                 continue;
             }
             /*
-             * The lease is renewed on every active server tick. This also
-             * repairs a lease lost across a server reload, while still
-             * rejecting takeover when another mission owns the aircraft.
+             * The lease is renewed on every active native-control tick. A
+             * manual or supervised operator handoff intentionally does not
+             * require the native WingMan lease, so it must not be interpreted
+             * as a mission stall or a rejected takeover. Only the mission-AI,
+             * recovery, and terminal guidance owners need the active lease.
              */
-            if (!MissionMovementAuthority.claimControl(mission, aircraft.getUniqueID(), tick)) {
+            if (MissionMovementAuthority.nativeWingManRequired(mission)
+                    && !MissionMovementAuthority.claimControl(mission, aircraft.getUniqueID(), tick)) {
                 RdpUavDebug.event("MissionRuntime", "CONTROL_LEASE_REJECTED",
                         "mission", mission.getMissionId(),
                         "aircraft", aircraft.getUniqueID(),
                         "tick", tick,
-                        "state", mission.getState());
+                        "state", mission.getState(),
+                        "controlOwner", mission.getControlOwner());
                 defer(world, mission, "CONTROL_LEASE_REJECTED",
                         MissionState.EXECUTION_STALLED, tick);
                 dirty = true;
