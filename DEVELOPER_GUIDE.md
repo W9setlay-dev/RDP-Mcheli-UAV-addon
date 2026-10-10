@@ -86,6 +86,11 @@ real sample interval, marks its source as `POSITION_DELTA` with
 mission tick. This fallback is unit-tested; live aircraft response remains a
 separate runtime validation requirement.
 
+The airframe-controller tests also cover a helicopter-profile command that
+opposes measured forward/lateral motion at a waypoint and a zero-error bounded
+hold setpoint. These are controller-output contracts, not evidence of
+McHeliCE in-world braking or hover performance.
+
 Target selection is also mission-scoped. The GUI policy editor accepts bounded
 clauses such as
 `include=minecraft:zombie;require=hostile;exclude=minecraft:player;confidence=0.5;allowvehicles=false`.

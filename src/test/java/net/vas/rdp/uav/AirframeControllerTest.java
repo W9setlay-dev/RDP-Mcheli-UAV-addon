@@ -53,6 +53,43 @@ public class AirframeControllerTest {
     }
 
     @Test
+    public void helicopterCommandsOpposingAttitudeToBrakeAtWaypoint() {
+        UavVehicleProfile profile = new UavVehicleProfile(
+                UavExecutionProfile.HELICOPTER_ONE_WAY_FPV,
+                8.0D, 4.0D, 32.0D, 6.0D, false, "NONE");
+        AircraftState state = AircraftState.observe(UUID.randomUUID(), 0, 12L,
+                10.0D, 8.0D, 4.0D, 9.0D, 8.0D, 3.0D,
+                0.0F, 0.0F, 0.0F, 0.6D, "ENROUTE",
+                UUID.randomUUID(), ControlOwner.MISSION_AI, true,
+                0, 0.0D, 0.0D, 0.0D, 0.0D, 12L, "KNOWN");
+
+        NativeFlightControlCommand command = new HelicopterFlightController(profile)
+                .update(state, 10.0D, 8.0D, 4.0D, 12L);
+
+        assertTrue(command.isSupported());
+        assertTrue("positive forward/lateral velocity should be opposed", command.getPitch() > 0.0F);
+        assertTrue("positive lateral velocity should be opposed", command.getRoll() < 0.0F);
+    }
+
+    @Test
+    public void helicopterAtWaypointCommandsNeutralAttitudeAndNoVerticalRate() {
+        UavVehicleProfile profile = new UavVehicleProfile(
+                UavExecutionProfile.HELICOPTER_ONE_WAY_FPV,
+                8.0D, 4.0D, 32.0D, 6.0D, false, "NONE");
+        AircraftState state = state(12L, 10.0D, 8.0D, 4.0D, 0.0F);
+
+        NativeFlightControlCommand command = new HelicopterFlightController(profile)
+                .update(state, 10.0D, 8.0D, 4.0D, 12L);
+
+        assertTrue(command.isSupported());
+        assertEquals(0.0F, command.getPitch(), 0.0F);
+        assertEquals(0.0F, command.getRoll(), 0.0F);
+        assertEquals(0.0D, command.getDesiredVerticalSpeed(), 0.0D);
+        assertTrue("collective remains in the controller's bounded hold range",
+                command.getThrottle() >= 0.35D && command.getThrottle() <= 0.68D);
+    }
+
+    @Test
     public void nativeHelicopterAirframeUsesHelicopterControllerEvenWithFixedWingProfile() {
         UavVehicleProfile profile = new UavVehicleProfile(UavExecutionProfile.ONE_WAY,
                 32.0D, 8.0D, 128.0D, 4.0D, false, "SELF_DESTRUCT");
