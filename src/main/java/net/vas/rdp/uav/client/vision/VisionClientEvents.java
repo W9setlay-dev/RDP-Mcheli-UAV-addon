@@ -1,7 +1,14 @@
 package net.vas.rdp.uav.client.vision;
 
+import com.cleanroommc.modularui.screen.ModularPanel;
+import com.cleanroommc.modularui.screen.ModularScreen;
+import com.cleanroommc.modularui.screen.viewport.ModularGuiContext;
+import com.cleanroommc.modularui.api.widget.IWidget;
+import com.cleanroommc.modularui.widget.sizer.Area;
+import com.cleanroommc.modularui.widget.WidgetTree;
 import com.norwood.mcheli.uav.WidgetUavCameraFeed;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Gui;
 import net.minecraftforge.client.event.RenderGameOverlayEvent;
 import net.minecraftforge.client.event.RenderWorldLastEvent;
 import net.minecraftforge.event.world.WorldEvent;
@@ -10,8 +17,9 @@ import net.minecraftforge.fml.common.gameevent.TickEvent;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
 import org.lwjgl.opengl.GLContext;
-
 import java.util.List;
+import java.util.Map;
+import java.util.WeakHashMap;
 import java.util.concurrent.TimeUnit;
 
 /** Client-only capture, cleanup, and optional diagnostics for McHeli's UAV feed. */
@@ -25,6 +33,9 @@ public final class VisionClientEvents {
     private long lastFeedEventNanos;
     private boolean feedObserved;
     private boolean resetGpuResources;
+    private final Map<ModularGuiContext, Boolean> assistContexts = new WeakHashMap<>();
+    private ModularGuiContext cachedFeedContext;
+    private WidgetUavCameraFeed cachedFeed;
 
     @SubscribeEvent
     public void onRenderWorldLast(RenderWorldLastEvent event) {
@@ -46,6 +57,7 @@ public final class VisionClientEvents {
     @SubscribeEvent
     public void onClientTick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
+        registerAssistCallback(Minecraft.getMinecraft());
         if (!hasGlContext()) return;
 
         if (!VisionClientConfig.enabled) {
@@ -84,7 +96,8 @@ public final class VisionClientEvents {
 
     @SubscribeEvent
     public void onRenderOverlay(RenderGameOverlayEvent.Post event) {
-        if (!VisionClientConfig.enabled || !VisionClientConfig.overlayEnabled
+        if (!VisionPresentationPolicy.isDiagnosticsEnabled(VisionClientConfig.enabled,
+                VisionClientConfig.overlayEnabled, VisionClientConfig.presentationMode)
                 || event.getType() != RenderGameOverlayEvent.ElementType.ALL) return;
         PerceptionSnapshot state = worker.snapshot();
         Minecraft minecraft = Minecraft.getMinecraft();
@@ -135,6 +148,150 @@ public final class VisionClientEvents {
         draw(minecraft, "Frame age: " + age + ", dropped "
                         + (state.getDroppedFrames() + capture.getDroppedFrames()),
                 y, 0xFFFFFFFF);
+    }
+
+    private void registerAssistCallback(Minecraft minecraft) {
+        ModularScreen screen = ModularScreen.getCurrent();
+        if (minecraft == null || screen == null) {
+            cachedFeedContext = null;
+            cachedFeed = null;
+            return;
+        }
+        ModularGuiContext context = screen.getContext();
+        if (assistContexts.containsKey(context)) return;
+        context.postRenderCallbacks.add(renderedContext -> renderAssist(minecraft, renderedContext));
+        assistContexts.put(context, Boolean.TRUE);
+    }
+
+    private void renderAssist(Minecraft minecraft, ModularGuiContext context) {
+        if (!VisionPresentationPolicy.isAssistEnabled(VisionClientConfig.enabled,
+                VisionClientConfig.presentationMode)
+                || minecraft == null || context == null
+                || minecraft.world == null || minecraft.player == null) return;
+
+        WidgetUavCameraFeed feed = findFeedWidget(context);
+        if (feed == null) return;
+
+        Area area = feed.getArea();
+        if (area.width <= 0 || area.height <= 0) return;
+        PerceptionSnapshot state = worker.snapshot();
+        long now = System.nanoTime();
+        boolean fresh = VisionPresentationPolicy.isSnapshotFresh(state, now);
+        if (!fresh) {
+            String reason = state.getStatusReason().isEmpty()
+                    ? (state.getCapturedAtNanos() == 0L ? "NO FRESH RESULT" : "RESULT EXPIRED")
+                    : state.getStatusReason();
+            drawStatusPanel(minecraft, area.x, area.y, area.width,
+                    "VISION " + state.getState() + " - " + reason);
+            return;
+        }
+
+        List<PerceptionTracker.TrackView> tracks = state.getTracks();
+        int lostCount = 0;
+        for (PerceptionTracker.TrackView track : tracks) {
+            PerceptionTracker.TrackLifecycle lifecycle = track.getLifecycle();
+            if (lifecycle == PerceptionTracker.TrackLifecycle.LOST) {
+                lostCount++;
+                continue;
+            }
+            if (!VisionPresentationPolicy.shouldDrawBox(lifecycle, fresh)) continue;
+            VisualDetection detection = track.getDetection();
+            DetectionViewportMapper.ScreenRect rectangle = DetectionViewportMapper.map(
+                    detection, area.x, area.y, area.width, area.height);
+            if (rectangle == null) continue;
+            int color = lifecycle == PerceptionTracker.TrackLifecycle.STALE
+                    ? 0xFFFFC060
+                    : lifecycle == PerceptionTracker.TrackLifecycle.TENTATIVE
+                    ? 0xFF60D8FF : 0xFF80FF80;
+            if (lifecycle == PerceptionTracker.TrackLifecycle.STALE) {
+                drawDashedRectangle(rectangle, color);
+            } else {
+                drawRectangle(rectangle, color);
+            }
+            String label = "#" + track.getId() + " "
+                    + (lifecycle == PerceptionTracker.TrackLifecycle.STALE
+                    ? "STALE" : lifecycle.name())
+                    + " " + detection.getClassId() + " match "
+                    + String.format(java.util.Locale.ROOT, "%.2f", detection.getScore());
+            drawFeedLabel(minecraft, area.x, area.y, area.width, area.height,
+                    rectangle.getX(), rectangle.getY(), label, color);
+        }
+        if (lostCount > 0) {
+            drawStatusPanel(minecraft, area.x, area.y, area.width,
+                    "LOST TRACKS: " + lostCount + " (last positions hidden)");
+        } else if (tracks.isEmpty()) {
+            drawStatusPanel(minecraft, area.x, area.y, area.width,
+                    "VISION OPERATIONAL - NO DETECTIONS");
+        }
+    }
+
+    private WidgetUavCameraFeed findFeedWidget(ModularGuiContext context) {
+        if (context != cachedFeedContext || cachedFeed == null || !cachedFeed.isValid()) {
+            cachedFeed = null;
+            cachedFeedContext = context;
+            for (ModularPanel panel : context.getScreen().getPanelManager().getReverseOpenPanels()) {
+                for (IWidget widget : WidgetTree.iterableBFS(panel)) {
+                    if (widget instanceof WidgetUavCameraFeed) {
+                        cachedFeed = (WidgetUavCameraFeed) widget;
+                        break;
+                    }
+                }
+                if (cachedFeed != null) break;
+            }
+        }
+        return cachedFeed;
+    }
+
+    private static void drawStatusPanel(Minecraft minecraft, int x, int y,
+                                        int width, String text) {
+        int textWidth = Math.max(0, Math.min(width - 4,
+                minecraft.fontRenderer.getStringWidth(text)));
+        if (textWidth <= 0) return;
+        Gui.drawRect(x, y, x + textWidth + 4,
+                y + minecraft.fontRenderer.FONT_HEIGHT + 4, 0x90000000);
+        minecraft.fontRenderer.drawStringWithShadow(
+                minecraft.fontRenderer.trimStringToWidth(text, textWidth),
+                x + 2, y + 2, 0xFFFFFFFF);
+    }
+
+    private static void drawFeedLabel(Minecraft minecraft, int x, int y, int width,
+                                      int height, int boxX, int boxY, String text,
+                                      int color) {
+        if (height < minecraft.fontRenderer.FONT_HEIGHT + 2) return;
+        int availableWidth = Math.max(0, width - 4);
+        if (availableWidth == 0) return;
+        String bounded = minecraft.fontRenderer.trimStringToWidth(text, availableWidth);
+        int labelX = Math.max(x + 2, Math.min(boxX, x + width
+                - minecraft.fontRenderer.getStringWidth(bounded) - 2));
+        int labelY = boxY - minecraft.fontRenderer.FONT_HEIGHT - 2;
+        if (labelY < y) labelY = Math.min(y + height - minecraft.fontRenderer.FONT_HEIGHT - 2,
+                boxY + 2);
+        minecraft.fontRenderer.drawStringWithShadow(bounded, labelX, labelY, color);
+    }
+
+    private static void drawRectangle(DetectionViewportMapper.ScreenRect rect, int color) {
+        int right = rect.getX() + rect.getWidth();
+        int bottom = rect.getY() + rect.getHeight();
+        Gui.drawRect(rect.getX(), rect.getY(), right, rect.getY() + 1, color);
+        Gui.drawRect(rect.getX(), bottom - 1, right, bottom, color);
+        Gui.drawRect(rect.getX(), rect.getY(), rect.getX() + 1, bottom, color);
+        Gui.drawRect(right - 1, rect.getY(), right, bottom, color);
+    }
+
+    private static void drawDashedRectangle(DetectionViewportMapper.ScreenRect rect,
+                                            int color) {
+        int right = rect.getX() + rect.getWidth();
+        int bottom = rect.getY() + rect.getHeight();
+        for (int x = rect.getX(); x < right; x += 6) {
+            int end = Math.min(right, x + 3);
+            Gui.drawRect(x, rect.getY(), end, rect.getY() + 1, color);
+            Gui.drawRect(x, bottom - 1, end, bottom, color);
+        }
+        for (int y = rect.getY(); y < bottom; y += 6) {
+            int end = Math.min(bottom, y + 3);
+            Gui.drawRect(rect.getX(), y, rect.getX() + 1, end, color);
+            Gui.drawRect(right - 1, y, right, end, color);
+        }
     }
 
     private double lastAppliedMinimumFeatureScore = VisionClientConfig.minimumFeatureScore;

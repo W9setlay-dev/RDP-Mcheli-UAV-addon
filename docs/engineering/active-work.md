@@ -66,6 +66,7 @@ has been independently re-audited in this session.
 | Networking and authority | Server-authoritative paths and contract tests are documented; live replay, synchronization, and multi-client behavior are unverified. |
 | Operator UI | GUI and HUD paths are documented; in-game interaction, scaling, and synchronized behavior are unverified. |
 | Client pixel perception | Client-only bounded feed capture, tinted-beam feature scoring, image-space tracking, and optional diagnostics are implemented and covered by automated tests; runtime framebuffer binding, accuracy, and performance are unverified. |
+| MV presentation | Normal/Assist/Diagnostics presentation, client F7 mode cycling, and snapshot-derived image-space markers in the verified ModularUI feed area are implemented and unit-tested; live alignment, GL behavior, and performance remain unverified. |
 | Telemetry and observability | Diagnostic source and reports exist; runtime diagnostic completeness is not established here. |
 | RDPCore integration | **UNKNOWN** at this baseline: no integration behavior was independently confirmed in this session. |
 | Performance and reliability | Source and regression tests exist; runtime performance and complete world/entity lifecycle coverage are not established here. |
@@ -96,6 +97,36 @@ has been independently re-audited in this session.
   the full JUnit suite, jar assembly, and reobfuscation. The detector/tracker
   and worker tests use synthetic frames; no in-game frame, accuracy rate, or
   runtime frame-time measurement was collected.
+- MV-PRESENTATION-01 adds a client-only `NORMAL` / `ASSIST` / `DIAGNOSTICS`
+  selector cycled by the rebindable F7 key. Assist maps actual normalized
+  snapshot tracks into the McHeli UAV feed widget's live ModularUI area, marks
+  stale tracks distinctly, hides lost locations, and suppresses snapshots older
+  than two seconds. The coordinate mapping is verified against local McHeliCE
+  bytecode and ModularUI 3.0.5 source; the callback draws after feed widgets and
+  therefore does not alter detector input. Automated tests cover mapping,
+  resizing, modes, and freshness policy. In-game alignment, GL behavior, and
+  render-time impact remain unverified.
+
+### MV-PRESENTATION-01 manual acceptance
+
+1. Build with `.\gradlew.bat build`; record `git rev-parse HEAD` and the
+   SHA-256 of `build\libs\rdp-uav-addon-0.1.0.jar`.
+2. Launch Minecraft 1.12.2 with the configured Forge 14.23.5.2859, McHeliCE
+   1.5.1, and ModularUI runtime. Set `perception.enabled=true` and
+   `perception.overlayEnabled=true` in `config\rdp-uav-vision.cfg`; start with
+   a visible magenta-tinted beacon in the UAV feed.
+3. Open the UAV station feed. Cycle F7 through Normal, Assist, and Diagnostics.
+   Normal must show no vision graphics; Assist boxes/labels must align with
+   feed detections after resizing and GUI-scale changes; Diagnostics must show
+   current state/age/capture/dropped-frame metrics. Confirm no detected marker
+   appears outside the feed area, no lost track retains an old marker, and no
+   result older than two seconds remains drawn.
+4. Close the feed and exercise world unload/reopen. Capture `latest.log`, the
+   config, screenshots of each mode and resized layout, build identifier/hash,
+   and frame-time/FPS observations with presentation Normal versus Assist.
+   Record any GL error/crash, absent/misaligned overlay, stale marker, or
+   sustained frame-time change. Runtime status remains **NOT VERIFIED** until
+   the operator evidence is reviewed.
 
 ## Known defects, questions, and blockers
 

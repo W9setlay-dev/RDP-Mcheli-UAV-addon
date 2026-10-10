@@ -7,6 +7,7 @@ import java.io.File;
 public final class VisionClientConfig {
     public static boolean enabled;
     public static boolean overlayEnabled;
+    public static VisionPresentationMode presentationMode = VisionPresentationMode.NORMAL;
     public static int captureRateHz = 5;
     public static int inputWidth = 320;
     public static int inputHeight = 180;

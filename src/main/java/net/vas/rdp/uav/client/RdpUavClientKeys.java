@@ -10,6 +10,8 @@ import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.InputEvent;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
+import net.vas.rdp.uav.client.vision.VisionClientConfig;
+import net.vas.rdp.uav.client.vision.VisionPresentationMode;
 import net.vas.rdp.uav.network.RdpUavNetwork;
 import org.lwjgl.input.Keyboard;
 
@@ -45,6 +47,8 @@ public final class RdpUavClientKeys {
             "key.rdpuav.previous_contact", Keyboard.KEY_7, "key.categories.rdpuav");
     private static final KeyBinding FLIR_TOGGLE = new KeyBinding(
             "key.rdpuav.flir_toggle", Keyboard.KEY_F8, "key.categories.rdpuav");
+    private static final KeyBinding CYCLE_VISION_PRESENTATION = new KeyBinding(
+            "key.rdpuav.vision_presentation", Keyboard.KEY_F7, "key.categories.rdpuav");
 
     private RdpUavClientKeys() { }
 
@@ -85,6 +89,7 @@ public final class RdpUavClientKeys {
         ClientRegistry.registerKeyBinding(NEXT_CONTACT);
         ClientRegistry.registerKeyBinding(PREVIOUS_CONTACT);
         ClientRegistry.registerKeyBinding(FLIR_TOGGLE);
+        ClientRegistry.registerKeyBinding(CYCLE_VISION_PRESENTATION);
         net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(new RdpUavClientKeys());
         net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(new OperatorTrimClientHandler());
     }
@@ -92,6 +97,16 @@ public final class RdpUavClientKeys {
     @SubscribeEvent
     public void onKeyInput(InputEvent.KeyInputEvent event) {
         Minecraft minecraft = net.minecraftforge.fml.client.FMLClientHandler.instance().getClient();
+        if (CYCLE_VISION_PRESENTATION.isPressed()
+                && (minecraft.currentScreen == null
+                || com.cleanroommc.modularui.screen.ModularScreen.getCurrent() != null)) {
+            VisionPresentationMode mode = VisionClientConfig.presentationMode.next();
+            VisionClientConfig.presentationMode = mode;
+            if (minecraft.player != null) {
+                minecraft.player.sendMessage(new TextComponentString(
+                        "Pixel vision presentation: " + mode + "."));
+            }
+        }
         boolean flirPressed = FLIR_TOGGLE.isPressed();
         if (minecraft.currentScreen == null && flirPressed) {
             boolean enabled = RdpUavHudConfig.toggleFlir();

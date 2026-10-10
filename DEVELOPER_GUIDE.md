@@ -46,6 +46,24 @@ keeps a live target identity stable while a lock is committed, and disables
 terminal observation orbits that would otherwise keep aircraft circling instead
 of converging on the intended objective.
 
+The MV-01 client pixel-perception path is intentionally separate from this
+server-authoritative control flow. It is a local diagnostic pipeline for the
+McHeli UAV feed and remains disabled by default. When enabled, the client reads
+the currently bound feed framebuffer, downscales it, runs a narrow magenta-beam
+feature detector, and publishes immutable image-space tracks. Press F7 (or
+rebind the RDP UAV presentation control) to cycle Normal, Assist, and
+Diagnostics. Assist uses the active ModularUI feed widget's area for
+snapshot-derived image-space boxes; the post-widget callback avoids adding
+overlay pixels to the perception input. Track scores are feature-match scores,
+not probabilities. Stale tracks are marked and lost tracks do not retain drawn
+locations. Results older than two seconds are hidden.
+
+This presentation path does not emit target IDs, mission commands, or any
+server-authoritative data. The McHeli/Forge render source and ModularUI mapping
+are verified from the local dependency bytecode/source, but live GL behavior,
+detection accuracy, and frame-time impact still require the documented
+Minecraft runtime validation.
+
 `FlightGuidancePlanner` converts observed post-physics state and target velocity
 into a bounded, profile-aware lead waypoint before WingMan receives a route
 update. `TerminalGuidanceMetrics` is an enforcement input: sustained orbiting,

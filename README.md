@@ -25,32 +25,21 @@ This addon is intended to behave as a persistent autonomous support system for a
 - multi-UAV coordination that avoids duplicate coverage and supports reassignment
 - operator-visible reasoning before a dangerous action is committed
 
-The architecture and audit notes for this rework are recorded in `docs/`:
+## Client pixel-perception diagnostics (MV-01)
 
-- `docs/baseline-report.md`
-- `docs/audit-report.md`
-- `docs/current-architecture.md`
-- `docs/implementation-source-matrix.md`
-- `docs/proposed-architecture.md`
-- `docs/dependency-diagram.md`
-- `docs/api-verification-notes.md`
-- `docs/runtime-test-matrix.md`
-- `docs/bug-reproduction-matrix.md`
-- `docs/phase-a-lifecycle-rework.md`
-- `docs/phase-b-profile-capabilities.md`
-- `docs/phase-c-weapon-payload-rework.md`
-- `docs/phase-d-authority-persistence-rework.md`
-- `docs/phase-e-ui-hud-rework.md`
-- `docs/phase-f-validation-and-feature-overlap.md`
-- `docs/phase-g-validation-and-marker-rework.md`
-- `docs/ai-lock-movement-validation.md`
-- `docs/ai-flight-control-ownership.md`
-- `docs/software-reference-universe.md`
-- `docs/UAV_AI_FRAMEWORK_REWORK_REPORT.md`
-- `docs/superb-warfare-reference-design.md`
-- `docs/changelog.md`
+This branch also includes a client-only machine-vision experiment for the McHeli UAV feed. It is intentionally separate from mission authority:
 
-This keeps the project grounded in the actual McHeliCE/WingMan mission boundary and makes the hostile-world utility case explicit rather than relying on unsupported AI rhetoric.
+- it is enabled only when `perception.enabled=true`
+- it captures the active McHeli feed framebuffer only while `WidgetUavCameraFeed.RENDERING_FEED` is active
+- it downscales the feed to a bounded input size, processes only RGBA pixels, and stores the latest frame in a single-thread worker queue
+- it uses a narrow magenta-beam detector plus deterministic image-space tracking and optional overlay diagnostics
+- it never sends detections to the server or mutates mission state, target locks, or aircraft control
+
+Press **F7** (rebindable under RDP UAV controls) to cycle **Normal → Assist → Diagnostics**. Normal leaves the standard view untouched; Assist draws snapshot-backed image-space track boxes in the McHeli UAV feed widget; Diagnostics shows the existing measured pipeline status overlay when `perception.overlayEnabled=true`. `perception.enabled` remains the independent capture switch. Track labels identify `match` scores, not probabilities; stale tracks are dashed and labeled, lost tracks show status only, and detections are hidden once the result is older than two seconds.
+
+Feed widget coordinates are obtained from the active ModularUI widget area after its UI render, while the source feed is captured from the McHeli render framebuffer. The overlay is drawn after widget rendering, so it does not enter perception pixels.
+
+The feature is intended as a local diagnostic/visualization pipeline, not as an authoritative world-sensor system. Source validation and unit tests pass, but live in-game frame binding, feed accuracy, and performance are still runtime-unverified until the manual validation procedure is run in a matching Forge/McHeli client session.
 
 ## Operator-triggered kamikaze run
 
