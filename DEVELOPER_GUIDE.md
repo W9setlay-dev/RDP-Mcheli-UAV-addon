@@ -127,12 +127,14 @@ An October 10, 2026 isolated `runClient` attempt loaded the pinned ModularUI
 reached the main menu. Several ModularUI mixin accessors failed to resolve:
 the refmap requests SRG identifiers such as `field_74514_b`, while this
 stable_39 development runtime exposes MCP names. The first mouse event then
-failed in `KeyBindAccess.getHASH()` with `NoSuchMethodError`. The run
-configuration includes ModularUI's declared core plugin, but the development
-mapping incompatibility remains unresolved. `RDP_UAV_RUN_DIR` was observed in
-McHeli's `CurrentDirectory` log as
-`build\flight-acceptance-run-2`, confirming isolation from the existing `run`
-data. Until a world is loaded, movement acceptance is **NOT RUN**.
+failed in `KeyBindAccess.getHASH()` with `NoSuchMethodError` on the second
+attempt. The third attempt reached the menu with the same accessor warnings
+and was stopped before mouse input or world entry. The run configuration
+includes ModularUI's declared core plugin, but the development mapping
+incompatibility remains unresolved. `RDP_UAV_RUN_DIR` was observed in
+McHeli's `CurrentDirectory` log as `build\flight-acceptance-run-3`,
+confirming isolation from the existing `run` data. Until a world is loaded,
+movement acceptance is **NOT RUN**.
 
 ### Manual in-game movement acceptance
 
