@@ -111,11 +111,36 @@ throttle through the inspected McHeliCE adapter; McHeliCE remains responsible
 for integration, collision, and entity synchronization. Profile envelopes are
 not runtime-calibrated aircraft specifications.
 
+### Paused movement ownership
+
+When a swarm waits for operator input, its missions remain paused while the
+server flight controller retains the aircraft lease and clears route guidance
+to the current observed position. This prevents the native WingMan route
+writer from taking control in the gap between the lifecycle tick and the next
+controller tick. The lease-retention policy is unit-tested; physical hold,
+fixed-wing drift, and helicopter hover during a pause remain runtime-unverified.
+
+### Development-client startup status
+
+An October 10, 2026 isolated `runClient` attempt loaded the pinned ModularUI
+3.0.5 `ModularUICore` and `mixin.modularui.json`, initialized the addon, and
+reached the main menu. Several ModularUI mixin accessors failed to resolve:
+the refmap requests SRG identifiers such as `field_74514_b`, while this
+stable_39 development runtime exposes MCP names. The first mouse event then
+failed in `KeyBindAccess.getHASH()` with `NoSuchMethodError`. The run
+configuration includes ModularUI's declared core plugin, but the development
+mapping incompatibility remains unresolved. `RDP_UAV_RUN_DIR` was observed in
+McHeli's `CurrentDirectory` log as
+`build\flight-acceptance-run-2`, confirming isolation from the existing `run`
+data. Until a world is loaded, movement acceptance is **NOT RUN**.
+
 ### Manual in-game movement acceptance
 
 Run these scenarios only in a disposable Minecraft 1.12.2 test world with
 Forge 14.23.5.2859, McHeliCE 1.5.1, RDP Core 1.0.0, and the matching addon jar.
-Do not use a persistent world. Record the `git rev-parse HEAD` and SHA-256 of
+From PowerShell, set `$env:RDP_UAV_RUN_DIR='build\flight-acceptance-run-3'`
+before running `.\gradlew.bat runClient`. Do not use a persistent world.
+Record the `git rev-parse HEAD` and SHA-256 of
 `build\libs\rdp-uav-addon-0.1.0.jar` for the exact test build.
 
 1. Put a configured supported aircraft on a large, flat, loaded area with

@@ -393,8 +393,8 @@ public final class MissionLifecycle {
                 continue;
             }
             if (mission.isPaused()) {
-                MissionMovementAuthority.releaseControl(
-                        mission.getAircraftId(), mission.getMissionId());
+                // Keep the lease so WingMan cannot take the aircraft back between
+                // world ticks; the START-phase controller holds the current guidance.
                 flight.clearGuidance(findAircraft(world, mission.getAircraftId()));
                 continue;
             }

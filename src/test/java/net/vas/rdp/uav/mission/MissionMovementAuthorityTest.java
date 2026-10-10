@@ -43,6 +43,23 @@ public class MissionMovementAuthorityTest {
     }
 
     @Test
+    public void pausedMissionRetainsLeaseForControllerHoldAndBlocksWingmanTakeover() {
+        RDPMission mission = mission();
+        UUID aircraftId = mission.getAircraftId();
+        try {
+            assertTrue(MissionMovementAuthority.claimControl(mission, aircraftId, 40L));
+
+            mission.setPaused(true);
+
+            assertTrue(MissionMovementAuthority.nativeWingManRequired(mission));
+            assertTrue(MissionMovementAuthority.canIssueNativeControl(mission, aircraftId, 40L));
+            assertTrue(MissionMovementAuthority.claimControl(mission, aircraftId, 41L));
+        } finally {
+            MissionMovementAuthority.releaseControl(aircraftId, mission.getMissionId());
+        }
+    }
+
+    @Test
     public void nullRiderDoesNotCountAsManualPilotTakeover() {
         assertFalse(UavControlAccess.isDirectEntityRider(null));
         assertFalse(MissionMovementAuthority.operatorFlightInputAllowed(mission()));
