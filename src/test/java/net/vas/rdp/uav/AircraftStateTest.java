@@ -70,4 +70,26 @@ public class AircraftStateTest {
         assertEquals("SAMPLE_INTERVAL_LOW", state.getValidityReason());
         assertEquals(0.68D, state.getConfidence(), 0.0D);
     }
+
+    @Test
+    public void invalidNativeMotionFallsBackToPositionDeltaInsteadOfRejectingObservation() {
+        AircraftState state = AircraftState.observeWithPhysicalMotion(
+                UUID.randomUUID(), 0, 30L,
+                12.0D, 16.0D, 20.0D,
+                8.0D, 10.0D, 14.0D,
+                Double.NaN, 0.0D, Double.POSITIVE_INFINITY, 2.0D,
+                90.0F, 2.0F, -1.0F, 0.6D, "ENROUTE",
+                null, ControlOwner.MISSION_AI, true,
+                2, 0.5D, 8.0D, 20.0D, 25.0D, 20L, "KNOWN");
+
+        assertEquals(2.0D, state.getVelocityX(), 0.0D);
+        assertEquals(3.0D, state.getVelocityY(), 0.0D);
+        assertEquals(3.0D, state.getVelocityZ(), 0.0D);
+        assertEquals(0.0D, state.getMotionX(), 0.0D);
+        assertEquals(0.0D, state.getMotionZ(), 0.0D);
+        assertEquals(326.3099325D, state.getGroundTrackYaw(), 1.0E-6D);
+        assertEquals("POSITION_DELTA", state.getSource());
+        assertEquals("MOTION_UNAVAILABLE", state.getValidityReason());
+        assertEquals(0.68D, state.getConfidence(), 0.0D);
+    }
 }

@@ -78,6 +78,14 @@ position or motion. A crewed aircraft is rejected as
 `OPERATOR_CONTROL_CONFLICT`; an unmapped definition remains
 `UNSUPPORTED_PROFILE`.
 
+`AircraftStateEstimator` normally records finite McHeli motion and derives
+velocity from sampled position history. If any native motion component is
+non-finite, the state snapshot falls back to position-delta velocity using the
+real sample interval, marks its source as `POSITION_DELTA` with
+`MOTION_UNAVAILABLE`, and lowers confidence rather than throwing during the
+mission tick. This fallback is unit-tested; live aircraft response remains a
+separate runtime validation requirement.
+
 Target selection is also mission-scoped. The GUI policy editor accepts bounded
 clauses such as
 `include=minecraft:zombie;require=hostile;exclude=minecraft:player;confidence=0.5;allowvehicles=false`.

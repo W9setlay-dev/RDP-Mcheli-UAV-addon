@@ -148,6 +148,10 @@ public final class AircraftState {
                 terrainKnowledgeState, source, units, confidence, validityReason);
     }
 
+    /**
+     * Captures native motion when it is finite; otherwise derives velocity from
+     * the sampled position delta and marks the lower-confidence fallback.
+     */
     public static AircraftState observeWithPhysicalMotion(
             UUID aircraftId, int dimension, long tick,
             double x, double y, double z,
@@ -182,9 +186,23 @@ public final class AircraftState {
             double distanceToIntercept, long lastMeaningfulProgressTick,
             String terrainKnowledgeState, String source,
             String units, double confidence, String validityReason) {
-        if (finite(motionX, motionY, motionZ, sampleIntervalTicks)
+        if (finite(x, y, z, previousX, previousY, previousZ, sampleIntervalTicks)
                 || sampleIntervalTicks <= 0.0D) {
             throw new IllegalArgumentException("Invalid physical aircraft motion");
+        }
+        if (finite(motionX, motionY, motionZ)) {
+            double velocityX = (x - previousX) / sampleIntervalTicks;
+            double velocityY = (y - previousY) / sampleIntervalTicks;
+            double velocityZ = (z - previousZ) / sampleIntervalTicks;
+            return new AircraftState(aircraftId, dimension, tick, x, y, z,
+                    previousX, previousY, previousZ, velocityX, velocityY, velocityZ,
+                    0.0D, 0.0D, 0.0D, sampleIntervalTicks,
+                    groundTrackYaw(velocityX, velocityZ),
+                    yaw, pitch, roll, throttle, flightMode, missionId, controlOwner,
+                    leaseValid, routeNode, routeProgress, distanceToWaypoint,
+                    distanceToTarget, distanceToIntercept, lastMeaningfulProgressTick,
+                    terrainKnowledgeState, "POSITION_DELTA", units,
+                    Math.min(clampConfidence(confidence), 0.68D), "MOTION_UNAVAILABLE");
         }
         double velocityX = (x - previousX) / sampleIntervalTicks;
         double velocityY = (y - previousY) / sampleIntervalTicks;
