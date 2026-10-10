@@ -943,9 +943,11 @@ public final class WingManFlightAdapter {
             aircraft.getEntityData().removeTag(KamikazeConfig.ARMED_KEY);
             aircraft.getEntityData().removeTag(KamikazeConfig.MIN_SPEED_KEY);
             WingmanRegistry.remove(aircraft.getUniqueID());
+            nativeAttackCompletions.remove(aircraft.getUniqueID());
             aircraftStates.remove(aircraft.getUniqueID());
             targetTrackers.remove(aircraft.getUniqueID());
             fpvStates.remove(aircraft.getUniqueID());
+            terrainPlans.remove(aircraft.getUniqueID());
             terminalWaypointReplacements.remove(aircraft.getUniqueID());
             targetLossHoldRoutes.remove(aircraft.getUniqueID());
             terminalPreviousDistance.remove(aircraft.getUniqueID());
