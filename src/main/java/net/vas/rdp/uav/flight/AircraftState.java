@@ -188,7 +188,7 @@ public final class AircraftState {
             String units, double confidence, String validityReason) {
         if (finite(x, y, z, previousX, previousY, previousZ, sampleIntervalTicks)
                 || sampleIntervalTicks <= 0.0D) {
-            throw new IllegalArgumentException("Invalid physical aircraft motion");
+            throw new IllegalArgumentException("Invalid aircraft observation");
         }
         if (finite(motionX, motionY, motionZ)) {
             double velocityX = (x - previousX) / sampleIntervalTicks;

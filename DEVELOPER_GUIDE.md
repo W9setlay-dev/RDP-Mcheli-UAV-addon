@@ -91,6 +91,69 @@ opposes measured forward/lateral motion at a waypoint and a zero-error bounded
 hold setpoint. These are controller-output contracts, not evidence of
 McHeliCE in-world braking or hover performance.
 
+## Flight movement support and validation boundary
+
+Controller selection is based on the configured execution profile plus the
+actual McHeli entity class:
+
+| Profile | Addon controller selection | Declared movement capability | In-world status |
+|---|---|---|---|
+| `ONE_WAY` | Fixed-wing controller, unless the actual entity is `MCH_EntityHeli` | Directional route flight; no hover capability is declared | Movement and recovery unverified |
+| `HELICOPTER_ONE_WAY_FPV` | Helicopter controller | Bounded horizontal guidance, collective/vertical setpoints, hover/terminal support in the capability projection | Braking, altitude hold, hover, and collision response unverified |
+| `REUSABLE_UAV` | Fixed-wing controller, unless the actual entity is `MCH_EntityHeli` | Route flight, orbit/return/landing policy; no hover capability is declared | Turning, speed response, route completion, and landing unverified |
+| `LONG_RANGE_REUSABLE_UAV` | Fixed-wing controller, unless the actual entity is `MCH_EntityHeli` | Reusable profile with configured long-range envelope | Movement and recovery unverified |
+| `UNKNOWN` | No mission movement controller | Rejected as an unsupported profile | Rejection is source/test verified |
+
+The helicopter controller's unit contracts verify bounded setpoints and
+opposing attitude for measured horizontal velocity at a waypoint. They do not
+prove that the real entity brakes or hovers. The addon writes only attitude and
+throttle through the inspected McHeliCE adapter; McHeliCE remains responsible
+for integration, collision, and entity synchronization. Profile envelopes are
+not runtime-calibrated aircraft specifications.
+
+### Manual in-game movement acceptance
+
+Run these scenarios only in a disposable Minecraft 1.12.2 test world with
+Forge 14.23.5.2859, McHeliCE 1.5.1, RDP Core 1.0.0, and the matching addon jar.
+Do not use a persistent world. Record the `git rev-parse HEAD` and SHA-256 of
+`build\libs\rdp-uav-addon-0.1.0.jar` for the exact test build.
+
+1. Put a configured supported aircraft on a large, flat, loaded area with
+   unobstructed route space. Use one configured fixed-wing profile and, if
+   available, one actual helicopter/FPV profile. Record the aircraft definition
+   name and profile from `config\rdp-uav-vehicles.cfg`.
+2. Enter the aircraft's operator station, enable mission diagnostics with
+   `/rdpuav debug mission on`, and create a passive target in the disposable
+   world with `/summon minecraft:cow <x> <y> <z>`. Use its entity type as the
+   reconnaissance selector: `/rdpuav mission create minecraft:cow`.
+3. Record the mission response, aircraft position/attitude/speed before and
+   during movement, and `latest.log` entries for `MISSION_DISPATCH_ATTEMPT`,
+   `ROUTE_DISPATCH`, `COMMAND_APPLIED`, `ROUTE_NODE_ADVANCED`, and the resulting
+   mission state. Confirm that observed entity position changes through McHeliCE
+   physics toward the route target; a dispatch acknowledgement or changing
+   setpoint alone is not a pass. On a reusable profile, let the route proceed
+   through return/landing and verify `COMPLETE` only after native parked-state
+   observation. Do not require return/landing from a one-way profile.
+4. On the fixed-wing profile, observe heading change, speed response, altitude
+   change when the route demands it, and route progress. Do not expect hover or
+   an instantaneous stop. On the helicopter profile, also observe horizontal
+   braking and altitude hold/vertical response. Only mark a capability passed
+   when physical movement is visible and the observed state agrees with the
+   mission route.
+5. In a separate disposable run, test an obstacle/terrain boundary, abort
+   during transit, and a manual/autonomous control handoff by exercising flight
+   input while in the operator station, then releasing it. Verify an explicit
+   hold/replan/failure reason when blocked; after abort, verify terminal state,
+   lease release, and that the addon no longer applies mission setpoints. After
+   releasing manual input, verify mission authority resumes only if the
+   mission's state and route policy permit it.
+6. Capture the mission/aircraft UUIDs, complete relevant log excerpts,
+   before/after screenshots or recording, vehicle/profile, world conditions,
+   build identifier/hash, each expected-versus-observed result, and any failure
+   signature. If the client cannot reach a loaded world, report the movement
+   scenario as **NOT RUN**; do not substitute a successful build for runtime
+   evidence.
+
 Target selection is also mission-scoped. The GUI policy editor accepts bounded
 clauses such as
 `include=minecraft:zombie;require=hostile;exclude=minecraft:player;confidence=0.5;allowvehicles=false`.
