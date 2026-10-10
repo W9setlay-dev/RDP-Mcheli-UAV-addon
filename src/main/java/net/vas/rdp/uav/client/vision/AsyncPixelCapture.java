@@ -279,7 +279,6 @@ final class AsyncPixelCapture {
             GL11.glReadPixels(0, 0, width, height, GL11.GL_RGBA,
                     GL11.GL_UNSIGNED_BYTE, 0L);
             slot.sync = GL32.glFenceSync(GL32.GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
-            if (slot.sync == null) throw new IllegalStateException("GPU readback fence creation failed");
             slot.sequence = sequence++;
             slot.capturedAtNanos = now;
             slot.cameraId = cameraId(minecraft);
@@ -327,9 +326,8 @@ final class AsyncPixelCapture {
     }
 
     private static boolean supported() {
-        if (!GLContext.getCapabilities().OpenGL30
-                || !GLContext.getCapabilities().OpenGL32) return false;
-        return true;
+        return GLContext.getCapabilities().OpenGL30
+                && GLContext.getCapabilities().OpenGL32;
     }
 
     private static String cameraId(Minecraft minecraft) {

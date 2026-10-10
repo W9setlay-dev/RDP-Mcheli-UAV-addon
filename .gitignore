@@ -8,16 +8,16 @@
 
 /logs/
 
+/libs/
+
 *.md
 !DEVELOPER_GUIDE.md
 !README.md
-!BUILD_VALIDATION_REPORT.md
-!docs/
-!docs/*.md
-!docs/engineering/
 !docs/engineering/active-work.md
-!.copilot/
-!.copilot/*.md
-!.github/
-!.github/agents/
-!.github/agents/*.agent.md
+.copilot/
+.copilot/*.md
+.github/
+.github/agents/
+
+qodana.yaml
+.github/agents/*.agent.md
