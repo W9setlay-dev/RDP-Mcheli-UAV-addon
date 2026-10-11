@@ -1,5 +1,8 @@
 buildscript {
     repositories {
+        flatDir {
+            dirs 'libs'
+        }
         mavenCentral()
         maven {
             name = "forge"
@@ -34,6 +37,10 @@ minecraft {
 }
 
 repositories {
+    flatDir {
+        dirs 'libs'
+    }
+
     maven {
         name = 'forge'
         url = 'https://maven.minecraftforge.net'
@@ -63,7 +70,9 @@ dependencies {
     minecraft "net.minecraftforge:forge:${forgeVersion}"
     forgeRunSide "net.minecraftforge:forge:${forgeVersion}:universal"
     // Keep required McHeli runtime mods on the client launch classpath.
-    compile files(elegantNetworkingJar, mcheliJar, rdpCoreJar)
+    compile files(elegantNetworkingJar, rdpCoreJar)
+    compile fg.deobf('blank:mcheli-ce:1.5.1')
+
     compile('com.cleanroommc:modularui:3.0.5') {
         transitive = false
     }
@@ -73,7 +82,7 @@ dependencies {
     testCompile 'junit:junit:4.13.2'
 }
 
-task forgeRunSideJar(type: Jar) {
+tasks.register('forgeRunSideJar', Jar) {
     // The mapped dev jar exposes an extra Side.BUKKIT value, but FML channel maps
     // only initialize CLIENT and SERVER. Use Forge's universal enum in dev runs/tests.
     from {
@@ -84,7 +93,7 @@ task forgeRunSideJar(type: Jar) {
     destinationDir = file("$buildDir/fg_run")
 }
 
-tasks.whenTaskAdded { task ->
+tasks.configureEach { task ->
     if (task.name == 'runClient') {
         task.dependsOn forgeRunSideJar
         task.classpath = files(forgeRunSideJar.archivePath) + task.classpath
