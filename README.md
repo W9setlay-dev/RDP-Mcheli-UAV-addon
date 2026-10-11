@@ -496,9 +496,25 @@ explicitly interruptible and invalid shortcuts are rejected.
 The current Gradle wrapper test run compiles and tests against the checked-in
 Forge `1.12.2-14.23.5.2859` configuration. A development-client startup
 attempt on 2026-10-06 failed during McHeli CE mod loading before world entry;
-no current-change-set gameplay or matching dedicated-server behavior is
-verified. Historical notes below about Forge `14.23.5.2864` refer to a
-separate compatibility probe and are not evidence for the current source build.
+an October 10 launch then reproduced an FML `NetworkRegistry.newChannel:207`
+failure. The mapped dev runtime exposed `Side.BUKKIT`, although FML creates
+channels only for `CLIENT` and `SERVER`. `runClient` now prepends the matching
+Forge universal `Side` class to the development and test classpaths; 347 tests
+and the reobfuscated package build pass. A client retry passed the channel
+registration failure, loaded the addon and dependencies, and reached the main
+menu. Its first mouse event crashed in ModularUI 3.0.5:
+`KeyBindAccess.getHASH()` threw `NoSuchMethodError`. The isolated retry loaded
+ModularUI's `ModularUICore` and `mixin.modularui.json`, but multiple mixin
+accessors still failed: its refmap targets SRG names while this stable_39
+development runtime exposes MCP names. The second attempt crashed when mouse
+input invoked one of the failed accessors. A third attempt reached the menu
+with the same accessor warnings and was stopped before input or world entry.
+Its run used `build\flight-acceptance-run-3`, confirming `RDP_UAV_RUN_DIR`
+isolates data. The development-mapping incompatibility remains unresolved;
+no world, aircraft movement, or matching dedicated-server behavior has been
+verified.
+Historical notes below about Forge `14.23.5.2864` refer to a separate
+compatibility probe and are not evidence for the current source build.
 
 ## Forge 14.23.5.2859 runtime setup
 
@@ -512,14 +528,23 @@ The checked-in `build.gradle` already configures Forge
 4. Use the ForgeGradle version declared in `build.gradle` and Maven access to
    `https://maven.minecraftforge.net`.
 5. Run `gradlew.bat test` and `gradlew.bat build` from `rdp-uav-addon`.
+   The test JVM and `gradlew.bat runClient` automatically apply the dev-only
+   Forge `Side` compatibility classpath entry; it is not included in the
+   published mod jar. The client run also loads ModularUI's core plugin and
+   accepts `RDP_UAV_RUN_DIR` as an isolated working-directory override.
 6. Copy `build/libs/rdp-uav-addon-0.1.0.jar` into the Minecraft 1.12.2
    `mods` directory alongside Forge `14.23.5.2859` and McHeli CE `1.5.1`.
 7. Start a dedicated server and client with the same mod set, then run
    `/rdpuav mission gui`.
 
 Do not copy the source project into `mods`, and do not mix McHeli versions.
-The GUI was source-compiled against cached 1.12.2 APIs, but no Minecraft
-client/server runtime test was run in this session.
+For a disposable development run in PowerShell, use
+`$env:RDP_UAV_RUN_DIR='build\flight-acceptance-run'` before
+`.\gradlew.bat runClient`. Client startup has reached the main menu, but the
+latest isolated attempts logged ModularUI 3.0.5 mixin accessor failures
+because SRG refmap names were not mapped to the development runtime's MCP
+names; one crashed on mouse input. In-world client/server and movement tests
+remain unverified.
 ## Explicit no-candidate behavior
 
 Target search is operational when no configured entity is currently eligible. The

@@ -215,7 +215,7 @@ final class AsyncPixelCapture {
                     ARBPixelBufferObject.GL_PIXEL_PACK_BUFFER_BINDING_ARB);
             GL15.glBindBuffer(ARBPixelBufferObject.GL_PIXEL_PACK_BUFFER_ARB, slot.buffer);
             ByteBuffer mapped = GL15.glMapBuffer(ARBPixelBufferObject.GL_PIXEL_PACK_BUFFER_ARB,
-                    GL15.GL_READ_ONLY, (ByteBuffer) null);
+                    GL15.GL_READ_ONLY, null);
             if (mapped == null || mapped.remaining() < pixels.length) {
                 if (mapped != null) GL15.glUnmapBuffer(ARBPixelBufferObject.GL_PIXEL_PACK_BUFFER_ARB);
                 GL15.glBindBuffer(ARBPixelBufferObject.GL_PIXEL_PACK_BUFFER_ARB, previousPackBuffer);

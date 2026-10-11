@@ -27,12 +27,7 @@ final class VisionProcessingWorker {
         if (buffers == null) throw new IllegalArgumentException("Pixel buffer pool is required");
         this.buffers = buffers;
         this.detector = new BeaconBeamDetector(minimumScore);
-        this.frameDetector = new FrameDetector() {
-            @Override
-            public List<VisualDetection> detect(VisualFrame frame) {
-                return VisionProcessingWorker.this.detector.detect(frame);
-            }
-        };
+        this.frameDetector = VisionProcessingWorker.this.detector::detect;
     }
 
     VisionProcessingWorker(PixelBufferPool buffers, FrameDetector frameDetector) {

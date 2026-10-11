@@ -3,13 +3,11 @@ package net.vas.rdp.uav.client.vision;
 import org.junit.Test;
 
 import java.util.Collections;
-import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.*;
 
 public class VisionProcessingWorkerTest {
     @Test
@@ -18,15 +16,12 @@ public class VisionProcessingWorkerTest {
         final CountDownLatch firstStarted = new CountDownLatch(1);
         final CountDownLatch releaseFirst = new CountDownLatch(1);
         VisionProcessingWorker worker = new VisionProcessingWorker(buffers,
-                new VisionProcessingWorker.FrameDetector() {
-                    @Override
-                    public List<VisualDetection> detect(VisualFrame frame) {
-                        if (frame.getSequence() == 1L) {
-                            firstStarted.countDown();
-                            await(releaseFirst);
-                        }
-                        return Collections.emptyList();
+                frame -> {
+                    if (frame.getSequence() == 1L) {
+                        firstStarted.countDown();
+                        await(releaseFirst);
                     }
+                    return Collections.emptyList();
                 });
         worker.setSource("feed", "camera");
         try {
@@ -36,7 +31,7 @@ public class VisionProcessingWorkerTest {
             worker.submit(frame(buffers, 3L, "camera"));
             assertEquals(1L, worker.getDroppedFrames());
             releaseFirst.countDown();
-            awaitSnapshot(worker, PerceptionSnapshot.State.OPERATIONAL, 3L);
+            awaitSnapshot(worker, 3L);
         } finally {
             releaseFirst.countDown();
             worker.shutdown();
@@ -48,26 +43,23 @@ public class VisionProcessingWorkerTest {
         final PixelBufferPool buffers = new PixelBufferPool();
         final AtomicInteger detectorCalls = new AtomicInteger();
         VisionProcessingWorker worker = new VisionProcessingWorker(buffers,
-                new VisionProcessingWorker.FrameDetector() {
-                    @Override
-                    public List<VisualDetection> detect(VisualFrame frame) {
-                        detectorCalls.incrementAndGet();
-                        return Collections.singletonList(new VisualDetection(
-                                VisualDetection.BEACON_BEAM, 0.8D, 0.1D, 0.1D,
-                                0.05D, 0.5D));
-                    }
+                frame -> {
+                    detectorCalls.incrementAndGet();
+                    return Collections.singletonList(new VisualDetection(
+                            VisualDetection.BEACON_BEAM, 0.8D, 0.1D, 0.1D,
+                            0.05D, 0.5D));
                 });
         worker.setSource("feed", "camera-a");
         try {
             worker.submit(frame(buffers, 1L, "camera-a"));
-            awaitSnapshot(worker, PerceptionSnapshot.State.OPERATIONAL, 1L);
+            awaitSnapshot(worker, 1L);
             assertEquals(1L, worker.snapshot().getTracks().get(0).getId());
 
             worker.setSource("feed", "camera-b");
             assertEquals(PerceptionSnapshot.State.INITIALIZING,
                     worker.snapshot().getState());
             worker.submit(frame(buffers, 2L, "camera-b"));
-            awaitSnapshot(worker, PerceptionSnapshot.State.OPERATIONAL, 2L);
+            awaitSnapshot(worker, 2L);
             assertEquals(1L, worker.snapshot().getTracks().get(0).getId());
             assertEquals(2, detectorCalls.get());
         } finally {
@@ -79,11 +71,8 @@ public class VisionProcessingWorkerTest {
     public void publishesDegradedStateAndReasonWhenFrameProcessingFails() throws Exception {
         final PixelBufferPool buffers = new PixelBufferPool();
         VisionProcessingWorker worker = new VisionProcessingWorker(buffers,
-                new VisionProcessingWorker.FrameDetector() {
-                    @Override
-                    public List<VisualDetection> detect(VisualFrame frame) {
-                        throw new IllegalStateException("synthetic processing failure");
-                    }
+                frame -> {
+                    throw new IllegalStateException("synthetic processing failure");
                 });
         worker.setSource("feed", "camera");
         try {
@@ -103,7 +92,7 @@ public class VisionProcessingWorkerTest {
 
     private static VisualFrame frame(PixelBufferPool buffers, long sequence, String camera) {
         byte[] pixels = buffers.acquire(4);
-        assertTrue(pixels != null);
+        assertNotNull(pixels);
         return VisualFrame.takeOwnership(sequence, System.nanoTime(), "feed", camera,
                 1, 1, pixels);
     }
@@ -120,16 +109,15 @@ public class VisionProcessingWorkerTest {
     }
 
     private static void awaitSnapshot(VisionProcessingWorker worker,
-                                      PerceptionSnapshot.State expectedState,
                                       long expectedSequence) throws InterruptedException {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2L);
         while (System.nanoTime() < deadline) {
             PerceptionSnapshot snapshot = worker.snapshot();
-            if (snapshot.getState() == expectedState
+            if (snapshot.getState() == PerceptionSnapshot.State.OPERATIONAL
                     && snapshot.getSequence() == expectedSequence) return;
             Thread.sleep(5L);
         }
-        assertEquals(expectedState, worker.snapshot().getState());
+        assertEquals(PerceptionSnapshot.State.OPERATIONAL, worker.snapshot().getState());
         assertEquals(expectedSequence, worker.snapshot().getSequence());
     }
 }

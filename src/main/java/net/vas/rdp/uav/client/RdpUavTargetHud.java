@@ -80,8 +80,7 @@ public final class RdpUavTargetHud {
                 || System.currentTimeMillis() - receivedAt > 3000L) return;
 
         Minecraft mc = Minecraft.getMinecraft();
-        if (mc == null || mc.player == null || mc.world == null
-                || telemetry.dimension != mc.world.provider.getDimension()) return;
+        if (mc.player == null || mc.world == null || telemetry.dimension != mc.world.provider.getDimension()) return;
         if (telemetry.targetUuid == null || telemetry.targetUuid.isEmpty()) {
             if (telemetry.hasPosition) drawPointMarker(mc, event.getPartialTicks());
             return;

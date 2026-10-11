@@ -194,7 +194,7 @@ public final class VisionClientEvents {
                 lostCount++;
                 continue;
             }
-            if (!VisionPresentationPolicy.shouldDrawBox(lifecycle, fresh)) continue;
+            if (!VisionPresentationPolicy.shouldDrawBox(lifecycle, true)) continue;
             VisualDetection detection = track.getDetection();
             DetectionViewportMapper.ScreenRect rectangle = DetectionViewportMapper.map(
                     detection, area.x, area.y, area.width, area.height);

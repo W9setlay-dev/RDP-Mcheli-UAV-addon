@@ -35,8 +35,7 @@ public final class PerceptionTracker {
         for (Association candidate : candidates) {
             MutableTrack track = candidate.track;
             if (track.matched || detectionMatched[candidate.detectionIndex]) continue;
-            VisualDetection detection = detections.get(candidate.detectionIndex);
-            track.detection = detection;
+            track.detection = detections.get(candidate.detectionIndex);
             track.matched = true;
             track.hits++;
             track.missedFrames = 0;

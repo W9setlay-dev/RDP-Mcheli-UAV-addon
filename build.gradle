@@ -27,13 +27,17 @@ minecraft {
     mappings channel: 'stable', version: '39-1.12'
     runs {
         client {
-            workingDirectory project.file('run')
-            property 'fml.coreMods.load', 'com.norwood.mcheli.core.MCHCore,zone.rong.mixinbooter.MixinBooterPlugin,net.vas.rdp.uav.core.RdpUavCorePlugin'
+            workingDirectory project.file(System.getenv('RDP_UAV_RUN_DIR') ?: 'run')
+            property 'fml.coreMods.load', 'com.norwood.mcheli.core.MCHCore,zone.rong.mixinbooter.MixinBooterPlugin,com.cleanroommc.modularui.core.ModularUICore,net.vas.rdp.uav.core.RdpUavCorePlugin'
         }
     }
 }
 
 repositories {
+    maven {
+        name = 'forge'
+        url = 'https://maven.minecraftforge.net'
+    }
     maven {
         name = 'cleanroom'
         url = 'https://maven.cleanroommc.com'
@@ -45,6 +49,10 @@ def rdpCoreJar = file(System.getenv('RDP_CORE_JAR') ?: 'libs/rdpcore-1.0.0.jar')
 def elegantNetworkingJar = file('libs/elegant-networking-1.12-3.17.jar')
 def mcheliAccessTransformer = file("$buildDir/generated/mcheli/META-INF/mcheli_at.cfg")
 
+configurations {
+    forgeRunSide
+}
+
 tasks.register('extractMcheliAccessTransformer', Copy) {
     from zipTree(mcheliJar)
     include 'META-INF/mcheli_at.cfg'
@@ -53,6 +61,7 @@ tasks.register('extractMcheliAccessTransformer', Copy) {
 
 dependencies {
     minecraft "net.minecraftforge:forge:${forgeVersion}"
+    forgeRunSide "net.minecraftforge:forge:${forgeVersion}:universal"
     // Keep required McHeli runtime mods on the client launch classpath.
     compile files(elegantNetworkingJar, mcheliJar, rdpCoreJar)
     compile('com.cleanroommc:modularui:3.0.5') {
@@ -62,6 +71,32 @@ dependencies {
         transitive = false
     }
     testCompile 'junit:junit:4.13.2'
+}
+
+task forgeRunSideJar(type: Jar) {
+    // The mapped dev jar exposes an extra Side.BUKKIT value, but FML channel maps
+    // only initialize CLIENT and SERVER. Use Forge's universal enum in dev runs/tests.
+    from {
+        zipTree(configurations.forgeRunSide.singleFile)
+    }
+    include 'net/minecraftforge/fml/relauncher/Side.class'
+    archiveName = 'forge-run-side.jar'
+    destinationDir = file("$buildDir/fg_run")
+}
+
+tasks.whenTaskAdded { task ->
+    if (task.name == 'runClient') {
+        task.dependsOn forgeRunSideJar
+        task.classpath = files(forgeRunSideJar.archivePath) + task.classpath
+        task.doFirst {
+            task.main = 'net.vas.rdp.uav.dev.LegacyDevClientLauncher'
+        }
+    }
+}
+
+test {
+    dependsOn forgeRunSideJar
+    classpath = files(forgeRunSideJar.archivePath) + classpath
 }
 
 minecraft.accessTransformer mcheliAccessTransformer
@@ -75,6 +110,7 @@ processResources {
 }
 
 jar {
+    exclude 'net/vas/rdp/uav/dev/LegacyDevClientLauncher.class'
     manifest {
         attributes(
                 'FMLCorePlugin': 'net.vas.rdp.uav.core.RdpUavCorePlugin',

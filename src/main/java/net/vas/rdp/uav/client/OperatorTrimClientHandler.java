@@ -25,7 +25,7 @@ public final class OperatorTrimClientHandler {
     public void onClientTick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
         Minecraft mc = Minecraft.getMinecraft();
-        if (mc == null || mc.player == null || mc.world == null) {
+        if (mc.player == null || mc.world == null) {
             reset();
             return;
         }

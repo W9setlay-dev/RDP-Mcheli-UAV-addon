@@ -222,8 +222,7 @@ public final class RdpUavNetwork {
             return true;
         }
         if (definition.getMissionType() == net.vas.rdp.uav.mission.MissionType.SQUARE_STRIKE) {
-            if (definition.isSwarmEnabled() || !definition.getSelectedUavs().isEmpty()
-                    || definition.isDefaultTargetPolicy()) return false;
+            if (!definition.getSelectedUavs().isEmpty() || definition.isDefaultTargetPolicy()) return false;
             createSquareStrike(definition.getTarget(), definition.getGuidedWeapon());
             return true;
         }
