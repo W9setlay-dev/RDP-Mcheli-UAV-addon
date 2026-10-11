@@ -55,10 +55,8 @@ public final class PerceptionTracker {
             }
         }
 
-        Iterator<MutableTrack> iterator = tracks.values().iterator();
-        while (iterator.hasNext()) {
-            if (iterator.next().missedFrames > MAX_TRACK_AGE_FRAMES) iterator.remove();
-        }
+        tracks.values().removeIf(
+                mutableTrack -> mutableTrack.missedFrames > MAX_TRACK_AGE_FRAMES);
         return snapshot();
     }
 
@@ -149,13 +147,10 @@ public final class PerceptionTracker {
     }
 
     private static final class Association {
-        static final Comparator<Association> ORDER = new Comparator<Association>() {
-            @Override
-            public int compare(Association first, Association second) {
-                int overlap = Double.compare(second.overlap, first.overlap);
-                return overlap != 0 ? overlap : Double.compare(first.distanceSquared,
-                        second.distanceSquared);
-            }
+        static final Comparator<Association> ORDER = (first, second) -> {
+            int overlap = Double.compare(second.overlap, first.overlap);
+            return overlap != 0 ? overlap : Double.compare(first.distanceSquared,
+                    second.distanceSquared);
         };
 
         final MutableTrack track;

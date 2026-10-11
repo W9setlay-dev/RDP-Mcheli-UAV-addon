@@ -115,12 +115,7 @@ final class VisionProcessingWorker {
             return;
         }
         running = true;
-        thread = new Thread(new Runnable() {
-            @Override
-            public void run() {
-                processLoop();
-            }
-        }, "RDP-UAV-Vision");
+        thread = new Thread(this::processLoop, "RDP-UAV-Vision");
         thread.setDaemon(true);
         thread.start();
     }
@@ -165,7 +160,7 @@ final class VisionProcessingWorker {
                             failure.getClass().getSimpleName() + ": " + failure.getMessage(),
                             failedAt - startedAt,
                             Math.max(0L, failedAt - frame.getCapturedAtNanos()),
-                            droppedFrames, Collections.<PerceptionTracker.TrackView>emptyList());
+                            droppedFrames, Collections.emptyList());
                 }
             } finally {
                 buffers.release(frame.ownedPixels());
