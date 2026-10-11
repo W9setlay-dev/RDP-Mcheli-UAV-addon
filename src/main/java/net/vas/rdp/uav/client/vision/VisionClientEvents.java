@@ -9,6 +9,7 @@ import com.cleanroommc.modularui.widget.WidgetTree;
 import com.norwood.mcheli.uav.WidgetUavCameraFeed;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Gui;
+import net.vas.rdp.uav.RdpUavDebug;
 import net.minecraftforge.client.event.RenderGameOverlayEvent;
 import net.minecraftforge.client.event.RenderWorldLastEvent;
 import net.minecraftforge.event.world.WorldEvent;
@@ -26,16 +27,33 @@ import java.util.concurrent.TimeUnit;
 @SideOnly(Side.CLIENT)
 public final class VisionClientEvents {
     private static final long FEED_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(2L);
+    private static volatile VisionClientEvents currentInstance;
     private final PixelBufferPool pixelBuffers = new PixelBufferPool();
     private final VisionProcessingWorker worker =
             new VisionProcessingWorker(pixelBuffers, VisionClientConfig.minimumFeatureScore);
     private final AsyncPixelCapture capture = new AsyncPixelCapture(pixelBuffers, worker);
+    private final VisionObservationStatus observation = new VisionObservationStatus();
+    private String loggedCaptureSession = "";
+    private String loggedResultSession = "";
+    private String loggedOverlaySession = "";
+    private String loggedFailureReason = "";
+    private long lastLoggedOverlaySequence = -1L;
     private long lastFeedEventNanos;
     private boolean feedObserved;
     private boolean resetGpuResources;
     private final Map<ModularGuiContext, Boolean> assistContexts = new WeakHashMap<>();
     private ModularGuiContext cachedFeedContext;
     private WidgetUavCameraFeed cachedFeed;
+
+    public VisionClientEvents() {
+        currentInstance = this;
+    }
+
+    public static VisionObservationStatus.Snapshot observationSnapshot() {
+        VisionClientEvents current = currentInstance;
+        return current == null ? VisionObservationStatus.waitingSnapshot()
+                : current.observation.snapshot();
+    }
 
     @SubscribeEvent
     public void onRenderWorldLast(RenderWorldLastEvent event) {
@@ -47,10 +65,41 @@ public final class VisionClientEvents {
         }
         feedObserved = true;
         lastFeedEventNanos = System.nanoTime();
+        String cameraId = minecraft.getRenderViewEntity() == null ? "unavailable"
+                : minecraft.getRenderViewEntity().getUniqueID().toString();
+        boolean newSession = !observation.snapshot().isFeedActive();
+        observation.feedStarted(cameraId, capture.getLastIssuedSequence() + 1L);
+        if (newSession) {
+            loggedCaptureSession = "";
+            loggedResultSession = "";
+            loggedOverlaySession = "";
+            loggedFailureReason = "";
+            lastLoggedOverlaySequence = -1L;
+            RdpUavDebug.event("Vision", "OBSERVATION_SESSION_STARTED",
+                    "session", observation.snapshot().shortSessionId(),
+                    "camera", cameraId, "source", "mcheli-uav-feed");
+        }
         try {
-            capture.capture(minecraft);
+            if (capture.capture(minecraft)) {
+                long sequence = capture.getLastIssuedSequence();
+                observation.frameCaptured(sequence, capture.getLastIssuedCaptureNanos());
+                String session = observation.snapshot().shortSessionId();
+                if (!session.equals(loggedCaptureSession) || sequence % 25L == 0L) {
+                    RdpUavDebug.event("Vision", "FRAME_CAPTURE_ISSUED",
+                            "session", session,
+                            "sequence", sequence);
+                    loggedCaptureSession = session;
+                }
+            } else {
+                observation.observePipeline(worker.snapshot());
+            }
         } catch (RuntimeException failure) {
-            worker.unavailable("Client capture failed: " + failure.getClass().getSimpleName());
+            String reason = "Client capture failed: " + failure.getClass().getSimpleName();
+            worker.unavailable(reason);
+            observation.unavailable(reason);
+            RdpUavDebug.event("Vision", "CAPTURE_FAILED",
+                    "session", observation.snapshot().shortSessionId(),
+                    "reason", failure.getClass().getSimpleName());
         }
     }
 
@@ -58,6 +107,16 @@ public final class VisionClientEvents {
     public void onClientTick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
         registerAssistCallback(Minecraft.getMinecraft());
+        observePublishedResult();
+        if (!VisionClientConfig.enabled) {
+            boolean sessionWasActive = observation.snapshot().isFeedActive();
+            String session = observation.snapshot().shortSessionId();
+            observation.feedStopped("Perception disabled");
+            if (sessionWasActive) {
+                RdpUavDebug.event("Vision", "OBSERVATION_SESSION_STOPPED",
+                        "session", session, "reason", "DISABLED");
+            }
+        }
         if (!hasGlContext()) return;
 
         if (!VisionClientConfig.enabled) {
@@ -82,6 +141,13 @@ public final class VisionClientEvents {
             feedObserved = false;
             capture.clearWorld();
             capture.closeGlResources();
+            boolean sessionWasActive = observation.snapshot().isFeedActive();
+            String session = observation.snapshot().shortSessionId();
+            observation.feedStopped("McHeli UAV camera feed is no longer rendering");
+            if (sessionWasActive) {
+                RdpUavDebug.event("Vision", "OBSERVATION_SESSION_STOPPED",
+                        "session", session, "reason", "FEED_TIMEOUT");
+            }
         }
     }
 
@@ -90,6 +156,13 @@ public final class VisionClientEvents {
         if (event.getWorld().isRemote) {
             feedObserved = false;
             capture.clearWorld();
+            boolean sessionWasActive = observation.snapshot().isFeedActive();
+            String session = observation.snapshot().shortSessionId();
+            observation.feedStopped("Client world unloaded");
+            if (sessionWasActive) {
+                RdpUavDebug.event("Vision", "OBSERVATION_SESSION_STOPPED",
+                        "session", session, "reason", "WORLD_UNLOAD");
+            }
             resetGpuResources = true;
         }
     }
@@ -100,6 +173,7 @@ public final class VisionClientEvents {
                 VisionClientConfig.overlayEnabled, VisionClientConfig.presentationMode)
                 || event.getType() != RenderGameOverlayEvent.ElementType.ALL) return;
         PerceptionSnapshot state = worker.snapshot();
+        observePublishedResult();
         Minecraft minecraft = Minecraft.getMinecraft();
         int color = state.getState() == PerceptionSnapshot.State.OPERATIONAL
                 ? 0xFF80FF80 : state.getState() == PerceptionSnapshot.State.DEGRADED
@@ -148,6 +222,15 @@ public final class VisionClientEvents {
         draw(minecraft, "Frame age: " + age + ", dropped "
                         + (state.getDroppedFrames() + capture.getDroppedFrames()),
                 y, 0xFFFFFFFF);
+        VisionObservationStatus.Snapshot status = observation.snapshot();
+        y += lineHeight;
+        draw(minecraft, "Observation " + status.shortSessionId() + ": "
+                        + status.getStage() + " C/P/O="
+                        + status.getCapturedSequence() + "/"
+                        + status.getProcessedSequence() + "/"
+                        + status.getPresentedSequence(),
+                y, 0xFFB0B0B0);
+        recordOverlay("DIAGNOSTICS", state.getSequence(), System.nanoTime());
     }
 
     private void registerAssistCallback(Minecraft minecraft) {
@@ -175,6 +258,7 @@ public final class VisionClientEvents {
         Area area = feed.getArea();
         if (area.width <= 0 || area.height <= 0) return;
         PerceptionSnapshot state = worker.snapshot();
+        observePublishedResult();
         long now = System.nanoTime();
         boolean fresh = VisionPresentationPolicy.isSnapshotFresh(state, now);
         if (!fresh) {
@@ -183,6 +267,7 @@ public final class VisionClientEvents {
                     : state.getStatusReason();
             drawStatusPanel(minecraft, area.x, area.y, area.width,
                     "VISION " + state.getState() + " - " + reason);
+            recordOverlay("ASSIST_STATUS", -1L, now);
             return;
         }
 
@@ -223,6 +308,7 @@ public final class VisionClientEvents {
             drawStatusPanel(minecraft, area.x, area.y, area.width,
                     "VISION OPERATIONAL - NO DETECTIONS");
         }
+        recordOverlay("ASSIST", state.getSequence(), now);
     }
 
     private WidgetUavCameraFeed findFeedWidget(ModularGuiContext context) {
@@ -305,6 +391,59 @@ public final class VisionClientEvents {
             return GLContext.getCapabilities().OpenGL30;
         } catch (IllegalStateException unavailable) {
             return false;
+        }
+    }
+
+    private void observePublishedResult() {
+        PerceptionSnapshot state = worker.snapshot();
+        long previousSequence = observation.snapshot().getProcessedSequence();
+        observation.observePipeline(state);
+        VisionObservationStatus.Snapshot status = observation.snapshot();
+        if (status.getProcessedSequence() > previousSequence) {
+            long sequence = status.getProcessedSequence();
+            if (!status.shortSessionId().equals(loggedResultSession)
+                    || sequence % 25L == 0L) {
+                RdpUavDebug.event("Vision", "RESULT_PUBLISHED",
+                        "session", status.shortSessionId(),
+                        "sequence", sequence,
+                        "tracks", state.getTracks().size(),
+                        "processing_ms", TimeUnit.NANOSECONDS.toMillis(
+                                state.getProcessingNanos()));
+                loggedResultSession = status.shortSessionId();
+            }
+        }
+        if ((state.getState() == PerceptionSnapshot.State.UNAVAILABLE
+                || state.getState() == PerceptionSnapshot.State.DEGRADED)
+                && !state.getStatusReason().equals(loggedFailureReason)) {
+            RdpUavDebug.event("Vision", "PIPELINE_FAILURE",
+                    "session", status.shortSessionId(),
+                    "state", state.getState(),
+                    "reason", state.getStatusReason());
+            loggedFailureReason = state.getStatusReason();
+        } else if (state.getState() == PerceptionSnapshot.State.OPERATIONAL) {
+            loggedFailureReason = "";
+        }
+    }
+
+    private void recordOverlay(String mode, long sequence, long renderedAtNanos) {
+        observation.overlayRendered(mode, sequence, renderedAtNanos);
+        VisionObservationStatus.Snapshot status = observation.snapshot();
+        if (status.getStage() == VisionObservationStatus.Stage.PRESENTED
+                && (!status.shortSessionId().equals(loggedOverlaySession)
+                || lastLoggedOverlaySequence < 0L
+                || status.getPresentedSequence() != lastLoggedOverlaySequence
+                && status.getPresentedSequence() % 25L == 0L)) {
+            RdpUavDebug.event("Vision", "OVERLAY_RENDERED",
+                    "session", status.shortSessionId(),
+                    "mode", mode, "sequence", status.getPresentedSequence());
+            loggedOverlaySession = status.shortSessionId();
+            lastLoggedOverlaySequence = status.getPresentedSequence();
+        } else if (status.getStage() == VisionObservationStatus.Stage.STATUS_ONLY
+                && !status.shortSessionId().equals(loggedOverlaySession)) {
+            RdpUavDebug.event("Vision", "OVERLAY_STATUS_RENDERED",
+                    "session", status.shortSessionId(), "mode", mode,
+                    "pipeline", status.getPipelineState());
+            loggedOverlaySession = status.shortSessionId();
         }
     }
 }

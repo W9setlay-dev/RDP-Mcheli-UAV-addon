@@ -14,6 +14,10 @@
 !DEVELOPER_GUIDE.md
 !README.md
 !docs/engineering/active-work.md
+!docs/engineering/MACHINE_VISION_AUDIT.md
+!docs/engineering/MACHINE_VISION_ARCHITECTURE.md
+!docs/engineering/MACHINE_VISION_EXECUTION_PLAN.md
+!docs/engineering/MACHINE_VISION_TEST_REPORT.md
 .copilot/
 .copilot/*.md
 .github/

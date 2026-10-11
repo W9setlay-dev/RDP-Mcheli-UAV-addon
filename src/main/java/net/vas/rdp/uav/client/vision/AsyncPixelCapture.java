@@ -28,6 +28,8 @@ final class AsyncPixelCapture {
     private int width;
     private int height;
     private long sequence;
+    private long lastIssuedSequence = -1L;
+    private long lastIssuedCaptureNanos;
     private long nextCaptureNanos;
     private long lastCaptureOverheadNanos;
     private long droppedFrames;
@@ -44,15 +46,15 @@ final class AsyncPixelCapture {
         for (int i = 0; i < slots.length; i++) slots[i] = new PboSlot();
     }
 
-    void capture(Minecraft minecraft) {
+    boolean capture(Minecraft minecraft) {
         if (!supported()) {
             worker.unavailable("OpenGL 3.2 sync, framebuffer blit, or PBO support is unavailable");
-            return;
+            return false;
         }
         if (minecraft == null || minecraft.world == null
                 || minecraft.displayWidth <= 0 || minecraft.displayHeight <= 0) {
             worker.unavailable("Client render source is unavailable");
-            return;
+            return false;
         }
         String worldKey = System.identityHashCode(minecraft.world) + ":"
                 + minecraft.world.provider.getDimension();
@@ -71,23 +73,25 @@ final class AsyncPixelCapture {
             } catch (RuntimeException failure) {
                 worker.unavailable("Perception framebuffer initialization failed: "
                         + failure.getClass().getSimpleName());
-                return;
+                return false;
             }
         }
 
         long now = System.nanoTime();
         pollOneReadyFrame(now);
         long interval = 1_000_000_000L / VisionClientConfig.captureRateHz;
-        if (now < nextCaptureNanos) return;
+        if (now < nextCaptureNanos) return false;
         nextCaptureNanos = now + interval;
         PboSlot slot = freeSlot();
         if (slot == null) {
             droppedFrames++;
-            return;
+            return false;
         }
-        issueReadback(minecraft, slot, now);
+        return issueReadback(minecraft, slot, now);
     }
 
+    long getLastIssuedSequence() { return lastIssuedSequence; }
+    long getLastIssuedCaptureNanos() { return lastIssuedCaptureNanos; }
     long getLastCaptureOverheadNanos() { return lastCaptureOverheadNanos; }
     long getCaptureP95Nanos() {
         if (sampleCount == 0) return 0L;
@@ -243,12 +247,12 @@ final class AsyncPixelCapture {
         }
     }
 
-    private void issueReadback(Minecraft minecraft, PboSlot slot, long now) {
+    private boolean issueReadback(Minecraft minecraft, PboSlot slot, long now) {
         long startedAt = System.nanoTime();
         int sourceFramebuffer = GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING);
         if (sourceFramebuffer == 0) {
             worker.unavailable("McHeli feed render event has no bound source framebuffer");
-            return;
+            return false;
         }
 
         int previousRead = GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING);
@@ -279,12 +283,18 @@ final class AsyncPixelCapture {
             GL11.glReadPixels(0, 0, width, height, GL11.GL_RGBA,
                     GL11.GL_UNSIGNED_BYTE, 0L);
             slot.sync = GL32.glFenceSync(GL32.GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+            if (slot.sync == null) {
+                throw new IllegalStateException("GPU pixel-readback fence could not be created");
+            }
             slot.sequence = sequence++;
             slot.capturedAtNanos = now;
             slot.cameraId = cameraId(minecraft);
+            lastIssuedSequence = slot.sequence;
+            lastIssuedCaptureNanos = now;
         } catch (RuntimeException failure) {
             releaseSlot(slot);
             worker.unavailable("GPU frame capture failed: " + failure.getClass().getSimpleName());
+            return false;
         } finally {
             GL15.glBindBuffer(ARBPixelBufferObject.GL_PIXEL_PACK_BUFFER_ARB, previousPackBuffer);
             GL11.glPixelStorei(GL11.GL_PACK_ALIGNMENT, packParameters[0]);
@@ -301,6 +311,7 @@ final class AsyncPixelCapture {
             sampleCount = Math.min(sampleCount + 1, SAMPLE_COUNT);
             updateCaptureRate(now);
         }
+        return true;
     }
 
     private PboSlot freeSlot() {

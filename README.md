@@ -37,6 +37,13 @@ This branch also includes a client-only machine-vision experiment for the McHeli
 
 Press **F7** (rebindable under RDP UAV controls) to cycle **Normal → Assist → Diagnostics**. Normal leaves the standard view untouched; Assist draws snapshot-backed image-space track boxes in the McHeli UAV feed widget; Diagnostics shows the existing measured pipeline status overlay when `perception.overlayEnabled=true`. `perception.enabled` remains the independent capture switch. Track labels identify `match` scores, not probabilities; stale tracks are dashed and labeled, lost tracks show status only, and detections are hidden once the result is older than two seconds.
 
+Diagnostics now includes a local observation-session ID and separate captured,
+processed, and presented frame sequence numbers. The mission monitor can show
+the current client session beside mission telemetry as context only; this is
+not server telemetry, mission evidence, or a persisted/networked observation.
+With RDP-UAV debug logging enabled, sampled `[DEBUG][Vision]` events expose
+session start/stop and the capture-to-result-to-overlay sequence.
+
 Feed widget coordinates are obtained from the active ModularUI widget area after its UI render, while the source feed is captured from the McHeli render framebuffer. The overlay is drawn after widget rendering, so it does not enter perception pixels.
 
 The feature is intended as a local diagnostic/visualization pipeline, not as an authoritative world-sensor system. Source validation and unit tests pass, but live in-game frame binding, feed accuracy, and performance are still runtime-unverified until the manual validation procedure is run in a matching Forge/McHeli client session.

@@ -14,6 +14,7 @@ import net.vas.rdp.uav.mission.UavControlAccess;
 import net.vas.rdp.uav.weapon.GuidedWeaponRegistry;
 import net.vas.rdp.uav.RdpUavDebug;
 import net.vas.rdp.uav.network.RdpUavNetwork;
+import net.vas.rdp.uav.client.vision.VisionClientEvents;
 import net.vas.rdp.uav.target.TargetClassifier;
 import net.vas.rdp.uav.target.TargetPolicy;
 import net.vas.rdp.uav.mission.MissionDefinition;
@@ -987,6 +988,19 @@ public final class GuiMissionControl extends GuiScreen {
         drawString(fontRenderer, "WINGMAN: " + data.wingmanState, x, y + 96, 0xFFFFFF);
         if (!data.failureReason.isEmpty()) drawString(fontRenderer, "ALERT: " + data.failureReason,
                 x, y + 109, 0xFF5555);
+        net.vas.rdp.uav.client.vision.VisionObservationStatus.Snapshot observation =
+                VisionClientEvents.observationSnapshot();
+        String missionContext = data.missionId == null || data.missionId.isEmpty()
+                ? "none" : data.missionId.substring(0, Math.min(8, data.missionId.length()));
+        String visionLine = "LOCAL VISION (context only): mission " + missionContext
+                + " / " + observation.getStage() + " C/P/O="
+                + observation.getCapturedSequence() + "/"
+                + observation.getProcessedSequence() + "/"
+                + observation.getPresentedSequence();
+        drawString(fontRenderer, fontRenderer.trimStringToWidth(visionLine, 224),
+                x, y + 122, 0xFFB0B0B0);
+        drawString(fontRenderer, "Not server telemetry or mission evidence. Session "
+                + observation.shortSessionId(), x, y + 135, 0xFF888888);
     }
 
     private void drawHelp() {
