@@ -202,7 +202,7 @@ public class MissionLifecycleContractTest {
     }
 
     @Test
-    public void aircraftWideReleaseDoesNotDropAnActiveMissionLease() {
+    public void aircraftWideReleaseClearsTheActiveMissionLease() {
         UUID aircraftId = UUID.randomUUID();
         RDPMission mission = mission(0, aircraftId);
         mission.transitionTo(MissionState.DISPATCHED, 1);
@@ -214,11 +214,10 @@ public class MissionLifecycleContractTest {
         assertTrue(MissionMovementAuthority.canIssueNativeControl(mission, aircraftId, 5));
 
         MissionMovementAuthority.releaseControl(aircraftId);
-
-        assertTrue(MissionMovementAuthority.canIssueNativeControl(mission, aircraftId, 5));
-
-        MissionMovementAuthority.releaseControl(aircraftId, mission.getMissionId());
         assertFalse(MissionMovementAuthority.canIssueNativeControl(mission, aircraftId, 5));
+
+        assertTrue(MissionMovementAuthority.claimControl(mission, aircraftId, 6));
+        assertTrue(MissionMovementAuthority.canIssueNativeControl(mission, aircraftId, 6));
     }
 
     @Test

@@ -133,6 +133,20 @@ public class MissionMovementAuthorityTest {
     }
 
     @Test
+    public void directAircraftReleaseClearsStaleLeaseAndAllowsNextMissionClaim() {
+        RDPMission first = mission();
+        RDPMission second = mission();
+        UUID aircraftId = UUID.randomUUID();
+
+        assertTrue(MissionMovementAuthority.claimControl(first, aircraftId, 40L));
+        MissionMovementAuthority.releaseControl(aircraftId);
+
+        assertTrue(MissionMovementAuthority.claimControl(second, aircraftId, 41L));
+        assertTrue(MissionMovementAuthority.canIssueNativeControl(second, aircraftId, 41L));
+        assertFalse(MissionMovementAuthority.canIssueNativeControl(first, aircraftId, 41L));
+    }
+
+    @Test
     public void expiredLeaseIsDroppedOnTickBasedCleanup() {
         RDPMission mission = mission();
         UUID aircraftId = UUID.randomUUID();

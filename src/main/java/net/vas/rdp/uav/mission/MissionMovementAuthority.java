@@ -127,18 +127,14 @@ public final class MissionMovementAuthority {
     }
 
     /**
-     * Releasing by aircraft alone is intentionally conservative. Route resets or
-     * WingMan bookkeeping may clear the underlying route state without owning the
-     * mission handoff; dropping the active lease here would allow a replan loop to
-     * stall on a valid mission. Only the mission-aware release path may revoke an
-     * active control lease for a live aircraft.
+     * Clears the current native-control lease when WingMan or a direct route reset
+     * drops the aircraft's mission flow without a matching mission handoff. This
+     * is the only safe release path for direct native route teardown; without it,
+     * a stale lease can outlive the actual route and reject the next valid mission.
      */
     public static void releaseControl(UUID aircraftId) {
         if (aircraftId == null) return;
-        AircraftControlLease active = ACTIVE_LEASES.get(aircraftId);
-        if (active == null) {
-            ACTIVE_LEASES.remove(aircraftId);
-        }
+        ACTIVE_LEASES.remove(aircraftId);
     }
 
     /** Release the lease immediately when it is clearly stale for the current tick. */
