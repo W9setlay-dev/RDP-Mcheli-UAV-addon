@@ -33,6 +33,7 @@ public final class MissionDefinition {
     private String guidanceMode = "AI_APPROACH";
     private String executionMode = "MISSION_DEFINED";
     private String recoveryMode = "RETURN_TO_BASE";
+    private Integer cruiseAltitudeY;
     private List<MissionWaypoint> waypoints = Collections.emptyList();
 
     /** @return the mission category selected by the operator */
@@ -69,6 +70,8 @@ public final class MissionDefinition {
     public String getExecutionMode() { return executionMode; }
     /** @return the recovery mode selected after mission completion or shutdown */
     public String getRecoveryMode() { return recoveryMode; }
+    /** @return the requested absolute world-Y cruise altitude, or {@code null} for profile default */
+    public Integer getCruiseAltitudeY() { return cruiseAltitudeY; }
     /** @return the ordered patrol or route waypoints attached to the mission */
     public List<MissionWaypoint> getWaypoints() { return waypoints; }
 
@@ -155,6 +158,14 @@ public final class MissionDefinition {
     }
     /** @param value the recovery-mode token to normalize and store */
     public void setRecoveryMode(String value) { recoveryMode = normalizeMode(value);
+    }
+    /** @param value absolute world Y, or {@code null} to use the legacy profile default */
+    public MissionDefinition setCruiseAltitudeY(Integer value) {
+        if (value != null && (value < 1 || value > 4094)) {
+            throw new IllegalArgumentException("Cruise altitude must be in 1..4094");
+        }
+        cruiseAltitudeY = value;
+        return this;
     }
     /**
      * Replaces the waypoint list after validating it against the patrol-route codec.

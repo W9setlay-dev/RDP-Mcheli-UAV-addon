@@ -47,6 +47,11 @@ public final class MissionValidationResult {
             errors.add("Target must be namespace:id or mod=namespace");
         }
         if (definition.getMissionType() == null) errors.add("Mission type is required");
+        if (definition.getCruiseAltitudeY() != null
+                && (definition.getCruiseAltitudeY() < 1
+                || definition.getCruiseAltitudeY() > 4094)) {
+            errors.add("Cruise altitude must be in 1..4094");
+        }
         if (definition.isSwarmEnabled() && definition.getSwarmMaximumMembers() < 1) {
             errors.add("Swarm size must be positive");
         }

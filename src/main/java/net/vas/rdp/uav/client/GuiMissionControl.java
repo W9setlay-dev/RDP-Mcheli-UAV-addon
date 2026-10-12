@@ -42,6 +42,7 @@ public final class GuiMissionControl extends GuiScreen {
     private GuiTextField filterField;
     private GuiTextField policyField;
     private GuiTextField patrolRouteField;
+    private GuiTextField cruiseAltitudeField;
     private String status = "";
     private String pendingDangerAction;
     private String pendingDangerMissionId;
@@ -249,6 +250,10 @@ public final class GuiMissionControl extends GuiScreen {
         if (patrolRouteField == null) {
             patrolRouteField = new GuiTextField(15, fontRenderer, left, 42, 425, 18);
             patrolRouteField.setMaxStringLength(512);
+        }
+        if (cruiseAltitudeField == null) {
+            cruiseAltitudeField = new GuiTextField(16, fontRenderer, left, 116, 90, 18);
+            cruiseAltitudeField.setMaxStringLength(4);
         }
         rebuildButtons();
         requestRefresh();
@@ -470,6 +475,7 @@ public final class GuiMissionControl extends GuiScreen {
             rebuildButtons();
         } else if (button.id == 0) requestData();
         else if (button.id == 26) {
+            if (!syncCruiseAltitude()) return;
             definition.setTarget(targetField == null ? "" : targetField.getText());
             MissionValidationResult validation = MissionValidationResult.validate(definition);
             status = validation.isValid() ? "Mission definition is valid."
@@ -477,6 +483,7 @@ public final class GuiMissionControl extends GuiScreen {
             activeTab = MissionGuiTab.VALIDATION;
             rebuildButtons();
         } else if (button.id == 27) {
+            if (!syncCruiseAltitude()) return;
             definition.setTarget(targetField == null ? "" : targetField.getText());
             if (MissionValidationResult.validate(definition).isValid()) {
                 savedDefinition = MissionDefinitionCodec.write(definition);
@@ -495,13 +502,18 @@ public final class GuiMissionControl extends GuiScreen {
                         .setPriority(loaded.getPriority())
                         .setAttack(loaded.isAttack())
                         .setSwarmEnabled(loaded.isSwarmEnabled())
-                        .setSwarmMaximumMembers(loaded.getSwarmMaximumMembers());
+                        .setSwarmMaximumMembers(loaded.getSwarmMaximumMembers())
+                        .setCruiseAltitudeY(loaded.getCruiseAltitudeY());
                 if (targetField != null) targetField.setText(loaded.getTarget());
+                if (cruiseAltitudeField != null) cruiseAltitudeField.setText(
+                        loaded.getCruiseAltitudeY() == null
+                                ? "" : loaded.getCruiseAltitudeY().toString());
                 if (policyField != null) policyField.setText(policyText(loaded.getTargetPolicy()));
                 status = "Saved mission definition loaded.";
             }
             rebuildButtons();
         } else if (button.id == 29) {
+            if (!syncCruiseAltitude()) return;
             definition.setTarget(targetField == null ? "" : targetField.getText())
                     .setAttack(definition.getMissionType() == MissionType.STRIKE);
             MissionValidationResult validation = MissionValidationResult.validate(definition);
@@ -639,6 +651,7 @@ public final class GuiMissionControl extends GuiScreen {
     }
 
     private void createEntityMission(boolean attack) {
+        if (!syncCruiseAltitude()) return;
         String target = targetField == null ? "" : targetField.getText().trim();
         if (!target.matches("(?i)(mod=[A-Za-z0-9_.-]+|[A-Za-z0-9_.-]+:[A-Za-z0-9_./-]+)")) {
             status = "Enter namespace:id or mod=namespace.";
@@ -665,6 +678,7 @@ public final class GuiMissionControl extends GuiScreen {
     }
 
     private void createPatrolMission() {
+        if (!syncCruiseAltitude()) return;
         try {
             definition.setMissionType(MissionType.PATROL)
                     .setTarget("")
@@ -778,13 +792,15 @@ public final class GuiMissionControl extends GuiScreen {
     }
 
     private void createSquareMission() {
+        if (!syncCruiseAltitude()) return;
         String parameters = targetField == null ? "" : targetField.getText().trim();
         if (!parameters.matches("-?[0-9.]+\\s+-?[0-9.]+\\s+-?[0-9.]+(\\s+[0-9.]+)?")) {
             status = "Square format: X Y Z [size].";
             return;
         }
         definition.setTarget(parameters).setAttack(true).setMissionType(MissionType.SQUARE_STRIKE);
-        RdpUavNetwork.createSquareStrike(parameters, selectedGuidedWeaponName());
+        RdpUavNetwork.createSquareStrike(parameters, selectedGuidedWeaponName(),
+                definition.getCruiseAltitudeY());
         status = "Autonomous square strike submitted to WingMan.";
     }
 
@@ -796,6 +812,21 @@ public final class GuiMissionControl extends GuiScreen {
     private String guidedWeaponButtonLabel() {
         return guidedWeaponNames.length == 0 ? "Weapon: none supported"
                 : "Weapon: " + guidedWeaponNames[selectedGuidedWeapon];
+    }
+
+    private boolean syncCruiseAltitude() {
+        String value = cruiseAltitudeField == null ? "" : cruiseAltitudeField.getText().trim();
+        if (value.isEmpty()) {
+            definition.setCruiseAltitudeY(null);
+            return true;
+        }
+        try {
+            definition.setCruiseAltitudeY(Integer.valueOf(value));
+            return true;
+        } catch (IllegalArgumentException invalid) {
+            status = "Cruise altitude must be a whole-number world Y in 1..4094.";
+            return false;
+        }
     }
 
     protected void keyTyped(char typedChar, int keyCode) throws IOException {
@@ -811,6 +842,8 @@ public final class GuiMissionControl extends GuiScreen {
             return;
         }
         if (policyField != null && policyField.textboxKeyTyped(typedChar, keyCode)) return;
+        if (activeTab == MissionGuiTab.EXECUTION && cruiseAltitudeField != null
+                && cruiseAltitudeField.textboxKeyTyped(typedChar, keyCode)) return;
         if (patrolRouteField != null && patrolRouteField.textboxKeyTyped(typedChar, keyCode)) return;
         super.keyTyped(typedChar, keyCode);
     }
@@ -824,6 +857,9 @@ public final class GuiMissionControl extends GuiScreen {
         if (targetField != null) targetField.mouseClicked(mouseX, mouseY, mouseButton);
         if (filterField != null) filterField.mouseClicked(mouseX, mouseY, mouseButton);
         if (policyField != null) policyField.mouseClicked(mouseX, mouseY, mouseButton);
+        if (cruiseAltitudeField != null) {
+            cruiseAltitudeField.mouseClicked(mouseX, mouseY, mouseButton);
+        }
         if (patrolRouteField != null) patrolRouteField.mouseClicked(mouseX, mouseY, mouseButton);
     }
 
@@ -875,6 +911,11 @@ public final class GuiMissionControl extends GuiScreen {
                 if (policyField != null) policyField.drawTextBox();
             }
             if (!status.isEmpty()) drawString(fontRenderer, status, left, 64, 0xFFCC66);
+            if (activeTab == MissionGuiTab.EXECUTION) {
+                drawString(fontRenderer, "ABSOLUTE CRUISE WORLD Y (blank = profile default)",
+                        left, 100, 0xB0D8FF);
+                if (cruiseAltitudeField != null) cruiseAltitudeField.drawTextBox();
+            }
             drawString(fontRenderer, activeTab == MissionGuiTab.PATROL ? "PATROL / LOITER ROUTE"
                     : uavMode ? "UAV MISSIONS" : "GUIDED WEAPON MODE",
                     left, 80, 0x88FFAA);

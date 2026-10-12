@@ -16,7 +16,7 @@ import net.vas.rdp.uav.target.TargetSpec;
 import java.util.UUID;
 
 public final class MissionNbtCodec {
-    private static final int CURRENT_SCHEMA = 9;
+    private static final int CURRENT_SCHEMA = 10;
     private MissionNbtCodec() {
     }
 
@@ -92,6 +92,7 @@ public final class MissionNbtCodec {
         tag.setString("recoveryReason", mission.getRecoveryReason() == null ? "" : mission.getRecoveryReason());
         tag.setDouble("squareWidth", mission.getSquareWidth());
         tag.setDouble("squareDepth", mission.getSquareDepth());
+        if (mission.hasCruiseAltitudeY()) tag.setDouble("cruiseAltitudeY", mission.getCruiseAltitudeY());
         if (!mission.getPatrolRoute().isEmpty()) {
             NBTTagList route = new NBTTagList();
             for (MissionWaypoint waypoint : mission.getPatrolRoute()) {
@@ -169,8 +170,14 @@ public final class MissionNbtCodec {
         MissionExecutionStage executionStage = tag.hasKey("executionStage")
                 ? enumValue(tag, "executionStage", MissionExecutionStage.class)
                 : MissionExecutionStage.fromState(restoredState, mission.getMissionType());
-        if (executionStage != MissionExecutionStage.fromState(
-                restoredState, mission.getMissionType())) {
+        MissionExecutionStage stateStage = MissionExecutionStage.fromState(
+                restoredState, mission.getMissionType());
+        if (schemaVersion < CURRENT_SCHEMA
+                && executionStage == MissionExecutionStage.TERMINAL
+                && stateStage == MissionExecutionStage.TARGET_TRACK) {
+            executionStage = stateStage;
+        }
+        if (executionStage != stateStage) {
             throw new IllegalArgumentException("Mission execution stage does not match state");
         }
         String parent = tag.hasKey("parentMissionId") ? tag.getString("parentMissionId") : "";
@@ -182,6 +189,9 @@ public final class MissionNbtCodec {
             mission.setSwarmId(parseUuid(tag.getString("swarmId"), "swarmId"));
         }
         mission.setDimension(tag.getInteger("dimension"));
+        if (tag.hasKey("cruiseAltitudeY")) {
+            mission.setCruiseAltitudeY(finiteDouble(tag, "cruiseAltitudeY"));
+        }
         if (mission.getMissionType() == MissionType.PATROL && tag.hasKey("patrolRoute")) {
             NBTTagList routeTag = tag.getTagList("patrolRoute", 10);
             if (routeTag.tagCount() > net.vas.rdp.uav.mission.PatrolRouteCodec.MAX_WAYPOINTS) {

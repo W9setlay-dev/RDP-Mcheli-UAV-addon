@@ -29,6 +29,17 @@ public final class TerrainRoutePlanner {
                                    double aircraftSpeed, double targetX, double targetY,
                                    double targetZ, UavVehicleProfile profile, long tick,
                                    double pitchTrimDegrees, boolean terminalCommit) {
+        return planTransit(world, perception, aircraftX, aircraftY, aircraftZ,
+                aircraftSpeed, targetX, targetY, targetZ, profile, tick,
+                pitchTrimDegrees, terminalCommit, Double.NaN);
+    }
+
+    public static Plan planTransit(World world, WorldPerceptionAdapter perception,
+                                   double aircraftX, double aircraftY, double aircraftZ,
+                                   double aircraftSpeed, double targetX, double targetY,
+                                   double targetZ, UavVehicleProfile profile, long tick,
+                                   double pitchTrimDegrees, boolean terminalCommit,
+                                   double requestedCruiseY) {
         if (world == null || perception == null || profile == null
                 || !finite(aircraftX, aircraftY, aircraftZ, aircraftSpeed,
                 targetX, targetY, targetZ, pitchTrimDegrees)
@@ -102,12 +113,25 @@ public final class TerrainRoutePlanner {
             routeY = clamp(targetY + verticalTrim, highestSurface + 0.5D,
                     world.getHeight() - 2.0D);
         } else {
-            AltitudeDecision altitude = transitAltitude(highestSurface,
-                    world.getHeight(), pitchTrimDegrees, profile);
-            if (!altitude.safe) {
-                return Plan.hold(aircraftX, aircraftY, aircraftZ, altitude.reason);
+            if (Double.isFinite(requestedCruiseY)) {
+                if (requestedCruiseY < 1.0D || requestedCruiseY > world.getHeight() - 2.0D) {
+                    return Plan.hold(aircraftX, aircraftY, aircraftZ,
+                            "CRUISE_ALTITUDE_OUT_OF_WORLD_BOUNDS");
+                }
+                AltitudeDecision altitude = transitAltitude(highestSurface,
+                        world.getHeight(), pitchTrimDegrees, profile, requestedCruiseY);
+                if (!altitude.safe) {
+                    return Plan.hold(aircraftX, aircraftY, aircraftZ, altitude.reason);
+                }
+                routeY = altitude.y;
+            } else {
+                AltitudeDecision altitude = transitAltitude(highestSurface,
+                        world.getHeight(), pitchTrimDegrees, profile);
+                if (!altitude.safe) {
+                    return Plan.hold(aircraftX, aircraftY, aircraftZ, altitude.reason);
+                }
+                routeY = altitude.y;
             }
-            routeY = altitude.y;
         }
         double routeX = distance > lookahead ? aircraftX + dx * (lookahead / distance) : targetX;
         double routeZ = distance > lookahead ? aircraftZ + dz * (lookahead / distance) : targetZ;
@@ -173,6 +197,15 @@ public final class TerrainRoutePlanner {
                                                    double worldHeight,
                                                    double pitchTrimDegrees,
                                                    UavVehicleProfile profile) {
+        return transitAltitude(highestSurface, worldHeight, pitchTrimDegrees,
+                profile, Double.NaN);
+    }
+
+    public static AltitudeDecision transitAltitude(double highestSurface,
+                                                   double worldHeight,
+                                                   double pitchTrimDegrees,
+                                                   UavVehicleProfile profile,
+                                                   double requestedWorldY) {
         if (profile == null || !finite(highestSurface, worldHeight, pitchTrimDegrees)
                 || worldHeight <= 1.0D) {
             return new AltitudeDecision(false, Double.NaN, "INVALID_ALTITUDE_INPUT");
@@ -180,15 +213,29 @@ public final class TerrainRoutePlanner {
         double minimumY = highestSurface + profile.getMinimumAgl();
         double maximumY = Math.min(worldHeight - 2.0D,
                 highestSurface + profile.getMaximumAgl());
-        if (maximumY < minimumY || minimumY >= worldHeight - 1.0D) {
+        if (minimumY >= worldHeight - 1.0D) {
+            return new AltitudeDecision(false, Double.NaN,
+                    "MINIMUM_AGL_EXCEEDS_WORLD_HEIGHT");
+        }
+        double verticalTrim = Math.tan(Math.toRadians(clamp(pitchTrimDegrees,
+                -profile.getMaximumPitchCorrectionDegrees(),
+                profile.getMaximumPitchCorrectionDegrees()))) * 32.0D;
+        if (Double.isFinite(requestedWorldY)) {
+            if (requestedWorldY < 1.0D || requestedWorldY > worldHeight - 2.0D) {
+                return new AltitudeDecision(false, Double.NaN,
+                        "CRUISE_ALTITUDE_OUT_OF_WORLD_BOUNDS");
+            }
+            return new AltitudeDecision(true,
+                    clamp(requestedWorldY + verticalTrim, minimumY, worldHeight - 2.0D),
+                    requestedWorldY < minimumY ? "TERRAIN_CLEARANCE_OVERRIDES_CRUISE_ALTITUDE"
+                            : "ABSOLUTE_WORLD_Y_TRANSIT");
+        }
+        if (maximumY < minimumY) {
             return new AltitudeDecision(false, Double.NaN,
                     "MINIMUM_AGL_EXCEEDS_WORLD_HEIGHT");
         }
         double cruiseAgl = clamp(profile.getCruiseAgl(), profile.getMinimumAgl(),
                 profile.getMaximumAgl());
-        double verticalTrim = Math.tan(Math.toRadians(clamp(pitchTrimDegrees,
-                -profile.getMaximumPitchCorrectionDegrees(),
-                profile.getMaximumPitchCorrectionDegrees()))) * 32.0D;
         double desiredY = clamp(highestSurface + cruiseAgl + verticalTrim, minimumY, maximumY);
         double y = WorkingAltitudePolicy.enforceGroundSafety(profile, desiredY,
                 highestSurface, worldHeight);

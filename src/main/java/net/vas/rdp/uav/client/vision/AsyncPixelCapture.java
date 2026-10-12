@@ -7,8 +7,7 @@ import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL15;
 import org.lwjgl.opengl.GL30;
 import org.lwjgl.opengl.GL32;
-import org.lwjgl.opengl.GLSync;
-import org.lwjgl.opengl.GLContext;
+import org.lwjgl.opengl.GL;
 
 import java.nio.ByteBuffer;
 import java.util.Arrays;
@@ -122,37 +121,49 @@ final class AsyncPixelCapture {
 
     boolean hasGlResources() {
         if (framebuffer != 0 || renderbuffer != 0) return true;
-        for (PboSlot slot : slots) if (slot.buffer != 0) return true;
+        for (PboSlot slot : slots) {
+            if (slot.buffer != 0 || slot.sync.isPresent()) return true;
+        }
         return false;
     }
 
     void closeGlResources() {
-        if (framebuffer == 0 && renderbuffer == 0
-                && slots[0].buffer == 0 && slots[1].buffer == 0 && slots[2].buffer == 0) {
-            return;
-        }
+        if (!hasGlResources()) return;
         int previousPackBuffer = GL11.glGetInteger(
                 ARBPixelBufferObject.GL_PIXEL_PACK_BUFFER_BINDING_ARB);
         int previousRead = GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING);
         int previousDraw = GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
         int previousRenderbuffer = GL11.glGetInteger(GL30.GL_RENDERBUFFER_BINDING);
-        GL15.glBindBuffer(ARBPixelBufferObject.GL_PIXEL_PACK_BUFFER_ARB, 0);
-        for (PboSlot slot : slots) {
-            if (slot.sync != null) GL32.glDeleteSync(slot.sync);
-            slot.sync = null;
-            slot.sequence = -1L;
-            if (slot.buffer != 0) GL15.glDeleteBuffers(slot.buffer);
-            slot.buffer = 0;
+        boolean previousPackBufferOwned = ownsBuffer(previousPackBuffer);
+        int ownedFramebuffer = framebuffer;
+        int ownedRenderbuffer = renderbuffer;
+        try {
+            GL15.glBindBuffer(ARBPixelBufferObject.GL_PIXEL_PACK_BUFFER_ARB, 0);
+            for (PboSlot slot : slots) {
+                releaseSlot(slot);
+                if (slot.buffer != 0) {
+                    GL15.glDeleteBuffers(slot.buffer);
+                    slot.buffer = 0;
+                }
+            }
+            if (framebuffer != 0) {
+                GL30.glDeleteFramebuffers(framebuffer);
+                framebuffer = 0;
+            }
+            if (renderbuffer != 0) {
+                GL30.glDeleteRenderbuffers(renderbuffer);
+                renderbuffer = 0;
+            }
+        } finally {
+            GL15.glBindBuffer(ARBPixelBufferObject.GL_PIXEL_PACK_BUFFER_ARB,
+                    previousPackBufferOwned ? 0 : previousPackBuffer);
+            GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER,
+                    previousRead == ownedFramebuffer ? 0 : previousRead);
+            GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER,
+                    previousDraw == ownedFramebuffer ? 0 : previousDraw);
+            GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER,
+                    previousRenderbuffer == ownedRenderbuffer ? 0 : previousRenderbuffer);
         }
-        GL15.glBindBuffer(ARBPixelBufferObject.GL_PIXEL_PACK_BUFFER_ARB,
-                ownsBuffer(previousPackBuffer) ? 0 : previousPackBuffer);
-        if (framebuffer != 0) GL30.glDeleteFramebuffers(framebuffer);
-        if (renderbuffer != 0) GL30.glDeleteRenderbuffers(renderbuffer);
-        GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, previousRead);
-        GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, previousDraw);
-        GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER, previousRenderbuffer);
-        framebuffer = 0;
-        renderbuffer = 0;
         width = 0;
         height = 0;
     }
@@ -199,8 +210,8 @@ final class AsyncPixelCapture {
 
     private void pollOneReadyFrame(long now) {
         for (PboSlot slot : slots) {
-            if (slot.sync == null) continue;
-            int result = GL32.glClientWaitSync(slot.sync, 0, 0L);
+            if (!slot.sync.isPresent()) continue;
+            int result = GL32.glClientWaitSync(slot.sync.value(), 0, 0L);
             if (result == GL32.GL_WAIT_FAILED) {
                 releaseSlot(slot);
                 worker.unavailable("GPU pixel-readback fence reported GL_WAIT_FAILED");
@@ -217,20 +228,41 @@ final class AsyncPixelCapture {
             }
             int previousPackBuffer = GL11.glGetInteger(
                     ARBPixelBufferObject.GL_PIXEL_PACK_BUFFER_BINDING_ARB);
-            GL15.glBindBuffer(ARBPixelBufferObject.GL_PIXEL_PACK_BUFFER_ARB, slot.buffer);
-            ByteBuffer mapped = GL15.glMapBuffer(ARBPixelBufferObject.GL_PIXEL_PACK_BUFFER_ARB,
-                    GL15.GL_READ_ONLY, null);
-            if (mapped == null || mapped.remaining() < pixels.length) {
-                if (mapped != null) GL15.glUnmapBuffer(ARBPixelBufferObject.GL_PIXEL_PACK_BUFFER_ARB);
-                GL15.glBindBuffer(ARBPixelBufferObject.GL_PIXEL_PACK_BUFFER_ARB, previousPackBuffer);
+            ByteBuffer mapped = null;
+            boolean readable = false;
+            boolean unmapped = false;
+            try {
+                GL15.glBindBuffer(ARBPixelBufferObject.GL_PIXEL_PACK_BUFFER_ARB, slot.buffer);
+                try {
+                    mapped = GL15.glMapBuffer(
+                            ARBPixelBufferObject.GL_PIXEL_PACK_BUFFER_ARB,
+                            GL15.GL_READ_ONLY, null);
+                    if (mapped != null && mapped.remaining() >= pixels.length) {
+                        mapped.get(pixels, 0, pixels.length);
+                        readable = true;
+                    }
+                } finally {
+                    if (mapped != null) {
+                        unmapped = GL15.glUnmapBuffer(
+                                ARBPixelBufferObject.GL_PIXEL_PACK_BUFFER_ARB);
+                    }
+                }
+            } catch (RuntimeException failure) {
+                pixelBuffers.release(pixels);
+                releaseSlot(slot);
+                worker.unavailable("GPU pixel-readback buffer access failed: "
+                        + failure.getClass().getSimpleName());
+                return;
+            } finally {
+                GL15.glBindBuffer(ARBPixelBufferObject.GL_PIXEL_PACK_BUFFER_ARB,
+                        previousPackBuffer);
+            }
+            if (!readable) {
                 pixelBuffers.release(pixels);
                 releaseSlot(slot);
                 worker.unavailable("GPU pixel-readback buffer could not be mapped");
                 return;
             }
-            mapped.get(pixels, 0, pixels.length);
-            boolean unmapped = GL15.glUnmapBuffer(ARBPixelBufferObject.GL_PIXEL_PACK_BUFFER_ARB);
-            GL15.glBindBuffer(ARBPixelBufferObject.GL_PIXEL_PACK_BUFFER_ARB, previousPackBuffer);
             long capturedAt = slot.capturedAtNanos;
             long frameSequence = slot.sequence;
             String camera = slot.cameraId;
@@ -267,6 +299,7 @@ final class AsyncPixelCapture {
                 GL11.glGetInteger(GL11.GL_PACK_SWAP_BYTES),
                 GL11.glGetInteger(GL11.GL_PACK_LSB_FIRST)
         };
+        boolean fenceCreationFailed = false;
         try {
             GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, sourceFramebuffer);
             GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, framebuffer);
@@ -282,8 +315,9 @@ final class AsyncPixelCapture {
             GL11.glPixelStorei(GL11.GL_PACK_LSB_FIRST, 0);
             GL11.glReadPixels(0, 0, width, height, GL11.GL_RGBA,
                     GL11.GL_UNSIGNED_BYTE, 0L);
-            slot.sync = GL32.glFenceSync(GL32.GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
-            if (slot.sync == null) {
+            long fence = GL32.glFenceSync(GL32.GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+            if (!slot.sync.setCreated(fence)) {
+                fenceCreationFailed = true;
                 throw new IllegalStateException("GPU pixel-readback fence could not be created");
             }
             slot.sequence = sequence++;
@@ -293,6 +327,10 @@ final class AsyncPixelCapture {
             lastIssuedCaptureNanos = now;
         } catch (RuntimeException failure) {
             releaseSlot(slot);
+            if (fenceCreationFailed) {
+                width = 0;
+                height = 0;
+            }
             worker.unavailable("GPU frame capture failed: " + failure.getClass().getSimpleName());
             return false;
         } finally {
@@ -315,7 +353,7 @@ final class AsyncPixelCapture {
     }
 
     private PboSlot freeSlot() {
-        for (PboSlot slot : slots) if (slot.sync == null) return slot;
+        for (PboSlot slot : slots) if (!slot.sync.isPresent()) return slot;
         return null;
     }
 
@@ -324,10 +362,10 @@ final class AsyncPixelCapture {
     }
 
     private void releaseSlot(PboSlot slot) {
-        if (slot.sync != null) GL32.glDeleteSync(slot.sync);
-        slot.sync = null;
+        long syncHandle = slot.sync.take();
         slot.sequence = -1L;
         slot.cameraId = "";
+        if (syncHandle != 0L) GL32.glDeleteSync(syncHandle);
     }
 
     private boolean ownsBuffer(int bufferId) {
@@ -337,8 +375,8 @@ final class AsyncPixelCapture {
     }
 
     private static boolean supported() {
-        return GLContext.getCapabilities().OpenGL30
-                && GLContext.getCapabilities().OpenGL32;
+        return GL.getCapabilities().OpenGL30
+                && GL.getCapabilities().OpenGL32;
     }
 
     private static String cameraId(Minecraft minecraft) {
@@ -362,7 +400,7 @@ final class AsyncPixelCapture {
 
     private static final class PboSlot {
         int buffer;
-        GLSync sync;
+        final GlSyncHandle sync = new GlSyncHandle();
         long sequence = -1L;
         long capturedAtNanos;
         String cameraId = "";

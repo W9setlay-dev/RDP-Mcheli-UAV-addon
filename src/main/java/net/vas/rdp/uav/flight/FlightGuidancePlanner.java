@@ -55,9 +55,7 @@ public final class FlightGuidancePlanner {
                     approach.getApproachY() - aircraft.getY(),
                     approach.getApproachZ() - aircraft.getZ());
             if (approach.isDescending() && distance > Math.max(12.0D, approach.getRun() * 0.5D)) {
-                return new Plan(approach.getApproachX(),
-                        clamp(predictedY, profile.getMinimumExecutionAltitude(),
-                                profile.getMaximumExecutionAltitude()),
+                return new Plan(approach.getApproachX(), approach.getApproachY(),
                         approach.getApproachZ(), leadTicks, true,
                         "TERMINAL_APPROACH_" + Math.round(approach.getAngleDegrees()));
             }
@@ -68,10 +66,7 @@ public final class FlightGuidancePlanner {
                 terminal ? 8.0D : 16.0D, terminal ? 48.0D : 96.0D);
         double waypointX = aircraft.getX() + desiredX / desiredLength * lookahead;
         double waypointZ = aircraft.getZ() + desiredZ / desiredLength * lookahead;
-        double terrainSurfaceY = Math.max(0.0D, aircraft.getY() - profile.getCruiseAgl());
-        double worldHeight = Math.max(256.0D, aircraft.getY() + 128.0D);
-        double waypointY = WorkingAltitudePolicy.maintainWorkingAltitude(
-                profile, predictedY, aircraft.getY(), terrainSurfaceY, worldHeight);
+        double waypointY = targetY;
 
         boolean feasible = terminal || distance <= profile.getDetectionRange()
                 || profile.supportsLongRangeLock();

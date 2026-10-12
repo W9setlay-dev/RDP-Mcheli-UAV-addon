@@ -270,6 +270,19 @@ public final class SwarmManager {
                         type, target, definition.isAttack(), type == MissionType.DESTROYING,
                         true, Math.max(1D, candidate.profile.getDetectionRange()), 8D, tick);
                 mission.setDimension(world.provider.getDimension());
+                if (definition.getCruiseAltitudeY() != null) {
+                    if (definition.getCruiseAltitudeY() > world.getHeight() - 2) {
+                        throw new IllegalArgumentException(
+                                "Cruise altitude is outside this world's safe bounds");
+                    }
+                    mission.setCruiseAltitudeY(definition.getCruiseAltitudeY());
+                    net.vas.rdp.uav.RdpUavDebug.event("MissionRuntime",
+                            "CRUISE_ALTITUDE_ACCEPTED", "mission", mission.getMissionId(),
+                            "aircraft", mission.getAircraftId(),
+                            "dimension", mission.getDimension(),
+                            "worldY", mission.getCruiseAltitudeY(),
+                            "source", "SWARM_MISSION_DEFINITION");
+                }
                 mission.setTargetPolicy(definition.getTargetPolicy());
                 if (type == MissionType.PATROL) mission.setPatrolRoute(definition.getWaypoints());
                 if (!definition.getGuidedWeapon().trim().isEmpty()) {

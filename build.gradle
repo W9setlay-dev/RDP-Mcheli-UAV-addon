@@ -69,6 +69,10 @@ tasks.register('extractMcheliAccessTransformer', Copy) {
 dependencies {
     minecraft "net.minecraftforge:forge:${forgeVersion}"
     forgeRunSide "net.minecraftforge:forge:${forgeVersion}:universal"
+    compileOnly 'org.lwjgl:lwjgl:3.4.1'
+    compileOnly('org.lwjgl:lwjgl-opengl:3.4.1') {
+        transitive = false
+    }
     // Keep required McHeli runtime mods on the client launch classpath.
     compile files(elegantNetworkingJar, rdpCoreJar)
     compile fg.deobf('blank:mcheli-ce:1.5.1')
@@ -81,6 +85,9 @@ dependencies {
     }
     testCompile 'junit:junit:4.13.2'
 }
+
+// Put Cleanroom's LWJGL 3 API ahead of Forge's legacy LWJGL 2 compile dependency.
+compileJava.classpath = files(configurations.compileOnly) + compileJava.classpath
 
 tasks.register('forgeRunSideJar', Jar) {
     // The mapped dev jar exposes an extra Side.BUKKIT value, but FML channel maps

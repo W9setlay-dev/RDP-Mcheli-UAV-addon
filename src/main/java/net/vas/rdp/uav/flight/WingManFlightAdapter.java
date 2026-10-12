@@ -121,8 +121,10 @@ public final class WingManFlightAdapter {
         double baseTargetZ = targetZ;
         AirframeController controller = AirframeController.forProfile(profile,
                 usesHelicopterFlightModel(aircraft));
+        boolean absoluteAltitude = mission.hasCruiseAltitudeY()
+                && mission.getState() != net.vas.rdp.uav.mission.MissionState.KAMIKADZE_TARGET;
         NativeFlightControlCommand baseCommand = controller.update(state,
-                baseTargetX, baseTargetY, baseTargetZ, tick);
+                baseTargetX, baseTargetY, baseTargetZ, tick, absoluteAltitude);
         net.vas.rdp.uav.flight.OperatorTrimState.Snapshot trim =
                 OperatorTrimRegistry.snapshot(aircraft.getUniqueID(), mission.getMissionId(), tick);
         if (trim != null) {
@@ -152,7 +154,8 @@ public final class WingManFlightAdapter {
                     "operatorTrimYaw", trim == null ? 0.0D : trim.getYawDegrees(),
                     "operatorTrimPitch", trim == null ? 0.0D : trim.getPitchDegrees());
         }
-        NativeFlightControlCommand command = controller.update(state, targetX, targetY, targetZ, tick);
+        NativeFlightControlCommand command = controller.update(state, targetX, targetY,
+                targetZ, tick, absoluteAltitude && !terminalCommit);
         if (!command.isSupported()) {
             RdpUavDebug.debug("FlightControl", "control held aircraft={} reason={} sampleTick={}",
                     aircraft.getUniqueID(), command.getReason(), state.getSampleTick());
@@ -186,6 +189,7 @@ public final class WingManFlightAdapter {
                     "controller=RDP_FLIGHT_COMPUTER controlOwner={} aircraft={} profile={} node={} pos=({},{},{}) "
                             + "motion=({},{},{}) yaw={} track={} desiredTrack={} courseError={} "
                             + "pitch={} roll={} throttle={} desiredVerticalSpeed={} terrain={} AGL={} "
+                            + "executionStage={} cruiseAltitudeY={} routeTargetY={} "
                             + "trimYaw={} trimPitch={} trimAge={} baseCommand=({},{},{},{}) "
                             + "finalCommand=({},{},{},{})",
                     state.getControlOwner(), aircraft.getUniqueID(),
@@ -196,6 +200,9 @@ public final class WingManFlightAdapter {
                     fusedCommand.getCourseError(), aircraft.getPitch(), aircraft.getRoll(),
                     aircraft.getThrottle(), fusedCommand.getDesiredVerticalSpeed(),
                     terrainPlan.getReason(), terrainPlan.getCurrentAgl(),
+                    mission.getExecutionStage(),
+                    mission.hasCruiseAltitudeY() ? mission.getCruiseAltitudeY() : Double.NaN,
+                    targetY,
                     trim == null ? 0.0D : trim.getYawDegrees(),
                     trim == null ? 0.0D : trim.getPitchDegrees(),
                     trim == null ? -1L : tick - trim.getSampleTick(),
@@ -235,7 +242,8 @@ public final class WingManFlightAdapter {
         TerrainRoutePlanner.Plan plan = TerrainRoutePlanner.planTransit(world,
                 terrainPerception, state.getX(), state.getY(), state.getZ(),
                 state.getHorizontalSpeed(), targetX, targetY, targetZ, profile,
-                tick, pitchTrim, terminalCommit);
+                tick, pitchTrim, terminalCommit,
+                mission.hasCruiseAltitudeY() ? mission.getCruiseAltitudeY() : Double.NaN);
         terrainPlans.put(id, new CachedTerrainPlan(mission.getMissionId(), tick,
                 targetX, targetY, targetZ, pitchTrim, terminalCommit, plan));
         return plan;
@@ -258,6 +266,14 @@ public final class WingManFlightAdapter {
 
     private static double normalizeHelicopterTargetY(MCH_EntityAircraft aircraft, double targetY) {
         if (!usesHelicopterFlightModel(aircraft)) return targetY;
+        if (aircraft.world != null && !aircraft.world.isRemote) {
+            RDPMission active = net.vas.rdp.uav.persistence.RDPMissionWorldData
+                    .get(aircraft.world).getRepository()
+                    .activeForAircraft(aircraft.getUniqueID());
+            if (active != null && active.hasCruiseAltitudeY()) {
+                return targetY;
+            }
+        }
         UavVehicleProfile profile = aircraft.getAcInfo() == null
                 ? new UavVehicleProfile(UavExecutionProfile.HELICOPTER_ONE_WAY_FPV, 8D, 4D, 32D, 6D, false, "SELF_DESTRUCT")
                 : UavVehicleProfiles.forAircraft(aircraft.getAcInfo().name);
@@ -993,9 +1009,7 @@ public final class WingManFlightAdapter {
                 target.posX, guidanceY, target.posZ,
                 target.motionX, target.motionY, target.motionZ);
         updateTargetGuidance(aircraft,
-                blendGuidance(plan.getX(), solution.getX()),
-                clamp(plan.getY(), vehicleProfile.getMinimumExecutionAltitude(),
-                        vehicleProfile.getMaximumExecutionAltitude()),
+                blendGuidance(plan.getX(), solution.getX()), guidanceY,
                 blendGuidance(plan.getZ(), solution.getZ()), target.getUniqueID());
     }
 
@@ -1042,10 +1056,10 @@ public final class WingManFlightAdapter {
         if (entry == null || entry.autoState == AutonomousState.RTB
                 || entry.autoState == AutonomousState.LANDING
                 || (entry.autoState == AutonomousState.PARKED && !resumedHold)) return;
-        double plannedX = blendGuidance(plan.getX(), solution.getX());
-        double plannedZ = blendGuidance(plan.getZ(), solution.getZ());
-        double safeY = normalizeHelicopterTargetY(aircraft,
-                blendGuidance(plan.getY(), solution.getY()));
+        double plannedX = plan.getX();
+        double plannedY = plan.getY();
+        double plannedZ = plan.getZ();
+        double safeY = plannedY;
         TerminalGuidanceMetrics metrics = terminalMetrics.get(aircraftId);
         if (metrics == null || !target.getUniqueID().equals(metrics.getTargetId())) {
             metrics = new TerminalGuidanceMetrics(target.getUniqueID(), tick);

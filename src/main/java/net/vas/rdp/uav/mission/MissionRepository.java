@@ -30,6 +30,18 @@ public final class MissionRepository {
         return result;
     }
 
+    public synchronized RDPMission activeForAircraft(UUID aircraftId) {
+        if (aircraftId == null) return null;
+        RDPMission latest = null;
+        for (RDPMission mission : missions.values()) {
+            if (aircraftId.equals(mission.getAircraftId()) && !mission.isTerminal()
+                    && (latest == null || mission.getLastUpdateTick() > latest.getLastUpdateTick())) {
+                latest = mission;
+            }
+        }
+        return latest;
+    }
+
     public synchronized List<RDPMission> snapshot() {
         return new ArrayList<>(missions.values());
     }

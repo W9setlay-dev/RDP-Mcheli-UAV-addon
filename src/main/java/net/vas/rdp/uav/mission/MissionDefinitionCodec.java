@@ -35,6 +35,9 @@ public final class MissionDefinitionCodec {
         tag.setString("guidanceMode", definition.getGuidanceMode());
         tag.setString("executionMode", definition.getExecutionMode());
         tag.setString("recoveryMode", definition.getRecoveryMode());
+        if (definition.getCruiseAltitudeY() != null) {
+            tag.setInteger("cruiseAltitudeY", definition.getCruiseAltitudeY());
+        }
         tag.setString("patrolRoute", PatrolRouteCodec.encodeOrEmpty(definition.getWaypoints()));
         NBTTagList selected = new NBTTagList();
         for (java.util.UUID id : definition.getSelectedUavs()) {
@@ -101,6 +104,9 @@ public final class MissionDefinitionCodec {
             if (tag.hasKey("guidanceMode")) definition.setGuidanceMode(tag.getString("guidanceMode"));
             if (tag.hasKey("executionMode")) definition.setExecutionMode(tag.getString("executionMode"));
             if (tag.hasKey("recoveryMode")) definition.setRecoveryMode(tag.getString("recoveryMode"));
+            if (tag.hasKey("cruiseAltitudeY")) {
+                definition.setCruiseAltitudeY(tag.getInteger("cruiseAltitudeY"));
+            }
             if (tag.hasKey("patrolRoute")) {
                 definition.setWaypoints(PatrolRouteCodec.decode(tag.getString("patrolRoute")));
             }

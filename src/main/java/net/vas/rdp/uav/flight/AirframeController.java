@@ -15,6 +15,13 @@ public interface AirframeController {
                                      double targetY, double targetZ,
                                      long currentTick);
 
+    default NativeFlightControlCommand update(AircraftState state, double targetX,
+                                             double targetY, double targetZ,
+                                             long currentTick,
+                                             boolean absoluteAltitude) {
+        return update(state, targetX, targetY, targetZ, currentTick);
+    }
+
     static AirframeController forProfile(UavVehicleProfile profile) {
         return forProfile(profile, false);
     }

@@ -58,6 +58,7 @@ public class NetworkClientServerContractTest {
                 .setMissionType(MissionType.STRIKE)
                 .setTarget("minecraft:zombie")
                 .setAttack(true)
+                .setCruiseAltitudeY(192)
                 .setSwarmEnabled(true)
                 .setSwarmMaximumMembers(4)
                 .setSwarmId(swarmId)
@@ -75,6 +76,7 @@ public class NetworkClientServerContractTest {
         assertEquals(swarmId.toString(), received.getSwarmId());
         assertEquals(java.util.Collections.singletonList(selectedId), received.getSelectedUavs());
         MissionDefinition decoded = received.toMissionDefinition();
+        assertEquals(Integer.valueOf(192), decoded.getCruiseAltitudeY());
         assertEquals(SwarmFormation.RING, decoded.getSwarmConfiguration().getFormation());
         assertEquals(SearchPattern.LANE, decoded.getSwarmConfiguration().getSearchPattern());
         assertEquals(30D, decoded.getSwarmConfiguration().getHorizontalSpacing(), 0D);
@@ -92,6 +94,24 @@ public class NetworkClientServerContractTest {
                 new RdpUavNetwork.CreateMission.LaunchMissionDefinition());
         assertEquals("", received.getSwarmId());
         assertTrue(received.getSelectedUavs().isEmpty());
+    }
+
+    @Test
+    public void versionFourMissionPacketStillDecodesWithoutCruiseAltitudeExtension() {
+        RdpUavNetwork.CreateMission.LaunchMissionDefinition sent =
+                new RdpUavNetwork.CreateMission.LaunchMissionDefinition(new MissionDefinition()
+                        .setTarget("minecraft:zombie"));
+        setPrivateInt(sent, "version", 4);
+        RdpUavNetwork.CreateMission.LaunchMissionDefinition received = roundTrip(sent,
+                new RdpUavNetwork.CreateMission.LaunchMissionDefinition());
+        assertNull(received.toMissionDefinition().getCruiseAltitudeY());
+    }
+
+    @Test
+    public void squareStrikePacketPreservesOptionalCruiseAltitudeExtension() {
+        assertSameWirePayload(new RdpUavNetwork.SquareStrike("10 80 20 64",
+                        "agm114", Integer.valueOf(180)),
+                new RdpUavNetwork.SquareStrike());
     }
 
     @Test

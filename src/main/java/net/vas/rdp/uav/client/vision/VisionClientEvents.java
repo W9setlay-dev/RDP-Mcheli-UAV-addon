@@ -17,7 +17,7 @@ import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.TickEvent;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
-import org.lwjgl.opengl.GLContext;
+import org.lwjgl.opengl.GL;
 import java.util.List;
 import java.util.Map;
 import java.util.WeakHashMap;
@@ -332,7 +332,7 @@ public final class VisionClientEvents {
                                         int width, String text) {
         int textWidth = Math.max(0, Math.min(width - 4,
                 minecraft.fontRenderer.getStringWidth(text)));
-        if (textWidth <= 0) return;
+        if (textWidth == 0) return;
         Gui.drawRect(x, y, x + textWidth + 4,
                 y + minecraft.fontRenderer.FONT_HEIGHT + 4, 0x90000000);
         minecraft.fontRenderer.drawStringWithShadow(
@@ -388,7 +388,7 @@ public final class VisionClientEvents {
 
     private static boolean hasGlContext() {
         try {
-            return GLContext.getCapabilities().OpenGL30;
+            return GL.getCapabilities().OpenGL30;
         } catch (IllegalStateException unavailable) {
             return false;
         }

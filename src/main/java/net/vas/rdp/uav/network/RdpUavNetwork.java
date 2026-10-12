@@ -222,7 +222,8 @@ public final class RdpUavNetwork {
             return true;
         }
         if (definition.getMissionType() == net.vas.rdp.uav.mission.MissionType.SQUARE_STRIKE) {
-            if (!definition.getSelectedUavs().isEmpty() || definition.isDefaultTargetPolicy()) return false;
+            if (!definition.getSelectedUavs().isEmpty() || definition.isDefaultTargetPolicy()
+                    || definition.getCruiseAltitudeY() != null) return false;
             createSquareStrike(definition.getTarget(), definition.getGuidedWeapon());
             return true;
         }
@@ -260,6 +261,10 @@ public final class RdpUavNetwork {
 
     public static void createSquareStrike(String parameters, String weapon) {
         CHANNEL.sendToServer(new SquareStrike(parameters, weapon));
+    }
+
+    public static void createSquareStrike(String parameters, String weapon, Integer cruiseAltitudeY) {
+        CHANNEL.sendToServer(new SquareStrike(parameters, weapon, cruiseAltitudeY));
     }
 
     public static void lockAiTarget(java.util.UUID targetId) {
@@ -1098,7 +1103,7 @@ public final class RdpUavNetwork {
         }
 
         public static final class LaunchMissionDefinition implements IMessage {
-            private int version = 4;
+            private int version = 5;
             private String type = "";
             private String target = "";
             private boolean attack;
@@ -1123,6 +1128,8 @@ public final class RdpUavNetwork {
             private double swarmVerticalSpacing = 10D;
             private boolean swarmAllowDuplicates;
             private boolean swarmCommanderFailover = true;
+            private boolean hasCruiseAltitudeY;
+            private int cruiseAltitudeY;
 
             public LaunchMissionDefinition() { }
 
@@ -1154,6 +1161,10 @@ public final class RdpUavNetwork {
                 this.policyMinimumConfidence = definition.getTargetPolicy().getMinimumConfidence();
                 this.patrolRoute = net.vas.rdp.uav.mission.PatrolRouteCodec
                         .encodeOrEmpty(definition.getWaypoints());
+                if (definition.getCruiseAltitudeY() != null) {
+                    this.hasCruiseAltitudeY = true;
+                    this.cruiseAltitudeY = definition.getCruiseAltitudeY();
+                }
             }
 
             public void fromBytes(ByteBuf buffer) {
@@ -1188,6 +1199,10 @@ public final class RdpUavNetwork {
                     swarmVerticalSpacing = buffer.readDouble();
                     swarmAllowDuplicates = buffer.readBoolean();
                     swarmCommanderFailover = buffer.readBoolean();
+                }
+                if (version >= 5) {
+                    hasCruiseAltitudeY = buffer.readBoolean();
+                    if (hasCruiseAltitudeY) cruiseAltitudeY = buffer.readInt();
                 }
             }
 
@@ -1225,6 +1240,10 @@ public final class RdpUavNetwork {
                     buffer.writeBoolean(swarmAllowDuplicates);
                     buffer.writeBoolean(swarmCommanderFailover);
                 }
+                if (version >= 5) {
+                    buffer.writeBoolean(hasCruiseAltitudeY);
+                    if (hasCruiseAltitudeY) buffer.writeInt(cruiseAltitudeY);
+                }
             }
 
             public MissionDefinition toMissionDefinition() {
@@ -1257,6 +1276,7 @@ public final class RdpUavNetwork {
                                 .allowHostileVehicles(policyAllowVehicles)
                                 .withMinimumConfidence(policyMinimumConfidence);
                 definition.setTargetPolicy(policy.snapshot());
+                if (hasCruiseAltitudeY) definition.setCruiseAltitudeY(cruiseAltitudeY);
                 return definition;
             }
 
@@ -1591,21 +1611,36 @@ public final class RdpUavNetwork {
     public static final class SquareStrike implements IMessage {
         private String parameters = "";
         private String weapon = "";
+        private boolean hasCruiseAltitudeY;
+        private int cruiseAltitudeY;
         public SquareStrike() { }
         public SquareStrike(String parameters) {
             this(parameters, "");
         }
         public SquareStrike(String parameters, String weapon) {
+            this(parameters, weapon, null);
+        }
+        public SquareStrike(String parameters, String weapon, Integer cruiseAltitudeY) {
             this.parameters = parameters == null ? "" : parameters;
             this.weapon = weapon == null ? "" : weapon;
+            if (cruiseAltitudeY != null) {
+                this.hasCruiseAltitudeY = true;
+                this.cruiseAltitudeY = cruiseAltitudeY;
+            }
         }
 
         public void fromBytes(ByteBuf buffer) {
             parameters = readString(buffer);
             if (buffer.isReadable()) weapon = readString(buffer);
+            if (buffer.isReadable()) {
+                hasCruiseAltitudeY = buffer.readBoolean();
+                if (hasCruiseAltitudeY) cruiseAltitudeY = buffer.readInt();
+            }
         }
         public void toBytes(ByteBuf buffer) {
             writeString(buffer, parameters); writeString(buffer, weapon);
+            buffer.writeBoolean(hasCruiseAltitudeY);
+            if (hasCruiseAltitudeY) buffer.writeInt(cruiseAltitudeY);
         }
     }
 
@@ -2629,7 +2664,7 @@ public final class RdpUavNetwork {
             final EntityPlayerMP player = context.getServerHandler().player;
             Objects.requireNonNull(player.getServer()).addScheduledTask(() -> {
                 boolean patrol = "PATROL".equals(message.type);
-                if ((message.version != 3 && message.version != 4)
+                if ((message.version != 3 && message.version != 4 && message.version != 5)
                         || (message.swarmEnabled && message.version < 4)
                         || message.unsupportedConfiguration
                         || (patrol ? message.patrolRoute == null || message.patrolRoute.trim().isEmpty()
@@ -2646,6 +2681,12 @@ public final class RdpUavNetwork {
                 }
                 if (message.swarmMaximumMembers < 1 || message.swarmMaximumMembers > 64) {
                     reject(player, "Mission definition rejected: invalid swarm size.");
+                    return;
+                }
+                if (message.hasCruiseAltitudeY
+                        && (message.cruiseAltitudeY < 1
+                        || message.cruiseAltitudeY > player.world.getHeight() - 2)) {
+                    reject(player, "Mission definition rejected: cruise altitude is outside this world's safe bounds.");
                     return;
                 }
                 if (message.swarmEnabled) {
@@ -2708,6 +2749,16 @@ public final class RdpUavNetwork {
                                 .allowHostileVehicles(message.policyAllowVehicles)
                                 .withMinimumConfidence(message.policyMinimumConfidence);
                         mission.setTargetPolicy(policy.snapshot());
+                        if (message.hasCruiseAltitudeY) {
+                            mission.setCruiseAltitudeY(message.cruiseAltitudeY);
+                            net.vas.rdp.uav.RdpUavDebug.event("MissionRuntime",
+                                    "CRUISE_ALTITUDE_ACCEPTED",
+                                    "mission", mission.getMissionId(),
+                                    "aircraft", mission.getAircraftId(),
+                                    "dimension", mission.getDimension(),
+                                    "worldY", message.cruiseAltitudeY,
+                                    "source", "MISSION_DEFINITION_PACKET_V5");
+                        }
                         net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
                                 .markDirty();
                         break;
@@ -2780,6 +2831,14 @@ public final class RdpUavNetwork {
                             false, false, false, Math.max(1.0D, profile.getDetectionRange()),
                             8.0D, tick);
             mission.setDimension(player.dimension);
+            if (message.hasCruiseAltitudeY) {
+                mission.setCruiseAltitudeY(message.cruiseAltitudeY);
+                net.vas.rdp.uav.RdpUavDebug.event("MissionRuntime",
+                        "CRUISE_ALTITUDE_ACCEPTED", "mission", mission.getMissionId(),
+                        "aircraft", mission.getAircraftId(), "dimension", mission.getDimension(),
+                        "worldY", message.cruiseAltitudeY,
+                        "source", "MISSION_DEFINITION_PACKET_V5");
+            }
             mission.setPatrolRoute(route);
             try {
                 RDPUavMod.missions().create(player.world, mission);
@@ -2972,6 +3031,13 @@ public final class RdpUavNetwork {
                             "Square strike rejected: operator aircraft is unavailable."));
                     return;
                 }
+                if (message.hasCruiseAltitudeY
+                        && (message.cruiseAltitudeY < 1
+                        || message.cruiseAltitudeY > player.world.getHeight() - 2)) {
+                    player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                            "Square strike rejected: cruise altitude is outside this world's safe bounds."));
+                    return;
+                }
                 String parameters = message.parameters == null ? "" : message.parameters.trim();
                 String[] values = parameters.isEmpty() ? new String[0] : parameters.split("\\s+");
                 if (values.length < 3 || values.length > 4) {
@@ -2999,20 +3065,30 @@ public final class RdpUavNetwork {
                 }
                 Objects.requireNonNull(player.getServer()).getCommandManager().executeCommand(player,
                         "rdpuav mission square " + parameters);
-                if (message.weapon != null && !message.weapon.trim().isEmpty()) {
-                    java.util.List<net.vas.rdp.uav.mission.RDPMission> missions =
-                            net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
-                                    .getRepository().byOwner(player.getUniqueID());
-                    for (int i = missions.size() - 1; i >= 0; i--) {
-                        net.vas.rdp.uav.mission.RDPMission mission = missions.get(i);
-                        if (!existingMissionIds.contains(mission.getMissionId())
-                                && mission.getAircraftId().equals(aircraft.getUniqueID())
-                                && !mission.isTerminal()) {
+                java.util.List<net.vas.rdp.uav.mission.RDPMission> missions =
+                        net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
+                                .getRepository().byOwner(player.getUniqueID());
+                for (int i = missions.size() - 1; i >= 0; i--) {
+                    net.vas.rdp.uav.mission.RDPMission mission = missions.get(i);
+                    if (!existingMissionIds.contains(mission.getMissionId())
+                            && mission.getAircraftId().equals(aircraft.getUniqueID())
+                            && !mission.isTerminal()) {
+                        if (message.weapon != null && !message.weapon.trim().isEmpty()) {
                             mission.setGuidedWeapon(message.weapon);
-                            net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
-                                    .markDirty();
-                            break;
                         }
+                        if (message.hasCruiseAltitudeY) {
+                            mission.setCruiseAltitudeY(message.cruiseAltitudeY);
+                            net.vas.rdp.uav.RdpUavDebug.event("MissionRuntime",
+                                    "CRUISE_ALTITUDE_ACCEPTED",
+                                    "mission", mission.getMissionId(),
+                                    "aircraft", mission.getAircraftId(),
+                                    "dimension", mission.getDimension(),
+                                    "worldY", message.cruiseAltitudeY,
+                                    "source", "SQUARE_STRIKE_PACKET");
+                        }
+                        net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
+                                .markDirty();
+                        break;
                     }
                 }
             });

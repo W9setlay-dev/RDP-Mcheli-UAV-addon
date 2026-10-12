@@ -80,7 +80,7 @@ public final class MinecraftWorldPerceptionAdapter implements WorldPerceptionAda
                     }
                     IBlockState state = world.getBlockState(pos);
                     Material material = state.getMaterial();
-                    if (material != null && material.isLiquid()) fluid = true;
+                    if (material.isLiquid()) fluid = true;
                     if (state.getCollisionBoundingBox(world, pos) != null) collision = true;
                 }
             }

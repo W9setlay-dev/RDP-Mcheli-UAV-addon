@@ -258,7 +258,7 @@ public final class MissionLifecycle {
                 RDPMissionWorldData.get(world).markDirty();
                 return;
             }
-            double guidanceY = terminalRouteAltitude(aircraft, target);
+            double guidanceY = terminalRouteAltitude(aircraft, target, mission);
             if (target.entity != null && mission.getTargetId() == null) {
                 mission.reacquireTarget(target.entity.getUniqueID(), tick);
             }
@@ -629,7 +629,7 @@ public final class MissionLifecycle {
             if (mission.getState() == MissionState.KAMIKADZE_TARGET) {
                 if (target != null && target.entity != null) {
                     flight.updateTerminalGuidance(aircraft, target.entity,
-                            terminalRouteAltitude(aircraft, target), tick,
+                            target.y, tick,
                             mission.getMissionId(), mission.getPhase().name(),
                             mission.getControlOwner().name());
                     String terminalFailure = flight.terminalGuidanceFailureReason(aircraft);
@@ -771,7 +771,7 @@ public final class MissionLifecycle {
                 return false;
             }
             flight.release(aircraft);
-            double routeY = terminalRouteAltitude(aircraft, target);
+            double routeY = terminalRouteAltitude(aircraft, target, mission);
             if (!flight.dispatch(aircraft, target.x, routeY, target.z,
                     mission.getObservationDistance(), 200, mission.isAttack(),
                     target.entity == null ? null : target.entity.getUniqueID())) {
@@ -795,7 +795,7 @@ public final class MissionLifecycle {
             return true;
         }
         if (target != null) {
-            double targetGuidanceY = terminalRouteAltitude(aircraft, target);
+            double targetGuidanceY = terminalRouteAltitude(aircraft, target, mission);
             if (target.entity != null) {
                 flight.updateMovingEntityGuidance(aircraft, target.entity,
                         targetGuidanceY, tick);
@@ -841,7 +841,7 @@ public final class MissionLifecycle {
                     return true;
                 }
                 flight.release(aircraft);
-                double routeY = terminalRouteAltitude(aircraft, target);
+                double routeY = terminalRouteAltitude(aircraft, target, mission);
                 if (flight.dispatch(aircraft, target.x, routeY, target.z,
                         mission.getObservationDistance(), 0, true,
                         target.entity == null ? null : target.entity.getUniqueID())) {
@@ -1577,7 +1577,7 @@ public final class MissionLifecycle {
         boolean due = previous == null
                 || (tick - previous.tick >= 10L && flight.hasReachedRoutePoint(aircraft));
         if (!moved && !due) return;
-        double guidanceY = terminalRouteAltitude(aircraft, target);
+        double guidanceY = terminalRouteAltitude(aircraft, target, mission);
         boolean refreshed = decision == MissionSafety.RouteDecision.OFFSET_ORBIT
                 || decision == MissionSafety.RouteDecision.SAFE_SIDE_APPROACH
                 ? flight.refreshBoundedDetour(aircraft, target.x, guidanceY, target.z,
@@ -1793,8 +1793,26 @@ public final class MissionLifecycle {
                 Math.min(profile.getMaximumAgl(), profile.getCruiseAgl()));
     }
 
-    private double terminalRouteAltitude(MCH_EntityAircraft aircraft, Target target) {
-        return guidanceAltitude(aircraft, target.y);
+    private double terminalRouteAltitude(MCH_EntityAircraft aircraft, Target target,
+                                         RDPMission mission) {
+        if (mission.getState() == MissionState.KAMIKADZE_TARGET) {
+            return target.y;
+        }
+        if (!mission.hasCruiseAltitudeY()) {
+            double fallback = guidanceAltitude(aircraft, target.y);
+            if (aircraft.world != null) {
+                fallback = Math.max(1.0D, Math.min(aircraft.world.getHeight() - 2.0D, fallback));
+            }
+            mission.resolveCruiseAltitudeY(fallback);
+            RdpUavDebug.event("MissionRuntime", "CRUISE_ALTITUDE_RESOLVED",
+                    "mission", mission.getMissionId(), "aircraft", mission.getAircraftId(),
+                    "dimension", mission.getDimension(), "worldY", mission.getCruiseAltitudeY(),
+                    "source", "LEGACY_PROFILE_FALLBACK");
+            if (aircraft.world != null) {
+                RDPMissionWorldData.get(aircraft.world).markDirty();
+            }
+        }
+        return mission.getCruiseAltitudeY();
     }
 
     private Target resolvePointTarget(World world, double x, double requestedY, double z) {

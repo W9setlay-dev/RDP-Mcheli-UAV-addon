@@ -25,6 +25,7 @@ public class MissionDefinitionCodecTest {
                 .setSwarmEnabled(true)
                 .setSwarmMaximumMembers(3)
                 .setSwarmId(swarmId)
+                .setCruiseAltitudeY(180)
                 .setSwarmConfiguration(SwarmConfiguration.builder().maximumMembers(3)
                         .horizontalSpacing(27D).verticalSpacing(13D)
                         .formation(SwarmFormation.WEDGE).searchPattern(SearchPattern.SPIRAL)
@@ -46,6 +47,7 @@ public class MissionDefinitionCodecTest {
         assertEquals(source.getSearchMode(), decoded.getSearchMode());
         assertEquals(source.getSelectedUavs(), decoded.getSelectedUavs());
         assertEquals(swarmId, decoded.getSwarmId());
+        assertEquals(Integer.valueOf(180), decoded.getCruiseAltitudeY());
         assertEquals(SwarmFormation.WEDGE, decoded.getSwarmConfiguration().getFormation());
         assertEquals(SearchPattern.SPIRAL, decoded.getSwarmConfiguration().getSearchPattern());
         assertEquals(SwarmLeadership.DESIGNATED_LEADER,

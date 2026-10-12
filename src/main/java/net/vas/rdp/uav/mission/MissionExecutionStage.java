@@ -14,11 +14,12 @@ public enum MissionExecutionStage {
             case CRUISE: return TRANSIT;
             case SEARCHING: case WAITING_FOR_TARGET: case LOST: return SEARCH;
             case TARGET_ACQUIRED: case TARGET_LOCKED: return TARGET_TRACK;
-            case KAMIKADZE_TARGET: case APPROACHING: case ATTACK_TARGET:
-            case ON_TARGET: return TERMINAL;
+            case KAMIKADZE_TARGET: return TERMINAL;
+            case APPROACHING: case ATTACK_TARGET: case ON_TARGET:
+                return TARGET_TRACK;
             case ORBITING: case SCANNING: case DEEP_SCANNING:
             case REPORTING: return type == MissionType.RECONNAISSANCE
-                    || type == MissionType.OBSERVATION ? RECON_REPORT : TERMINAL;
+                    || type == MissionType.OBSERVATION ? RECON_REPORT : TARGET_TRACK;
             case HOLDING: return STATION_HOLD;
             case LAUNCH_ACCEPTED: case PROJECTILE_TRACKED: case IMPACT_OBSERVED:
             case EFFECT_CONFIRMED: case OUTCOME_UNKNOWN: case DIRECT_LAUNCH_COMPLETE:

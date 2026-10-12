@@ -63,6 +63,7 @@ public final class RDPMission {
     private String lastTransitionReason;
     private TargetPolicy.Snapshot targetPolicy = TargetPolicy.builder().snapshot();
     private List<MissionWaypoint> patrolRoute = Collections.emptyList();
+    private double cruiseAltitudeY = Double.NaN;
 
     public RDPMission(UUID missionId, UUID ownerId, UUID aircraftId, String aircraftType,
                       MissionType missionType, TargetSpec targetSpec, boolean attack,
@@ -758,6 +759,21 @@ public final class RDPMission {
         patrolRoute = Collections.unmodifiableList(new ArrayList<>(route));
     }
     public List<MissionWaypoint> getPatrolRoute() { return patrolRoute; }
+    public double getCruiseAltitudeY() { return cruiseAltitudeY; }
+    public boolean hasCruiseAltitudeY() { return Double.isFinite(cruiseAltitudeY); }
+    public void setCruiseAltitudeY(double value) {
+        if (!Double.isFinite(value) || value < 1.0D || value > 4094.0D) {
+            throw new IllegalArgumentException("Cruise altitude must be finite and in 1..4094");
+        }
+        cruiseAltitudeY = value;
+    }
+    public double resolveCruiseAltitudeY(double fallback) {
+        if (!Double.isFinite(fallback) || fallback < 1.0D || fallback > 4094.0D) {
+            throw new IllegalArgumentException("Resolved cruise altitude is outside supported world bounds");
+        }
+        if (!hasCruiseAltitudeY()) cruiseAltitudeY = fallback;
+        return cruiseAltitudeY;
+    }
 
     public static RDPMission restore(UUID missionId, UUID ownerId, UUID aircraftId,
                                      String aircraftType, MissionType missionType,

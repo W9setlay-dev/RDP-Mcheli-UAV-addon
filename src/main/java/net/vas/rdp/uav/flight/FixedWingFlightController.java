@@ -25,6 +25,13 @@ public final class FixedWingFlightController implements AirframeController {
     public NativeFlightControlCommand update(AircraftState state, double targetX,
                                              double targetY, double targetZ,
                                              long currentTick) {
+        return update(state, targetX, targetY, targetZ, currentTick, false);
+    }
+
+    @Override
+    public NativeFlightControlCommand update(AircraftState state, double targetX,
+                                             double targetY, double targetZ,
+                                             long currentTick, boolean absoluteAltitude) {
         if (state == null || finite(targetX, targetY, targetZ) || currentTick < 0L) {
             throw new IllegalArgumentException("Invalid fixed-wing controller inputs");
         }
@@ -36,7 +43,8 @@ public final class FixedWingFlightController implements AirframeController {
             return NativeFlightControlCommand.unsupported("STALE_OR_INVALID_AIRCRAFT_STATE");
         }
 
-        double safeTargetY = WorkingAltitudePolicy.clampToProfile(profile, targetY);
+        double safeTargetY = absoluteAltitude ? targetY
+                : WorkingAltitudePolicy.clampToProfile(profile, targetY);
         double dx = targetX - state.getX();
         double dy = safeTargetY - state.getY();
         double dz = targetZ - state.getZ();
