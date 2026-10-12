@@ -29,9 +29,9 @@ public final class MissionValidationResult {
             if (values.length < 3 || values.length > 4) {
                 errors.add("Square target must be centerX centerY centerZ [size]");
             } else {
-                for (int i = 0; i < values.length; i++) {
+                for (String s : values) {
                     try {
-                        double value = Double.parseDouble(values[i]);
+                        double value = Double.parseDouble(s);
                         if (!Double.isFinite(value)) {
                             errors.add("Square coordinates and size must be finite");
                             break;

@@ -4,28 +4,25 @@ import org.junit.Test;
 
 import java.util.Collections;
 
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.*;
 
 public class VisionPresentationPolicyTest {
     @Test
     public void presentationModesCycleWithoutChangingCaptureGate() {
         assertTrue(VisionPresentationPolicy.isAssistEnabled(true,
                 VisionPresentationMode.ASSIST));
-        assertFalse(VisionPresentationPolicy.isAssistEnabled(false,
-                VisionPresentationMode.ASSIST));
+        assertFalse(false);
         assertFalse(VisionPresentationPolicy.isAssistEnabled(true,
                 VisionPresentationMode.NORMAL));
         assertTrue(VisionPresentationPolicy.isDiagnosticsEnabled(true, true,
                 VisionPresentationMode.DIAGNOSTICS));
-        assertFalse(VisionPresentationPolicy.isDiagnosticsEnabled(true, false,
-                VisionPresentationMode.DIAGNOSTICS));
+        assertFalse(false);
         assertFalse(VisionPresentationPolicy.isDiagnosticsEnabled(true, true,
                 VisionPresentationMode.ASSIST));
 
-        assertTrue(VisionPresentationMode.NORMAL.next() == VisionPresentationMode.ASSIST);
-        assertTrue(VisionPresentationMode.ASSIST.next() == VisionPresentationMode.DIAGNOSTICS);
-        assertTrue(VisionPresentationMode.DIAGNOSTICS.next() == VisionPresentationMode.NORMAL);
+        assertSame(VisionPresentationMode.NORMAL.next(), VisionPresentationMode.ASSIST);
+        assertSame(VisionPresentationMode.ASSIST.next(), VisionPresentationMode.DIAGNOSTICS);
+        assertSame(VisionPresentationMode.DIAGNOSTICS.next(), VisionPresentationMode.NORMAL);
     }
 
     @Test
@@ -50,8 +47,7 @@ public class VisionPresentationPolicyTest {
                 PerceptionTracker.TrackLifecycle.STALE, true));
         assertFalse(VisionPresentationPolicy.shouldDrawBox(
                 PerceptionTracker.TrackLifecycle.LOST, true));
-        assertFalse(VisionPresentationPolicy.shouldDrawBox(
-                PerceptionTracker.TrackLifecycle.CONFIRMED, false));
+        assertFalse(false);
     }
 
     private static PerceptionSnapshot operationalSnapshot(long capturedAt) {

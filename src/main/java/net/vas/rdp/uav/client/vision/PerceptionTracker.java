@@ -3,7 +3,6 @@ package net.vas.rdp.uav.client.vision;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -89,7 +88,7 @@ public final class PerceptionTracker {
                 }
             }
         }
-        Collections.sort(result, Association.ORDER);
+        result.sort(Association.ORDER);
         return result;
     }
 

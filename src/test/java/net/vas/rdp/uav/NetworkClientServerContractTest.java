@@ -110,7 +110,7 @@ public class NetworkClientServerContractTest {
     @Test
     public void squareStrikePacketPreservesOptionalCruiseAltitudeExtension() {
         assertSameWirePayload(new RdpUavNetwork.SquareStrike("10 80 20 64",
-                        "agm114", Integer.valueOf(180)),
+                        "agm114", 180),
                 new RdpUavNetwork.SquareStrike());
     }
 
@@ -148,7 +148,7 @@ public class NetworkClientServerContractTest {
         assertEquals(swarmId, snapshot.getSwarms().get(0).id);
         assertEquals(aircraftId, snapshot.getSwarms().get(0).members.get(0).aircraftId);
         assertEquals("SPIRAL", snapshot.getSwarms().get(0).searchPattern);
-        assertEquals(true, snapshot.getSwarms().get(0).members.get(0).designatedLeader);
+        assertTrue(snapshot.getSwarms().get(0).members.get(0).designatedLeader);
     }
 
     private static void setPrivateInt(Object target, String name, int value) {

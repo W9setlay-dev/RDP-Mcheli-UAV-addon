@@ -124,8 +124,7 @@ public final class RDPUavSwarmWorldData extends WorldSavedData {
                         swarm.getTargetRegistry().setSearchDispatched(
                                 value.getBoolean("sharedTargetSearchDispatched"));
                     }
-                } catch (IllegalArgumentException ignored) { }
-                catch (IllegalStateException ignored) { }
+                } catch (IllegalArgumentException | IllegalStateException ignored) { }
             }
             if (value.hasKey("leader")) swarm.setDesignatedLeader(UUID.fromString(value.getString("leader")));
             if (value.hasKey("commander")) {

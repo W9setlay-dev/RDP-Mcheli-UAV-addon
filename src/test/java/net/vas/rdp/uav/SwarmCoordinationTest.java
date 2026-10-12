@@ -123,8 +123,8 @@ public class SwarmCoordinationTest {
 
         assertEquals(SwarmRole.SEARCHER, searcher.getRole());
         assertEquals(SwarmRole.TRACKER, tracker.getRole());
-        assertNotSame(searcher.getRole(), SwarmRole.EXECUTOR);
-        assertNotSame(tracker.getRole(), SwarmRole.EXECUTOR);
+        assertNotSame(SwarmRole.EXECUTOR, searcher.getRole());
+        assertNotSame(SwarmRole.EXECUTOR, tracker.getRole());
     }
 
     @Test
@@ -145,6 +145,6 @@ public class SwarmCoordinationTest {
 
         assertEquals(SwarmRole.RESERVE, unavailable.getRole());
         assertEquals(SwarmRole.SEARCHER, replacement.getRole());
-        assertNotSame(replacement.getRole(), SwarmRole.EXECUTOR);
+        assertNotSame(SwarmRole.EXECUTOR, replacement.getRole());
     }
 }

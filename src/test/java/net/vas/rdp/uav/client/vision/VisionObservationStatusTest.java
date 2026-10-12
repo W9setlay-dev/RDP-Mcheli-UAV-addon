@@ -4,9 +4,7 @@ import org.junit.Test;
 
 import java.util.Collections;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.*;
 
 public class VisionObservationStatusTest {
     @Test
@@ -79,7 +77,7 @@ public class VisionObservationStatusTest {
         String previousSession = status.snapshot().getSessionId();
         status.feedStarted("camera-a", 5L);
         assertTrue(status.snapshot().isFeedActive());
-        assertFalse(previousSession.equals(status.snapshot().getSessionId()));
+        assertNotEquals(previousSession, status.snapshot().getSessionId());
         assertEquals(-1L, status.snapshot().getCapturedSequence());
         assertEquals(-1L, status.snapshot().getProcessedSequence());
         status.frameCaptured(5L, 400L);

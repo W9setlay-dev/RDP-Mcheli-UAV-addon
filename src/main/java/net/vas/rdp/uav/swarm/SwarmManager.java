@@ -210,7 +210,7 @@ public final class SwarmManager {
                 continue;
             }
             int profileLimit = SwarmConfig.maximumForProfile(profileName);
-            int profileCount = profileCounts.containsKey(profileName) ? profileCounts.get(profileName) : 0;
+            int profileCount = profileCounts.getOrDefault(profileName, 0);
             if (profileCount >= profileLimit) continue;
             if (type == MissionType.PATROL) {
                 PatrolRoutePlanner.Plan routePlan = PatrolRoutePlanner.plan(world, aircraft,
