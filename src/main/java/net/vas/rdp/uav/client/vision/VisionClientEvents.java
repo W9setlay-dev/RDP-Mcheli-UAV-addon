@@ -5,7 +5,6 @@ import com.cleanroommc.modularui.screen.ModularScreen;
 import com.cleanroommc.modularui.screen.viewport.ModularGuiContext;
 import com.cleanroommc.modularui.api.widget.IWidget;
 import com.cleanroommc.modularui.widget.sizer.Area;
-import com.cleanroommc.modularui.widget.WidgetTree;
 import com.norwood.mcheli.uav.WidgetUavCameraFeed;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Gui;
@@ -18,6 +17,9 @@ import net.minecraftforge.fml.common.gameevent.TickEvent;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
 import org.lwjgl.opengl.GL;
+
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.List;
 import java.util.Map;
 import java.util.WeakHashMap;
@@ -316,16 +318,26 @@ public final class VisionClientEvents {
             cachedFeed = null;
             cachedFeedContext = context;
             for (ModularPanel panel : context.getScreen().getPanelManager().getReverseOpenPanels()) {
-                for (IWidget widget : WidgetTree.iterableBFS(panel)) {
-                    if (widget instanceof WidgetUavCameraFeed) {
-                        cachedFeed = (WidgetUavCameraFeed) widget;
-                        break;
-                    }
-                }
+                cachedFeed = findFeedWidget(panel);
                 if (cachedFeed != null) break;
             }
         }
         return cachedFeed;
+    }
+
+    private static WidgetUavCameraFeed findFeedWidget(IWidget root) {
+        Deque<IWidget> pending = new ArrayDeque<>();
+        pending.addLast(root);
+        while (!pending.isEmpty()) {
+            IWidget widget = pending.removeFirst();
+            if (widget instanceof WidgetUavCameraFeed) {
+                return (WidgetUavCameraFeed) widget;
+            }
+            for (IWidget child : widget.getChildren()) {
+                pending.addLast(child);
+            }
+        }
+        return null;
     }
 
     private static void drawStatusPanel(Minecraft minecraft, int x, int y,

@@ -77,7 +77,7 @@ dependencies {
     compile files(elegantNetworkingJar, rdpCoreJar)
     compile fg.deobf('blank:mcheli-ce:1.5.1')
 
-    compile('com.cleanroommc:modularui:3.0.5') {
+    compile('com.cleanroommc:modularui:3.1.6') {
         transitive = false
     }
     runtimeOnly('zone.rong:mixinbooter:11.17') {
