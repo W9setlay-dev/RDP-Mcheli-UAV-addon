@@ -15,6 +15,14 @@ public final class OperatorTrimRegistry {
     public static boolean accept(UUID aircraftId, UUID missionId, long sequence,
                                  long clientTick, double yawDelta, double pitchDelta, long serverTick,
                                  UavVehicleProfile profile) {
+        return accept(aircraftId, missionId, sequence, clientTick, yawDelta,
+                pitchDelta, 0.0D, serverTick, profile);
+    }
+
+    public static boolean accept(UUID aircraftId, UUID missionId, long sequence,
+                                 long clientTick, double yawDelta, double pitchDelta,
+                                 double rollDelta, long serverTick,
+                                 UavVehicleProfile profile) {
         if (aircraftId == null || missionId == null || profile == null) return false;
         OperatorTrimState state = STATES.get(aircraftId);
         if (state == null || !missionId.equals(state.getMissionId())) {
@@ -22,7 +30,8 @@ public final class OperatorTrimRegistry {
             STATES.put(aircraftId, replacement);
             state = replacement;
         }
-        return state.accept(sequence, clientTick, yawDelta, pitchDelta, serverTick, profile);
+        return state.accept(sequence, clientTick, yawDelta, pitchDelta, rollDelta,
+                serverTick, profile);
     }
 
     public static OperatorTrimState.Snapshot snapshot(UUID aircraftId, UUID missionId,

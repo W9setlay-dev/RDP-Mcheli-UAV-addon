@@ -1,6 +1,8 @@
 package net.vas.rdp.uav.client;
 
 import com.norwood.mcheli.aircraft.MCH_EntityAircraft;
+import com.norwood.mcheli.MCH_Config;
+import com.norwood.mcheli.MCH_Key;
 import net.minecraft.client.Minecraft;
 import net.minecraft.entity.Entity;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
@@ -11,9 +13,10 @@ import net.vas.rdp.uav.network.RdpUavNetwork;
 
 import java.util.UUID;
 
-/** Converts camera-relative look deltas into bounded, server-validated trim packets. */
+/** Samples camera and lateral-key corrections into server-validated packets. */
 @SideOnly(Side.CLIENT)
 public final class OperatorTrimClientHandler {
+    private static final float ROLL_CORRECTION_PER_TICK = 1.0F;
     private static long sequence = Math.max(1L, System.currentTimeMillis() << 10);
     private UUID sampledAircraft;
     private UUID sampledMission;
@@ -26,6 +29,10 @@ public final class OperatorTrimClientHandler {
         if (event.phase != TickEvent.Phase.END) return;
         Minecraft mc = Minecraft.getMinecraft();
         if (mc.player == null || mc.world == null) {
+            reset();
+            return;
+        }
+        if (mc.currentScreen != null) {
             reset();
             return;
         }
@@ -70,14 +77,28 @@ public final class OperatorTrimClientHandler {
         previousRelativePitch = relativePitch;
         yawDelta = clamp(yawDelta, -7.5F, 7.5F);
         pitchDelta = clamp(pitchDelta, -5.0F, 5.0F);
-        if (Math.abs(yawDelta) < 0.015F && Math.abs(pitchDelta) < 0.015F) return;
+        float rollDelta = lateralRollCorrection();
+        if (Math.abs(yawDelta) < 0.015F && Math.abs(pitchDelta) < 0.015F
+                && rollDelta == 0.0F) return;
         long next = ++sequence;
         if (next <= 0L) {
             sequence = Math.max(1L, System.currentTimeMillis() << 10);
             next = ++sequence;
         }
         RdpUavNetwork.sendOperatorTrim(aircraft.getUniqueID(), missionId,
-                next, mc.world.getTotalWorldTime(), yawDelta, pitchDelta);
+                next, mc.world.getTotalWorldTime(), yawDelta, pitchDelta, rollDelta);
+    }
+
+    private static float lateralRollCorrection() {
+        if (MCH_Config.KeyLeft == null || MCH_Config.KeyRight == null) return 0.0F;
+        boolean left = MCH_Key.isKeyDown(MCH_Config.KeyLeft.prmInt);
+        boolean right = MCH_Key.isKeyDown(MCH_Config.KeyRight.prmInt);
+        return lateralRollCorrection(left, right);
+    }
+
+    static float lateralRollCorrection(boolean left, boolean right) {
+        if (left == right) return 0.0F;
+        return left ? -ROLL_CORRECTION_PER_TICK : ROLL_CORRECTION_PER_TICK;
     }
 
     private void reset() {

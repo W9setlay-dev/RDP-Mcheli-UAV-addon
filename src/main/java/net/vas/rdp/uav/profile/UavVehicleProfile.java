@@ -116,6 +116,9 @@ public final class UavVehicleProfile {
         return executionProfile == UavExecutionProfile.REUSABLE_UAV
                 || executionProfile == UavExecutionProfile.LONG_RANGE_REUSABLE_UAV;
     }
+    public boolean supportsStationHold() {
+        return holdingEnabled || isHelicopterProfile();
+    }
     public boolean isHelicopterProfile() {
         return executionProfile == UavExecutionProfile.HELICOPTER_ONE_WAY_FPV;
     }
@@ -134,7 +137,6 @@ public final class UavVehicleProfile {
     public double getMinimumExecutionAltitude() { return minimumExecutionAltitude; }
     public double getMaximumExecutionAltitude() { return maximumExecutionAltitude; }
     public double getAltitudeTolerance() { return altitudeTolerance; }
-    @SuppressWarnings("unused")
     public boolean isHoldingEnabled() { return holdingEnabled; }
     public String getTerminalPayloadBehavior() { return terminalPayloadBehavior; }
     public double getDetectionRange() { return detectionRange; }

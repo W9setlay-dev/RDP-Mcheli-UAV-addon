@@ -53,14 +53,90 @@ public class MissionLifecycleContractTest {
     }
 
     @Test
-    public void hardDeadlineIsIndependentOfRecoveryStateRefreshes() {
+    public void explicitWaitTimeDoesNotConsumeTheActiveMissionDeadline() {
         RDPMission mission = mission(100);
         mission.transitionTo(MissionState.WAITING_FOR_WORLD, 101);
         mission.defer("AIRCRAFT_NOT_FOUND", MissionState.WAITING_FOR_WORLD, 102);
         mission.transitionTo(MissionState.REPLAN, 103);
 
-        assertTrue(mission.isTimedOut(110, 10));
-        assertFalse(mission.isTimedOut(109, 10));
+        assertFalse(mission.isTimedOut(110, 10));
+        assertFalse(mission.isTimedOut(111, 10));
+        assertTrue(mission.isTimedOut(112, 10));
+    }
+
+    @Test
+    public void lockedAttackWaitsIndefinitelyForOperatorAuthorizationThenResumesDeadline() {
+        RDPMission mission = strikeMission(0);
+        mission.transitionTo(MissionState.DISPATCHED, 1);
+        mission.transitionTo(MissionState.TAKEOFF, 2);
+        mission.transitionTo(MissionState.CRUISE, 3);
+        mission.transitionTo(MissionState.SEARCHING, 4);
+        mission.transitionTo(MissionState.TARGET_ACQUIRED, 5);
+        mission.transitionTo(MissionState.TARGET_LOCKED, 6);
+
+        assertTrue(mission.isMissionDeadlineExempt());
+        assertFalse(mission.isTimedOut(12_006, 12_000));
+
+        mission.authorizeDestructiveAction(12_006);
+        mission.transitionTo(MissionState.ATTACK_TARGET, 12_006);
+
+        assertFalse(mission.isMissionDeadlineExempt());
+        assertFalse(mission.isTimedOut(23_999, 12_000));
+        assertTrue(mission.isTimedOut(24_000, 12_000));
+    }
+
+    @Test
+    public void authorizationClosesTheDeadlinePauseBeforeStateTransition() {
+        RDPMission mission = strikeMission(0);
+        mission.transitionTo(MissionState.DISPATCHED, 1);
+        mission.transitionTo(MissionState.TAKEOFF, 2);
+        mission.transitionTo(MissionState.CRUISE, 3);
+        mission.transitionTo(MissionState.SEARCHING, 4);
+        mission.transitionTo(MissionState.TARGET_ACQUIRED, 5);
+        mission.transitionTo(MissionState.TARGET_LOCKED, 6);
+
+        mission.authorizeDestructiveAction(6_006);
+
+        assertEquals(MissionState.TARGET_LOCKED, mission.getState());
+        assertFalse(mission.isMissionDeadlineExempt());
+        assertTrue(mission.isTimedOut(18_000, 12_000));
+    }
+
+    @Test
+    public void explicitOperatorWaitStatesAreExemptFromMissionDeadline() {
+        MissionState[] waitingStates = {
+                MissionState.WAITING_FOR_TARGET,
+                MissionState.LOST,
+                MissionState.HOLDING,
+                MissionState.WAITING_FOR_WORLD,
+                MissionState.WAITING_FOR_FUEL,
+                MissionState.EXECUTION_STALLED,
+                MissionState.RECOVERING,
+                MissionState.OUTCOME_UNKNOWN
+        };
+        for (MissionState state : waitingStates) {
+            assertTrue(state + " should be exempt", state.isMissionDeadlineExempt());
+        }
+    }
+
+    @Test
+    public void activeExecutionStatesRetainMissionDeadline() {
+        MissionState[] activeStates = {
+                MissionState.PLANNED,
+                MissionState.DISPATCHED,
+                MissionState.TAKEOFF,
+                MissionState.CRUISE,
+                MissionState.SEARCHING,
+                MissionState.REPLAN,
+                MissionState.APPROACHING,
+                MissionState.ATTACK_TARGET,
+                MissionState.RETURNING,
+                MissionState.LANDING
+        };
+        for (MissionState state : activeStates) {
+            assertFalse(state + " should retain the deadline",
+                    state.isMissionDeadlineExempt());
+        }
     }
 
     @Test
@@ -456,5 +532,12 @@ public class MissionLifecycleContractTest {
                 "switchblade", MissionType.RECONNAISSANCE,
                 TargetSpec.point(0, 80, 0, TargetPriority.NORMAL),
                 false, false, false, 64, 32, createdTick);
+    }
+
+    private static RDPMission strikeMission(long createdTick) {
+        return new RDPMission(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
+                "switchblade", MissionType.STRIKE,
+                TargetSpec.point(0, 80, 0, TargetPriority.HIGH),
+                true, false, false, 64, 32, createdTick);
     }
 }

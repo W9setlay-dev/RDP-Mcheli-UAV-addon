@@ -200,10 +200,19 @@ public final class RdpUavNetwork {
     public static void sendOperatorTrim(java.util.UUID aircraftId, java.util.UUID missionId,
                                         long sequence, long clientTick,
                                         float yawDelta, float pitchDelta) {
+        sendOperatorTrim(aircraftId, missionId, sequence, clientTick,
+                yawDelta, pitchDelta, 0.0F);
+    }
+
+    /** Send bounded camera/key corrections; the client never supplies setpoints. */
+    public static void sendOperatorTrim(java.util.UUID aircraftId, java.util.UUID missionId,
+                                        long sequence, long clientTick,
+                                        float yawDelta, float pitchDelta, float rollDelta) {
         if (aircraftId == null || missionId == null || sequence < 0L || clientTick < 0L
-                || !Float.isFinite(yawDelta) || !Float.isFinite(pitchDelta)) return;
+                || !Float.isFinite(yawDelta) || !Float.isFinite(pitchDelta)
+                || !Float.isFinite(rollDelta)) return;
         CHANNEL.sendToServer(new OperatorTrim(aircraftId, missionId, sequence,
-                clientTick, yawDelta, pitchDelta));
+                clientTick, yawDelta, pitchDelta, rollDelta));
     }
 
     public static void retaskLinkedStrike(String parentMissionId, java.util.UUID targetId) {
@@ -1386,16 +1395,17 @@ public final class RdpUavNetwork {
         }
     }
 
-    /** Authenticated, sequenced operator look correction. */
+    /** Authenticated, sequenced operator attitude correction. */
     public static final class OperatorTrim implements IMessage {
         private long aircraftMost, aircraftLeast, missionMost, missionLeast;
         private long sequence;
         private long clientTick;
-        private float yawDelta, pitchDelta;
+        private float yawDelta, pitchDelta, rollDelta;
 
         public OperatorTrim() { }
         private OperatorTrim(java.util.UUID aircraftId, java.util.UUID missionId,
-                             long sequence, long clientTick, float yawDelta, float pitchDelta) {
+                             long sequence, long clientTick, float yawDelta, float pitchDelta,
+                             float rollDelta) {
             this.aircraftMost = aircraftId.getMostSignificantBits();
             this.aircraftLeast = aircraftId.getLeastSignificantBits();
             this.missionMost = missionId.getMostSignificantBits();
@@ -1404,21 +1414,25 @@ public final class RdpUavNetwork {
             this.clientTick = clientTick;
             this.yawDelta = yawDelta;
             this.pitchDelta = pitchDelta;
+            this.rollDelta = rollDelta;
         }
         public void fromBytes(ByteBuf buffer) {
             aircraftMost = buffer.readLong(); aircraftLeast = buffer.readLong();
             missionMost = buffer.readLong(); missionLeast = buffer.readLong();
             sequence = buffer.readLong(); clientTick = buffer.readLong();
             yawDelta = buffer.readFloat(); pitchDelta = buffer.readFloat();
+            rollDelta = buffer.isReadable() ? buffer.readFloat() : 0.0F;
         }
         public void toBytes(ByteBuf buffer) {
             buffer.writeLong(aircraftMost); buffer.writeLong(aircraftLeast);
             buffer.writeLong(missionMost); buffer.writeLong(missionLeast);
             buffer.writeLong(sequence); buffer.writeLong(clientTick);
             buffer.writeFloat(yawDelta); buffer.writeFloat(pitchDelta);
+            buffer.writeFloat(rollDelta);
         }
         private java.util.UUID aircraftId() { return new java.util.UUID(aircraftMost, aircraftLeast); }
         private java.util.UUID missionId() { return new java.util.UUID(missionMost, missionLeast); }
+        float getRollDelta() { return rollDelta; }
     }
 
     public static final class ServerOperatorTrimHandler
@@ -1449,13 +1463,14 @@ public final class RdpUavNetwork {
                 boolean accepted = net.vas.rdp.uav.flight.OperatorTrimRegistry.accept(
                         aircraft.getUniqueID(), mission.getMissionId(), message.sequence,
                         message.clientTick,
-                        message.yawDelta, message.pitchDelta,
+                        message.yawDelta, message.pitchDelta, message.rollDelta,
                         player.world.getTotalWorldTime(), profile);
                 if (accepted) {
-                    RdpUavDebug.event("OperatorTrim", "CAMERA_TRIM_ACCEPTED",
+                    RdpUavDebug.event("OperatorTrim", "ATTITUDE_CORRECTION_ACCEPTED",
                             "mission", mission.getMissionId(), "aircraft", aircraft.getUniqueID(),
                             "operator", player.getUniqueID(), "sequence", message.sequence,
                             "yawDelta", message.yawDelta, "pitchDelta", message.pitchDelta,
+                            "rollDelta", message.rollDelta,
                             "tick", player.world.getTotalWorldTime());
                 }
             });
@@ -1883,8 +1898,28 @@ public final class RdpUavNetwork {
             for (int i = start; i < end; i++) {
                 net.vas.rdp.uav.mission.RDPMission mission = missions.get(i);
                 ids[i - start] = mission.getMissionId().toString();
+                boolean waitState = mission.getState()
+                        == net.vas.rdp.uav.mission.MissionState.WAITING_FOR_TARGET
+                        || mission.getState()
+                        == net.vas.rdp.uav.mission.MissionState.LOST;
+                boolean holdUnavailable = (mission.getState()
+                        == net.vas.rdp.uav.mission.MissionState.HOLDING
+                        && "HOLD_UNAVAILABLE_LAST_SAFE_ROUTE".equals(
+                        mission.getLastTransitionReason())
+                        || (waitState && !net.vas.rdp.uav.profile.UavVehicleProfiles
+                        .forAircraft(mission.getAircraftType()).supportsStationHold()));
+                boolean strikeAuthorizationRequired = mission.isAttack()
+                        && !mission.isDestructiveAuthorized()
+                        && mission.getState()
+                        == net.vas.rdp.uav.mission.MissionState.TARGET_LOCKED;
+                String authorizationStatus = strikeAuthorizationRequired
+                        ? "  AUTH REQUIRED"
+                        : mission.isAttack() && mission.isDestructiveAuthorized()
+                        ? "  AUTHORIZED" : "";
                 rows[i - start] = mission.getMissionId().toString().substring(0, 8) + "  "
-                        + mission.getState().name() + "  " + mission.getAircraftType()
+                        + mission.getState().name() + authorizationStatus
+                        + (holdUnavailable ? "  HOLD N/A" : "")
+                        + "  " + mission.getAircraftType()
                         + (mission.getGuidedWeapon() == null ? ""
                         : "  WPN=" + mission.getGuidedWeapon())
                         + "  XYZ=" + formatCoordinate(mission.getTargetSpec().getX())
@@ -2410,16 +2445,18 @@ public final class RdpUavNetwork {
                     double x = mission.getTargetSpec().getX();
                     double y = mission.getTargetSpec().getY();
                     double z = mission.getTargetSpec().getZ();
+                    net.minecraft.entity.Entity lockedTarget = null;
                     if (mission.getTargetId() != null) {
-                        net.minecraft.entity.Entity target = TARGET_RESOLVER.findLoaded(player.world, mission.getTargetId());
-                        if (target == null) {
+                        lockedTarget = TARGET_RESOLVER.findLoaded(
+                                player.world, mission.getTargetId());
+                        if (lockedTarget == null) {
                             player.sendMessage(new net.minecraft.util.text.TextComponentString(
                                     "Attack authorization rejected: locked target is no longer loaded."));
                             return;
                         }
-                        x = target.posX;
-                        y = target.posY;
-                        z = target.posZ;
+                        x = lockedTarget.posX;
+                        y = lockedTarget.posY;
+                        z = lockedTarget.posZ;
                     }
                     net.vas.rdp.uav.profile.UavVehicleProfile profile =
                             net.vas.rdp.uav.profile.UavVehicleProfiles
@@ -2429,6 +2466,13 @@ public final class RdpUavNetwork {
                             == net.vas.rdp.uav.profile.UavExecutionProfile.UNKNOWN) {
                         player.sendMessage(new net.minecraft.util.text.TextComponentString(
                                 "Attack authorization rejected: aircraft profile is unsupported."));
+                        return;
+                    }
+                    if (lockedTarget != null
+                            && !net.vas.rdp.uav.target.TargetPolicy.isVisuallyObservable(
+                            player.world, aircraft, lockedTarget, profile.getLockRange())) {
+                        player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                "Attack authorization rejected: locked target is not freshly visible."));
                         return;
                     }
                     GuidedStrikeObjective objective = mission.getTargetId() == null
@@ -2466,8 +2510,10 @@ public final class RdpUavNetwork {
                                         "Attack authorization rejected: native attack arming failed."));
                         return;
                     }
+                    long authorizationTick = player.world.getTotalWorldTime();
+                    mission.authorizeDestructiveAction(authorizationTick);
                     mission.transitionTo(net.vas.rdp.uav.mission.MissionState.ATTACK_TARGET,
-                            player.world.getTotalWorldTime());
+                            authorizationTick);
                     net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world).markDirty();
                     sendMissionData(player);
                 } catch (IllegalArgumentException invalid) {
@@ -2513,13 +2559,26 @@ public final class RdpUavNetwork {
                     double x = mission.getTargetSpec().getX();
                     double y = mission.getTargetSpec().getY();
                     double z = mission.getTargetSpec().getZ();
+                    net.minecraft.entity.Entity lockedTarget = null;
                     if (mission.getTargetId() != null) {
-                        net.minecraft.entity.Entity target = TARGET_RESOLVER.findLoaded(player.world, mission.getTargetId());
-                        if (target == null) {
+                        lockedTarget = TARGET_RESOLVER.findLoaded(
+                                player.world, mission.getTargetId());
+                        if (lockedTarget == null) {
                             rejectKamikaze(player, "Nose-dive rejected: locked target is no longer loaded.");
                             return;
                         }
-                        x = target.posX; y = target.posY; z = target.posZ;
+                        x = lockedTarget.posX; y = lockedTarget.posY; z = lockedTarget.posZ;
+                        net.vas.rdp.uav.profile.UavVehicleProfile profile =
+                                net.vas.rdp.uav.profile.UavVehicleProfiles.forAircraft(
+                                        aircraft.getAcInfo() == null
+                                                ? null : aircraft.getAcInfo().name);
+                        if (profile == null || !profile.supportsTargetLock()
+                                || !net.vas.rdp.uav.target.TargetPolicy.isVisuallyObservable(
+                                player.world, aircraft, lockedTarget, profile.getLockRange())) {
+                            rejectKamikaze(player,
+                                    "Nose-dive rejected: locked target is not freshly visible.");
+                            return;
+                        }
                     }
                     if (FLIGHT_ADAPTER.armKamikaze(aircraft, x, y, z,
                             mission.getObservationDistance(), mission.getTargetId())) {
@@ -2529,11 +2588,12 @@ public final class RdpUavNetwork {
                     }
                     // Reusable and long-range airframes may only enter a
                     // destructive route through this operator-authenticated request.
-                    mission.authorizeDestructiveAction();
+                    long authorizationTick = player.world.getTotalWorldTime();
+                    mission.authorizeDestructiveAction(authorizationTick);
                     KamikazePilotOverride.lock(aircraft.getUniqueID(), mission.getTargetId(),
                             mission.getMissionId());
                     mission.transitionTo(net.vas.rdp.uav.mission.MissionState.KAMIKADZE_TARGET,
-                            player.world.getTotalWorldTime());
+                            authorizationTick);
                     net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world).markDirty();
                     sendMissionData(player);
                 } catch (IllegalArgumentException ignored) {

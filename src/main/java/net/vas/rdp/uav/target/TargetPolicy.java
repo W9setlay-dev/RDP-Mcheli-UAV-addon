@@ -22,6 +22,7 @@ public final class TargetPolicy {
     public static boolean rejectDeeplyEmbedded = true;
     public static boolean allowHostileVehicles = true;
     public static double maximumEmbeddedDepth = 1.5D;
+    public static double visualFieldOfViewDegrees = 90.0D;
 
     private TargetPolicy() { }
 
@@ -82,6 +83,9 @@ public final class TargetPolicy {
         maximumEmbeddedDepth = config.getFloat("maximumEmbeddedDepth", "safety",
                 (float) maximumEmbeddedDepth, 0.1F, 16F,
                 "Maximum tolerated distance below the supporting block top.");
+        visualFieldOfViewDegrees = config.getFloat("visualFieldOfViewDegrees", "observation",
+                (float) visualFieldOfViewDegrees, 1F, 180F,
+                "Server-side visual observation cone for autonomous aircraft.");
         if (config.hasChanged()) config.save();
     }
 
@@ -146,6 +150,57 @@ public final class TargetPolicy {
         if (!isFinite(start) || !isFinite(end)) return false;
         RayTraceResult obstruction = world.rayTraceBlocks(start, end, false, true, false);
         return obstruction == null || obstruction.typeOfHit != RayTraceResult.Type.BLOCK;
+    }
+
+    /**
+     * Server-only entity observation gate. The aircraft's native look vector
+     * supplies the observation cone; a block ray and loaded-chunk checks
+     * prevent candidates beyond walls or unloaded terrain from becoming fresh.
+     */
+    public static boolean isVisuallyObservable(World world, Entity observer,
+                                               Entity target, double maximumRange) {
+        if (world == null || world.isRemote || observer == null || target == null
+                || observer.isDead || target.isDead || observer.world != world
+                || target.world != world
+                || observer.dimension != world.provider.getDimension()
+                || target.dimension != world.provider.getDimension()
+                || !Double.isFinite(maximumRange) || maximumRange <= 0.0D) {
+            return false;
+        }
+        AxisAlignedBB observerBounds = observer.getEntityBoundingBox();
+        AxisAlignedBB targetBounds = target.getEntityBoundingBox();
+        Vec3d start = new Vec3d(
+                (observerBounds.minX + observerBounds.maxX) * 0.5D,
+                (observerBounds.minY + observerBounds.maxY) * 0.5D,
+                (observerBounds.minZ + observerBounds.maxZ) * 0.5D);
+        Vec3d end = new Vec3d(
+                (targetBounds.minX + targetBounds.maxX) * 0.5D,
+                (targetBounds.minY + targetBounds.maxY) * 0.5D,
+                (targetBounds.minZ + targetBounds.maxZ) * 0.5D);
+        Vec3d look = observer.getLookVec();
+        if (!isFinite(start) || !isFinite(end) || !isFinite(look)
+                || !VisualObservationPolicy.isWithinFieldOfView(
+                start.x, start.y, start.z, look.x, look.y, look.z,
+                end.x, end.y, end.z, maximumRange, visualFieldOfViewDegrees)
+                || !isLoadedSightline(world, start, end)) {
+            return false;
+        }
+        RayTraceResult obstruction = world.rayTraceBlocks(start, end, false, true, false);
+        return obstruction == null || obstruction.typeOfHit != RayTraceResult.Type.BLOCK;
+    }
+
+    private static boolean isLoadedSightline(World world, Vec3d start, Vec3d end) {
+        double dx = end.x - start.x;
+        double dy = end.y - start.y;
+        double dz = end.z - start.z;
+        int steps = Math.max(1, (int) Math.ceil(Math.sqrt(dx * dx + dy * dy + dz * dz) / 4.0D));
+        for (int i = 0; i <= steps; i++) {
+            double fraction = (double) i / (double) steps;
+            BlockPos position = new BlockPos(start.x + dx * fraction,
+                    start.y + dy * fraction, start.z + dz * fraction);
+            if (!world.isBlockLoaded(position)) return false;
+        }
+        return true;
     }
 
     private static boolean isFinite(Vec3d position) {

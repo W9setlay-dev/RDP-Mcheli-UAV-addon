@@ -16,7 +16,7 @@ import net.vas.rdp.uav.target.TargetSpec;
 import java.util.UUID;
 
 public final class MissionNbtCodec {
-    private static final int CURRENT_SCHEMA = 10;
+    private static final int CURRENT_SCHEMA = 11;
     private MissionNbtCodec() {
     }
 
@@ -52,6 +52,8 @@ public final class MissionNbtCodec {
         tag.setDouble("searchRadius", mission.getSearchRadius());
         tag.setDouble("observationDistance", mission.getObservationDistance());
         tag.setLong("createdTick", mission.getCreatedTick());
+        tag.setLong("pausedDeadlineTicks", mission.getPausedDeadlineTicks());
+        tag.setLong("deadlineExemptSinceTick", mission.getDeadlineExemptSinceTick());
         tag.setLong("lastUpdateTick", mission.getLastUpdateTick());
         tag.setDouble("routeProgress", mission.getRouteProgress());
         tag.setLong("lastMeaningfulProgressTick", mission.getLastMeaningfulProgressTick());
@@ -243,6 +245,13 @@ public final class MissionNbtCodec {
         }
         if (tag.hasKey("recoveryPolicy")) mission.setRecoveryPolicy(tag.getString("recoveryPolicy"));
         mission.setDestructiveAuthorized(tag.getBoolean("destructiveAuthorized"));
+        mission.restoreMissionDeadlineAccounting(
+                tag.hasKey("pausedDeadlineTicks")
+                        ? tag.getLong("pausedDeadlineTicks") : 0L,
+                tag.hasKey("deadlineExemptSinceTick")
+                        ? tag.getLong("deadlineExemptSinceTick")
+                        : mission.isMissionDeadlineExempt()
+                        ? mission.getLastUpdateTick() : -1L);
         mission.restoreKamikazePayloadLaunched(tag.getBoolean("kamikazePayloadLaunched"));
         mission.setPaused(tag.getBoolean("paused"));
         if (tag.hasKey("guidedWeapon")) mission.setGuidedWeapon(tag.getString("guidedWeapon"));

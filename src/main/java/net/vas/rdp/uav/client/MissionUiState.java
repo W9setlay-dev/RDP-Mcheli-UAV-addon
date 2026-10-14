@@ -53,4 +53,13 @@ public final class MissionUiState {
         return isActionable(missionState) && markerState != null
                 && !"HIDDEN".equalsIgnoreCase(markerState);
     }
+
+    public static String observationStatus(String registryId, String targetUuid,
+                                           boolean visible, String lifecycle) {
+        if ("rdpuav:point".equalsIgnoreCase(registryId)) return "POINT";
+        if (targetUuid == null || targetUuid.trim().isEmpty()) return "NONE";
+        if (!visible || "LOST".equalsIgnoreCase(lifecycle)
+                || "EXPIRED".equalsIgnoreCase(lifecycle)) return "STALE";
+        return "FRESH";
+    }
 }

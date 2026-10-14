@@ -1,8 +1,13 @@
 package net.vas.rdp.uav.flight;
 
-import net.vas.rdp.uav.mission.ControlOwner;
+import net.vas.rdp.uav.mission.MissionMovementAuthority;
+import net.vas.rdp.uav.mission.MissionState;
+import net.vas.rdp.uav.mission.MissionType;
+import net.vas.rdp.uav.mission.RDPMission;
 import net.vas.rdp.uav.profile.UavExecutionProfile;
 import net.vas.rdp.uav.profile.UavVehicleProfile;
+import net.vas.rdp.uav.target.TargetPriority;
+import net.vas.rdp.uav.target.TargetSpec;
 import org.junit.Test;
 
 import java.util.UUID;
@@ -34,48 +39,95 @@ public class OperatorTrimStateTest {
     }
 
     @Test
-    public void cameraYawTrimChangesFixedWingCourseAndRollWithoutSettingPose() {
+    public void supervisedTrimAddsBoundedCorrectionsToAiYawPitchAndRoll() {
         UUID missionId = UUID.randomUUID();
         OperatorTrimState state = new OperatorTrimState(missionId);
         UavVehicleProfile profile = profile(UavExecutionProfile.ONE_WAY);
-        assertTrue(state.accept(1, 200, 6.0D, 0.0D, 200, profile));
+        assertTrue(state.accept(1, 200, 6.0D, 4.0D, 2.0D, 200, profile));
         OperatorTrimState.Snapshot trim = state.snapshot(200);
-        AircraftState aircraft = aircraftState(ControlOwner.MISSION_AI, 200L);
-        NativeFlightControlCommand baseline = new FixedWingFlightController(profile)
-                .update(aircraft, 0.0D, 32.0D, 100.0D, 200L);
-        OperatorTrimState.Target corrected = OperatorTrimState.mixTarget(
-                0.0D, 32.0D, 100.0D, 0.0D, 32.0D, 0.0D,
-                trim, profile, 0.0D, 250.0D);
-        NativeFlightControlCommand mixed = new FixedWingFlightController(profile)
-                .update(aircraft, corrected.x, corrected.y, corrected.z, 200L);
+        RDPMission mission = new RDPMission(missionId, UUID.randomUUID(), UUID.randomUUID(),
+                "TEST_UAV", MissionType.RECONNAISSANCE,
+                TargetSpec.point(0.0D, 32.0D, 0.0D, TargetPriority.NORMAL),
+                false, false, false, 64.0D, 32.0D, 1L);
+        mission.enterSupervisedOperatorMode(200L);
+        NativeFlightControlCommand baseline = NativeFlightControlCommand.setpoints(
+                10.0F, 5.0F, 3.0F, 0.65D, 90.0D, 2.0D, 0.1D);
+        NativeFlightControlCommand mixed = MissionMovementAuthority.fuseAiAndOperator(
+                mission, baseline, trim.getYawDegrees(), trim.getPitchDegrees(),
+                trim.getRollDegrees(), profile.getMaximumYawCorrectionDegrees(),
+                profile.getMaximumPitchCorrectionDegrees(),
+                NativeControlMath.maximumRollDegrees(profile, false));
 
-        assertTrue(baseline.isSupported());
-        assertTrue(mixed.isSupported());
-        assertNotEquals(baseline.getDesiredTrack(), mixed.getDesiredTrack(), 0.1D);
-        assertNotEquals(baseline.getRoll(), mixed.getRoll(), 0.1D);
-        assertEquals(0.0D, aircraft.getX(), 0.0D);
-        assertEquals(0.0D, aircraft.getZ(), 0.0D);
+        assertEquals(16.0F, mixed.getYaw(), 0.0001F);
+        assertEquals(1.0F, mixed.getPitch(), 0.0001F);
+        assertEquals(5.0F, mixed.getRoll(), 0.0001F);
+        assertEquals("operator corrections do not take throttle authority",
+                baseline.getThrottle(), mixed.getThrottle(), 0.0D);
+        assertEquals(baseline.getDesiredTrack(), mixed.getDesiredTrack(), 0.0D);
     }
 
     @Test
-    public void helicopterConsumesTrimThroughItsOwnCyclicAndCollectiveController() {
-        UUID missionId = UUID.randomUUID();
-        OperatorTrimState trimState = new OperatorTrimState(missionId);
+    public void rollCorrectionIsBoundedByTheHelicopterEnvelopeAndDecays() {
+        OperatorTrimState state = new OperatorTrimState(UUID.randomUUID());
         UavVehicleProfile profile = profile(UavExecutionProfile.HELICOPTER_ONE_WAY_FPV);
-        assertTrue(trimState.accept(1, 300, 4.0D, 2.0D, 300, profile));
-        OperatorTrimState.Snapshot trim = trimState.snapshot(300);
-        AircraftState aircraft = aircraftState(ControlOwner.MISSION_AI, 300L);
-        OperatorTrimState.Target corrected = OperatorTrimState.mixTarget(
-                0.0D, 8.0D, 80.0D, 0.0D, 32.0D, 0.0D,
-                trim, profile, 4.0D, 250.0D);
-        NativeFlightControlCommand command = new HelicopterFlightController(profile)
-                .update(aircraft, corrected.x, corrected.y, corrected.z, 300L);
+        assertTrue(state.accept(1, 300, 0.0D, 0.0D, 6.0D, 300, profile));
+        assertTrue(state.accept(2, 301, 0.0D, 0.0D, 6.0D, 301, profile));
+        OperatorTrimState.Snapshot active = state.snapshot(301);
+        assertEquals(11.76D, active.getRollDegrees(), 1.0E-9D);
+        assertTrue(state.accept(3, 302, 0.0D, 0.0D, 6.0D, 302, profile));
+        assertEquals(17.2896D, state.snapshot(302).getRollDegrees(), 1.0E-9D);
+        assertTrue(state.snapshot(332).getRollDegrees() < 17.2896D);
+    }
 
-        assertTrue(command.isSupported());
-        assertNotEquals(0.0D, command.getDesiredTrack(), 0.1D);
-        assertTrue(Double.isFinite(command.getThrottle()));
-        assertTrue(Math.abs(command.getPitch()) <= 22.0F);
-        assertTrue(Math.abs(command.getRoll()) <= 20.0F);
+    @Test
+    public void rollCorrectionRejectsOversizedSamplesAndClampsToProfileLimit() {
+        OperatorTrimState state = new OperatorTrimState(UUID.randomUUID());
+        UavVehicleProfile profile = profile(UavExecutionProfile.HELICOPTER_ONE_WAY_FPV);
+        assertFalse(state.accept(1, 400, 0.0D, 0.0D, 6.1D, 400, profile));
+        assertTrue(state.accept(1, 400, 0.0D, 0.0D, 6.0D, 400, profile));
+        assertTrue(state.accept(2, 401, 0.0D, 0.0D, 6.0D, 401, profile));
+        assertTrue(state.accept(3, 402, 0.0D, 0.0D, 6.0D, 402, profile));
+        assertTrue(state.accept(4, 403, 0.0D, 0.0D, 6.0D, 403, profile));
+        assertEquals(20.0D, state.snapshot(403).getRollDegrees(), 0.0D);
+    }
+
+    @Test
+    public void operatorCorrectionsDoNotApplyOutsideSupervisedOwnership() {
+        RDPMission mission = new RDPMission(UUID.randomUUID(), UUID.randomUUID(),
+                UUID.randomUUID(), "TEST_UAV", MissionType.RECONNAISSANCE,
+                TargetSpec.point(0.0D, 32.0D, 0.0D, TargetPriority.NORMAL),
+                false, false, false, 64.0D, 32.0D, 1L);
+        NativeFlightControlCommand baseline = NativeFlightControlCommand.setpoints(
+                10.0F, 5.0F, 3.0F, 0.65D, 90.0D, 2.0D, 0.1D);
+
+        NativeFlightControlCommand result = MissionMovementAuthority.fuseAiAndOperator(
+                mission, baseline, 8.0D, 6.0D, 5.0D, 20.0D, 10.0D, 35.0D);
+
+        assertSame(baseline, result);
+    }
+
+    @Test
+    public void operatorCorrectionsDoNotReplaceTerminalGuidanceOwnership() {
+        RDPMission mission = new RDPMission(UUID.randomUUID(), UUID.randomUUID(),
+                UUID.randomUUID(), "TEST_UAV", MissionType.RECONNAISSANCE,
+                TargetSpec.point(0.0D, 32.0D, 0.0D, TargetPriority.NORMAL),
+                false, false, false, 64.0D, 32.0D, 1L);
+        mission.transitionTo(MissionState.DISPATCHED, 1L);
+        mission.transitionTo(MissionState.TAKEOFF, 2L);
+        mission.transitionTo(MissionState.CRUISE, 3L);
+        mission.transitionTo(MissionState.SEARCHING, 4L);
+        mission.transitionTo(MissionState.TARGET_ACQUIRED, 5L);
+        mission.lockTarget(UUID.randomUUID(), 6L);
+        mission.transitionTo(MissionState.KAMIKADZE_TARGET, 6L);
+        NativeFlightControlCommand baseline = NativeFlightControlCommand.setpoints(
+                10.0F, 5.0F, 3.0F, 0.65D, 90.0D, 2.0D, 0.1D);
+
+        NativeFlightControlCommand result = MissionMovementAuthority.fuseAiAndOperator(
+                mission, baseline, 2.0D, 2.0D, 2.0D, 20.0D, 10.0D, 35.0D);
+
+        assertEquals(12.0F, result.getYaw(), 0.0001F);
+        assertEquals(3.0F, result.getPitch(), 0.0001F);
+        assertEquals(5.0F, result.getRoll(), 0.0001F);
     }
 
     @Test
@@ -107,14 +159,6 @@ public class OperatorTrimStateTest {
                 40.0D, 1.0D, 0.45D));
         assertFalse(TerrainRoutePlanner.canReachClearance(100.0D, 110.0D,
                 40.0D, 0.0D, Double.NaN));
-    }
-
-    private static AircraftState aircraftState(ControlOwner owner, long tick) {
-        return AircraftState.observe(UUID.randomUUID(), 0, tick,
-                0.0D, 32.0D, 0.0D, 0.0D, 32.0D, -1.0D,
-                0.0F, 0.0F, 0.0F, 0.65D, "ENROUTE", UUID.randomUUID(),
-                owner, true, 0, 0.0D, 100.0D, 100.0D, 100.0D,
-                100L, "KNOWN");
     }
 
     private static UavVehicleProfile profile(UavExecutionProfile type) {

@@ -77,22 +77,50 @@ public final class MissionMovementAuthority {
     public static NativeFlightControlCommand fuseAiAndOperator(RDPMission mission,
                                                              NativeFlightControlCommand aiCommand,
                                                              double operatorRollDelta) {
+        return fuseAiAndOperator(mission, aiCommand, 0.0D, 0.0D,
+                operatorRollDelta, 0.0D, 0.0D, 6.0D);
+    }
+
+    public static NativeFlightControlCommand fuseAiAndOperator(RDPMission mission,
+                                                             NativeFlightControlCommand aiCommand,
+                                                             double operatorYawDelta,
+                                                             double operatorPitchDelta,
+                                                             double operatorRollDelta,
+                                                             double maximumYawDelta,
+                                                             double maximumPitchDelta,
+                                                             double maximumRollDelta) {
+        ControlOwner owner = mission == null ? null : mission.getControlOwner();
         if (mission == null || aiCommand == null || !aiCommand.isSupported()
-                || mission.getControlOwner() != ControlOwner.SUPERVISED_OPERATOR) {
+                || (owner != ControlOwner.SUPERVISED_OPERATOR
+                && owner != ControlOwner.TERMINAL_GUIDANCE)) {
             return aiCommand;
         }
         double deadband = net.vas.rdp.uav.flight.NativeControlMath.operatorDeadband();
+        float blendedYaw = net.vas.rdp.uav.flight.NativeControlMath.blendAxis(
+                aiCommand.getYaw(), (float) operatorYawDelta, (float) deadband,
+                (float) Math.abs(maximumYawDelta));
+        // Positive camera pitch means look-up, which is a negative attitude pitch.
+        float blendedPitch = net.vas.rdp.uav.flight.NativeControlMath.blendAxis(
+                aiCommand.getPitch(), (float) -operatorPitchDelta, (float) deadband,
+                (float) Math.abs(maximumPitchDelta));
         double blendedRoll = net.vas.rdp.uav.flight.NativeControlMath.blendAxis(
-                aiCommand.getRoll(), operatorRollDelta, deadband, 6.0D);
+                aiCommand.getRoll(), operatorRollDelta, deadband,
+                Math.abs(maximumRollDelta));
 
         return NativeFlightControlCommand.setpoints(
-                aiCommand.getYaw(),
-                aiCommand.getPitch(),
-                (float) net.vas.rdp.uav.flight.NativeControlMath.clamp(blendedRoll, -45.0D, 45.0D),
+                normalizeYaw(blendedYaw),
+                blendedPitch,
+                (float) blendedRoll,
                 aiCommand.getThrottle(),
                 aiCommand.getDesiredTrack(),
                 aiCommand.getCourseError(),
                 aiCommand.getDesiredVerticalSpeed());
+    }
+
+    private static float normalizeYaw(float yaw) {
+        while (yaw >= 180.0F) yaw -= 360.0F;
+        while (yaw < -180.0F) yaw += 360.0F;
+        return yaw;
     }
 
     public static boolean claimControl(RDPMission mission, UUID aircraftId, long tick) {

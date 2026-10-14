@@ -2,6 +2,8 @@ package net.vas.rdp.uav.mission;
 
 import com.norwood.mcheli.aircraft.MCH_EntityAircraft;
 import com.norwood.mcheli.helicopter.MCH_EntityHeli;
+import com.norwood.mcheli.plane.MCH_EntityPlane;
+import com.norwood.mcheli.plane.MCH_PlaneInfo;
 import com.norwood.mcheli.wingman.wingman.WingmanEntry;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.EntityPlayer;
@@ -146,7 +148,8 @@ public final class MissionLifecycle {
 
     private void dispatch(World world, RDPMission mission) {
         long tick = world.getTotalWorldTime();
-        if (mission.isTimedOut(tick, MISSION_TIMEOUT)) {
+        if (!mission.isMissionDeadlineExempt()
+                && mission.isTimedOut(tick, MISSION_TIMEOUT)) {
             fail(world, mission, "MISSION_TIMEOUT", tick);
             return;
         }
@@ -170,6 +173,11 @@ public final class MissionLifecycle {
         }
         UavVehicleProfile vehicleProfile = profile(aircraft);
         if (aircraft.isUAV()) {
+            String eligibilityFailure = vehicleEligibilityFailure(aircraft);
+            if (eligibilityFailure != null) {
+                fail(world, mission, eligibilityFailure, tick);
+                return;
+            }
             String capabilityFailure = VehicleCapability.fromProfile(vehicleProfile)
                     .validateMission(mission.getMissionType(), mission.isAttack());
             if (capabilityFailure != null) {
@@ -321,7 +329,8 @@ public final class MissionLifecycle {
                 manager.release(mission);
                 continue;
             }
-            if (mission.isTimedOut(tick, MISSION_TIMEOUT)) {
+            if (!mission.isMissionDeadlineExempt()
+                    && mission.isTimedOut(tick, MISSION_TIMEOUT)) {
                 fail(world, mission, "MISSION_TIMEOUT", tick);
                 dirty = true;
                 continue;
@@ -398,8 +407,7 @@ public final class MissionLifecycle {
                 flight.clearGuidance(findAircraft(world, mission.getAircraftId()));
                 continue;
             }
-            if (mission.getState() != MissionState.HOLDING
-                    && mission.getState() != MissionState.WAITING_FOR_FUEL
+            if (!mission.isMissionDeadlineExempt()
                     && tick - mission.getLastUpdateTick() > MISSION_TIMEOUT) {
                 defer(world, mission, mission.getState().name() + "_TIMEOUT",
                         MissionState.EXECUTION_STALLED, tick);
@@ -811,6 +819,9 @@ public final class MissionLifecycle {
             // A terminal payload launch is irreversible. Native PARKED/attack
             // completion is not effect confirmation and must not trigger a
             // replacement route or a second launch.
+            if (MissionAuthorizationPolicy.requiresOperatorStrikeAuthorization(mission)) {
+                return false;
+            }
             if (mission.getState() == MissionState.KAMIKADZE_TARGET
                     && mission.isKamikazePayloadLaunched()) {
                 return false;
@@ -932,6 +943,16 @@ public final class MissionLifecycle {
             else mission.lockTarget(target.entity.getUniqueID(), tick);
             return true;
         case TARGET_LOCKED:
+                if (MissionAuthorizationPolicy.requiresOperatorStrikeAuthorization(mission)) {
+                    if (tick % 20L == 0L) {
+                        RdpUavDebug.event("MissionRuntime", "OPERATOR_AUTHORIZATION_REQUIRED",
+                                "mission", mission.getMissionId(),
+                                "aircraft", aircraft.getUniqueID(),
+                                "target", mission.getTargetId(),
+                                "tick", tick);
+                    }
+                    return false;
+                }
                 MissionSafety.RouteDecision approach = evaluateApproach(world, aircraft, target, mission);
                 if (approach == MissionSafety.RouteDecision.HOLD_AND_REEVALUATE) {
                     RdpUavDebug.debug("Lifecycle",
@@ -1143,6 +1164,16 @@ public final class MissionLifecycle {
                 // Reporting ends the task but does not silently land or RTB.
                 // The operator must explicitly request return-to-base.
                 UavVehicleProfile stationProfile = profile(aircraft);
+                if (!stationProfile.supportsStationHold()) {
+                    mission.transitionTo(MissionState.HOLDING, tick,
+                            "HOLD_UNAVAILABLE_LAST_SAFE_ROUTE");
+                    RdpUavDebug.event("MissionRuntime", "STATION_HOLD_UNAVAILABLE",
+                            "mission", mission.getMissionId(),
+                            "aircraft", aircraft.getUniqueID(),
+                            "tick", tick,
+                            "fallback", "LAST_SAFE_ROUTE");
+                    return true;
+                }
                 double centerX = target == null ? aircraft.posX : target.x;
                 double centerZ = target == null ? aircraft.posZ : target.z;
                 TerrainRoutePlanner.Plan stationAltitude = TerrainRoutePlanner.planTransit(
@@ -1238,6 +1269,8 @@ public final class MissionLifecycle {
         UavVehicleProfile vehicleProfile = profile(aircraft);
         if (current != null && targetDistance(aircraft, Target.entity(current))
                 <= vehicleProfile.getLockRange()
+                && TargetPolicy.isVisuallyObservable(world, aircraft, current,
+                vehicleProfile.getLockRange())
                 && canMissionUseTarget(world, mission, current.getUniqueID())) {
             targets.observe(world, current, targetDistance(aircraft, Target.entity(current)),
                     tick, ContactLifecycle.TRACKING);
@@ -1253,7 +1286,7 @@ public final class MissionLifecycle {
             }
             boolean expired = lastObservedTick >= 0L
                     && tick - lastObservedTick > TARGET_LOSS_GRACE_TICKS;
-            String reason = current != null ? "TARGET_OUT_OF_RANGE"
+            String reason = current != null ? "TARGET_NOT_VISUALLY_AVAILABLE"
                     : resolution.getCode().name();
             String statusReason = expired ? "TARGET_STALE" : reason;
             if (mission.markTargetLockUnavailable(statusReason, expired)) {
@@ -1277,7 +1310,9 @@ public final class MissionLifecycle {
         Entity reacquired = null;
         TargetResolver.EntityCandidate selectedCandidate = null;
         for (TargetResolver.EntityCandidate candidate : candidates) {
-            if (canMissionUseTarget(world, mission, candidate.getEntity().getUniqueID())) {
+            if (TargetPolicy.isVisuallyObservable(world, aircraft, candidate.getEntity(),
+                    vehicleProfile.getDetectionRange())
+                    && canMissionUseTarget(world, mission, candidate.getEntity().getUniqueID())) {
                 reacquired = candidate.getEntity();
                 selectedCandidate = candidate;
                 break;
@@ -1314,6 +1349,8 @@ public final class MissionLifecycle {
                     .allowHostileVehicles(mission.getTargetPolicy().isAllowVehicleTargets())
                     .withMinimumConfidence(mission.getTargetPolicy().getMinimumConfidence())
                     .evaluate(world, sharedTarget, null).isAccepted()
+                    || !TargetPolicy.isVisuallyObservable(world, aircraft, sharedTarget,
+                    profile(aircraft).getDetectionRange())
                     || !canMissionUseTarget(world, mission, sharedTargetId)) {
                 return null;
             }
@@ -1348,7 +1385,9 @@ public final class MissionLifecycle {
         }
         if (current != null && (mission.getTargetSelectionMode() == TargetSelectionMode.MANUAL
                 || aircraft.getDistanceSq(current) <=
-                profile(aircraft).getDetectionRange() * profile(aircraft).getDetectionRange())) {
+                profile(aircraft).getDetectionRange() * profile(aircraft).getDetectionRange())
+                && TargetPolicy.isVisuallyObservable(world, aircraft, current,
+                profile(aircraft).getDetectionRange())) {
             targets.observe(world, current, aircraft.getDistance(current),
                     world.getTotalWorldTime(), ContactLifecycle.SELECTED);
             projectTargetLock(world, mission, current, world.getTotalWorldTime());
@@ -1363,7 +1402,9 @@ public final class MissionLifecycle {
         Entity selected = null;
         TargetResolver.EntityCandidate selectedCandidate = null;
         for (TargetResolver.EntityCandidate candidate : candidates) {
-            if (canMissionUseTarget(world, mission, candidate.getEntity().getUniqueID())) {
+            if (TargetPolicy.isVisuallyObservable(world, aircraft, candidate.getEntity(),
+                    profile(aircraft).getDetectionRange())
+                    && canMissionUseTarget(world, mission, candidate.getEntity().getUniqueID())) {
                 selected = candidate.getEntity();
                 selectedCandidate = candidate;
                 break;
@@ -1848,6 +1889,24 @@ public final class MissionLifecycle {
     private UavVehicleProfile profile(MCH_EntityAircraft aircraft) {
         return UavVehicleProfiles.forAircraft(aircraft == null || aircraft.getAcInfo() == null
                 ? null : aircraft.getAcInfo().name);
+    }
+
+    private static String vehicleEligibilityFailure(MCH_EntityAircraft aircraft) {
+        if (aircraft instanceof MCH_EntityHeli) {
+            return net.vas.rdp.uav.profile.VehicleEligibilityPolicy.validate(
+                    net.vas.rdp.uav.profile.VehicleEligibilityPolicy.VehicleKind.NATIVE_HELICOPTER,
+                    false);
+        }
+        if (aircraft instanceof MCH_EntityPlane) {
+            MCH_PlaneInfo info = ((MCH_EntityPlane) aircraft).getPlaneInfo();
+            if (info == null) return "AIRCRAFT_METADATA_UNAVAILABLE";
+            return net.vas.rdp.uav.profile.VehicleEligibilityPolicy.validate(
+                    net.vas.rdp.uav.profile.VehicleEligibilityPolicy.VehicleKind.FIXED_WING_PLANE,
+                    info.isEnableVtol);
+        }
+        return net.vas.rdp.uav.profile.VehicleEligibilityPolicy.validate(
+                net.vas.rdp.uav.profile.VehicleEligibilityPolicy.VehicleKind.UNSUPPORTED,
+                false);
     }
 
     private MCH_EntityAircraft findAircraft(World world, UUID id) {

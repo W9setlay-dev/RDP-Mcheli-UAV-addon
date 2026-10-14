@@ -105,4 +105,24 @@ public enum MissionState {
             default: return false;
         }
     }
+
+    /**
+     * Mission states that intentionally wait for operator direction do not
+     * consume the active-execution deadline.
+     */
+    public boolean isMissionDeadlineExempt() {
+        switch (this) {
+            case WAITING_FOR_TARGET:
+            case LOST:
+            case HOLDING:
+            case WAITING_FOR_WORLD:
+            case WAITING_FOR_FUEL:
+            case EXECUTION_STALLED:
+            case RECOVERING:
+            case OUTCOME_UNKNOWN:
+                return true;
+            default:
+                return false;
+        }
+    }
 }

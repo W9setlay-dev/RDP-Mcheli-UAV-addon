@@ -32,4 +32,18 @@ public class MissionUiStateTest {
         assertEquals("TERMINAL", MissionUiState.stateTone("FAILED"));
         assertEquals("ACTIVE", MissionUiState.stateTone("TARGET_LOCKED"));
     }
+
+    @Test
+    public void observationStatusDistinguishesFreshStalePointAndMissingContacts() {
+        assertEquals("FRESH", MissionUiState.observationStatus(
+                "minecraft:zombie", "target-uuid", true, "ATTACK"));
+        assertEquals("STALE", MissionUiState.observationStatus(
+                "minecraft:zombie", "target-uuid", false, "LOST"));
+        assertEquals("STALE", MissionUiState.observationStatus(
+                "minecraft:zombie", "target-uuid", true, "EXPIRED"));
+        assertEquals("POINT", MissionUiState.observationStatus(
+                "rdpuav:point", "", false, "NONE"));
+        assertEquals("NONE", MissionUiState.observationStatus(
+                "", "", false, "NONE"));
+    }
 }

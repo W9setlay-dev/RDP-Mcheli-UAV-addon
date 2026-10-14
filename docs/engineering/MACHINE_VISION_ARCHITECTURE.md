@@ -25,6 +25,25 @@ beside the currently displayed server telemetry. This is a presentation-only
 context link; there is no network message or server persistence for pixel
 results.
 
+## Server-authoritative mission observation
+
+Mission target qualification is a separate server-side path. The server checks
+that the observer and target share the live world and dimension, applies the
+configured range and field-of-view cone (90 degrees by default, using the
+aircraft look vector), verifies the sightline is loaded, and rejects an
+obstructed block ray. Client pixel detections do not satisfy these checks and
+are never sent as mission evidence. A persisted target must be observed again
+by the server before it can be used as a current target.
+
+The existing target-telemetry packet carries the server contact's visibility
+and lifecycle. The native mission monitor renders that as `FRESH`, `STALE`,
+`POINT`, or `NONE`; mission rows separately show when strike authorization is
+required or has been granted. The client remains presentation-only.
+
+The aircraft look vector is not verified as the McHeli camera/gimbal direction;
+the field-of-view model is therefore a server-side gameplay constraint, not a
+claim of calibrated camera geometry. Runtime calibration remains outstanding.
+
 ## Observation-session stages
 
 Each active feed interval receives a random, client-local session identifier.
@@ -77,3 +96,20 @@ magenta pixel runs. It does not perform semantic scene understanding, entity
 identity, world-coordinate localization, or authoritative sensing. Synthetic
 pixel fixtures test the algorithm; game imagery and the complete render path
 remain runtime-validation requirements.
+
+## Linkage and shader diagnostics
+
+The feed-widget lookup in the project source uses explicit widget-tree
+traversal; it does not call the incompatible `WidgetTree.findFirst` return
+descriptor found in the older installed addon artifact. The supplied crash
+stack identifies that linkage error as the client failure.
+
+The runtime-matching McHeliCE 1.5.1 JAR contains `nightvision` and `thermal`
+post-processing shaders whose JSON declares `InSize`, while their vertex
+shaders route that uniform only into a `oneTexel` varying not consumed by the
+fragment stage. That can let the shader linker remove the uniform and fits the
+`ShaderManager` warning. The installed SRParasites archive also contains a
+post-process shader declaring `InSize`, so this is a plausible source rather
+than a verified runtime attribution; the generic warning names no program.
+The warning is not evidence that the RDP vision overlay caused the separate
+`WidgetTree.findFirst` crash.

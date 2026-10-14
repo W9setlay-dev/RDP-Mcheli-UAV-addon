@@ -399,7 +399,7 @@ public class RdpUavContractMatrixTest {
     public void reusableDestructiveRoutesRequireExplicitAuthorization() {
         RDPMission mission = mission();
         assertFalse(mission.isDestructiveAuthorized());
-        mission.authorizeDestructiveAction();
+        mission.authorizeDestructiveAction(0L);
         assertTrue(mission.isDestructiveAuthorized());
         mission.setPaused(true);
         assertTrue(true);

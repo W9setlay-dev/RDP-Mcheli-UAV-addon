@@ -1017,7 +1017,10 @@ public final class GuiMissionControl extends GuiScreen {
         }
         int color = "TARGET_LOCKED".equals(data.targetState) ? 0x66FF66 : 0xFFCC66;
         drawString(fontRenderer, "STATE: " + data.missionState, x, y + 18, color);
-        drawString(fontRenderer, "LOCK: " + data.targetState, x, y + 31, color);
+        String observationStatus = MissionUiState.observationStatus(data.registryId,
+                data.targetUuid, data.visible, data.lifecycle);
+        drawString(fontRenderer, "LOCK: " + data.targetState + " / OBS: " + observationStatus,
+                x, y + 31, color);
         drawString(fontRenderer, "TARGET: " + (data.registryId == null ? "NONE" : data.registryId),
                 x, y + 44, 0xFFFFFF);
         drawString(fontRenderer, "CLASS: " + TargetClassifier.classify(data.registryId == null ? "" : data.registryId),
@@ -1052,10 +1055,13 @@ public final class GuiMissionControl extends GuiScreen {
         drawString(fontRenderer, "Lock crosshair sends the existing server-validated AI target-lock request.", x, 90, 0xFFFFFF);
         drawString(fontRenderer, "Dangerous actions require a second press to confirm before execution.", x, 104, 0xFFCC66);
         drawString(fontRenderer, "Threat suggestions are derived from loaded hostile entities and target classification.", x, 118, 0xFFFFFF);
-        drawString(fontRenderer, "Square strike uses: centerX centerY centerZ [size].", x, 132, 0xFFFFFF);
+        drawString(fontRenderer, "AUTH REQUIRED means a locked strike awaits operator authorization.", x, 132, 0xFFFFFF);
+        drawString(fontRenderer, "HOLD N/A means the last safe route is retained.", x, 146, 0xFFFFFF);
+        drawString(fontRenderer, "Square strike uses: centerX centerY centerZ [size].", x, 160, 0xFFFFFF);
         drawString(fontRenderer, "FLIR toggles only the current target bracket; it does not add sensing.",
-                x, 146, 0xFFFFFF);
-        drawString(fontRenderer, "Command fallback: /rdpuav mission list", x, 150, 0xAAAAAA);
+                x, 174, 0xFFFFFF);
+        drawString(fontRenderer, "OBS FRESH/STALE reflects server contact visibility.", x, 188, 0xFFFFFF);
+        drawString(fontRenderer, "Command fallback: /rdpuav mission list", x, 202, 0xAAAAAA);
     }
 
     public void onGuiClosed() {

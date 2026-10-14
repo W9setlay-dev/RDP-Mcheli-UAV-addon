@@ -27,6 +27,8 @@ public final class RDPMission {
     private final double observationDistance;
     private final long createdTick;
     private MissionState state;
+    private long pausedDeadlineTicks;
+    private long deadlineExemptSinceTick = -1L;
     private UUID targetId;
     private TargetLock targetLock;
     private LastKnownTargetPosition lastKnownTargetPosition;
@@ -112,6 +114,7 @@ public final class RDPMission {
         MissionState previousState = state;
         ControlOwner previousOwner = controlOwner;
         state = nextState;
+        updateMissionDeadlinePause(tick);
         lastUpdateTick = tick;
         queued = false;
         phase = phaseFor(nextState);
@@ -176,9 +179,17 @@ public final class RDPMission {
     public boolean isTerminal() {
         return isTerminalState(state);
     }
+    public boolean isMissionDeadlineExempt() {
+        return state.isMissionDeadlineExempt()
+                || (attack && state == MissionState.TARGET_LOCKED
+                && !destructiveAuthorized);
+    }
+
     public boolean isTimedOut(long tick, long timeoutTicks) {
         if (tick < createdTick || timeoutTicks < 1L) return false;
-        return tick - createdTick >= timeoutTicks;
+        if (isMissionDeadlineExempt()) return false;
+        long elapsed = tick - createdTick - pausedDeadlineTicks;
+        return elapsed >= timeoutTicks;
     }
     public boolean isDestructiveAuthorized() { return destructiveAuthorized; }
     public MissionPhase getPhase() { return phase; }
@@ -229,8 +240,46 @@ public final class RDPMission {
         lastUpdateTick = tick;
     }
 
-    public void authorizeDestructiveAction() { destructiveAuthorized = true; }
-    public void setDestructiveAuthorized(boolean value) { destructiveAuthorized = value; }
+    public void authorizeDestructiveAction(long tick) {
+        if (tick < lastUpdateTick) {
+            throw new IllegalArgumentException("Authorization tick must not move backwards");
+        }
+        destructiveAuthorized = true;
+        updateMissionDeadlinePause(tick);
+        lastUpdateTick = tick;
+    }
+    public void setDestructiveAuthorized(boolean value) {
+        destructiveAuthorized = value;
+        updateMissionDeadlinePause(lastUpdateTick);
+    }
+
+    private void updateMissionDeadlinePause(long tick) {
+        if (isMissionDeadlineExempt()) {
+            if (deadlineExemptSinceTick < 0L) deadlineExemptSinceTick = tick;
+        } else if (deadlineExemptSinceTick >= 0L) {
+            if (tick < deadlineExemptSinceTick) {
+                throw new IllegalArgumentException("Mission deadline tick moved backwards");
+            }
+            pausedDeadlineTicks += tick - deadlineExemptSinceTick;
+            deadlineExemptSinceTick = -1L;
+        }
+    }
+
+    public long getPausedDeadlineTicks() { return pausedDeadlineTicks; }
+    public long getDeadlineExemptSinceTick() { return deadlineExemptSinceTick; }
+
+    public void restoreMissionDeadlineAccounting(long pausedTicks, long exemptSinceTick) {
+        if (pausedTicks < 0L || exemptSinceTick < -1L
+                || (exemptSinceTick >= 0L
+                && (exemptSinceTick < createdTick || exemptSinceTick > lastUpdateTick))
+                || pausedTicks > lastUpdateTick - createdTick
+                || (!isMissionDeadlineExempt() && exemptSinceTick >= 0L)) {
+            throw new IllegalArgumentException("Invalid mission deadline accounting");
+        }
+        pausedDeadlineTicks = pausedTicks;
+        deadlineExemptSinceTick = exemptSinceTick;
+        updateMissionDeadlinePause(lastUpdateTick);
+    }
     public boolean isKamikazePayloadLaunched() { return kamikazePayloadLaunched; }
     public void markKamikazePayloadLaunched(long tick) {
         if (tick < lastUpdateTick) {

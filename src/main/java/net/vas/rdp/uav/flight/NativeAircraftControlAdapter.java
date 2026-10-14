@@ -82,6 +82,7 @@ public final class NativeAircraftControlAdapter {
                     "finalGuidanceRoll", command.getRoll(), "finalGuidanceThrottle", command.getThrottle(),
                     "trimYaw", trim == null ? 0.0D : trim.getYawDegrees(),
                     "trimPitch", trim == null ? 0.0D : trim.getPitchDegrees(),
+                    "trimRoll", trim == null ? 0.0D : trim.getRollDegrees(),
                     "trimAge", trim == null ? -1L : tick - trim.getSampleTick(),
                     "appliedYaw", yaw, "appliedPitch", pitch, "appliedRoll", roll,
                     "appliedThrottle", throttle, "observedYaw", aircraft.getYaw(),

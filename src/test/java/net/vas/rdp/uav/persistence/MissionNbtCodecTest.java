@@ -14,6 +14,7 @@ import java.util.UUID;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 public class MissionNbtCodecTest {
     @Test
@@ -61,10 +62,61 @@ public class MissionNbtCodecTest {
         assertEquals(MissionExecutionStage.TARGET_TRACK, restored.getExecutionStage());
     }
 
+    @Test
+    public void operatorAuthorizationWaitDeadlinePausesAcrossPersistence() {
+        RDPMission source = strikeMission();
+        source.transitionTo(MissionState.DISPATCHED, 2L);
+        source.transitionTo(MissionState.TAKEOFF, 3L);
+        source.transitionTo(MissionState.CRUISE, 4L);
+        source.transitionTo(MissionState.SEARCHING, 5L);
+        source.transitionTo(MissionState.TARGET_ACQUIRED, 6L);
+        source.transitionTo(MissionState.TARGET_LOCKED, 7L);
+
+        RDPMission restored = MissionNbtCodec.read(MissionNbtCodec.write(source));
+        assertTrue(restored.isMissionDeadlineExempt());
+        assertFalse(restored.isTimedOut(12_007L, 12_000L));
+
+        restored.authorizeDestructiveAction(12_007L);
+        restored.transitionTo(MissionState.ATTACK_TARGET, 12_007L);
+        assertFalse(restored.isTimedOut(24_000L, 12_000L));
+        assertTrue(restored.isTimedOut(24_001L, 12_000L));
+    }
+
+    @Test
+    public void legacyAuthorizationWaitStartsDeadlineAccountingAtRestore() {
+        RDPMission source = strikeMission();
+        source.transitionTo(MissionState.DISPATCHED, 2L);
+        source.transitionTo(MissionState.TAKEOFF, 3L);
+        source.transitionTo(MissionState.CRUISE, 4L);
+        source.transitionTo(MissionState.SEARCHING, 5L);
+        source.transitionTo(MissionState.TARGET_ACQUIRED, 6L);
+        source.transitionTo(MissionState.TARGET_LOCKED, 7L);
+
+        NBTTagCompound legacy = MissionNbtCodec.write(source);
+        legacy.setInteger("schemaVersion", 10);
+        legacy.removeTag("pausedDeadlineTicks");
+        legacy.removeTag("deadlineExemptSinceTick");
+
+        RDPMission restored = MissionNbtCodec.read(legacy);
+        assertTrue(restored.isMissionDeadlineExempt());
+        assertFalse(restored.isTimedOut(12_007L, 12_000L));
+        restored.authorizeDestructiveAction(12_007L);
+        restored.transitionTo(MissionState.ATTACK_TARGET, 12_007L);
+        assertFalse(restored.isTimedOut(24_000L, 12_000L));
+        assertTrue(restored.isTimedOut(24_001L, 12_000L));
+    }
+
     private static RDPMission mission() {
         return new RDPMission(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
                 "TEST_UAV", MissionType.STRIKE,
                 TargetSpec.point(0.0D, 32.0D, 0.0D, TargetPriority.NORMAL),
                 false, false, false, 64.0D, 32.0D, 1L);
+    }
+
+    private static RDPMission strikeMission() {
+        return new RDPMission(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
+                "TEST_UAV", MissionType.STRIKE,
+                TargetSpec.point(0.0D, 32.0D, 0.0D, TargetPriority.HIGH),
+                true, false, false, 64.0D, 32.0D, 1L);
     }
 }

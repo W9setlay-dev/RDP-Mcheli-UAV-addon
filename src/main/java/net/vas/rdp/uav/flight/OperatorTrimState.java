@@ -4,7 +4,7 @@ import net.vas.rdp.uav.profile.UavVehicleProfile;
 
 import java.util.UUID;
 
-/** Server-owned, expiring camera-look correction for one aircraft mission. */
+/** Server-owned, expiring attitude correction for one aircraft mission. */
 public final class OperatorTrimState {
     private static final double MAX_PACKET_YAW_DEGREES = 7.5D;
     private static final double MAX_PACKET_PITCH_DEGREES = 5.0D;
@@ -27,7 +27,7 @@ public final class OperatorTrimState {
     public UUID getMissionId() { return missionId; }
 
     /**
-     * Accept only finite, ordered, per-tick camera deltas. Authentication and
+     * Accept only finite, ordered, per-tick camera/key deltas. Authentication and
      * aircraft/mission identity are checked by the server packet handler.
      */
     public synchronized boolean accept(long sequence, double yawDelta, double pitchDelta,
@@ -95,37 +95,8 @@ public final class OperatorTrimState {
         }
     }
 
-    /**
-     * Applies heading trim by rotating the route vector around the aircraft;
-     * pitch trim offsets the vertical path. Each airframe's own controller
-     * then converts that modified guidance into yaw/roll or cyclic/collective.
-     */
-    public static Target mixTarget(double x, double y, double z,
-                                   double aircraftX, double aircraftY, double aircraftZ,
-                                   Snapshot trim, UavVehicleProfile profile,
-                                   double minimumY, double maximumY) {
-        if (trim == null || profile == null || !finite(x, y, z, aircraftX,
-                aircraftY, aircraftZ, minimumY, maximumY) || maximumY < minimumY) {
-            throw new IllegalArgumentException("Invalid operator trim target");
-        }
-        double dx = x - aircraftX;
-        double dz = z - aircraftZ;
-        double radians = Math.toRadians(trim.yawDegrees);
-        double rotatedX = dx * Math.cos(radians) - dz * Math.sin(radians);
-        double rotatedZ = dx * Math.sin(radians) + dz * Math.cos(radians);
-        double range = Math.min(96.0D, Math.hypot(dx, dz));
-        double verticalOffset = Math.tan(Math.toRadians(trim.pitchDegrees)) * range;
-        double mixedY = clamp(y + verticalOffset, minimumY, maximumY);
-        return new Target(aircraftX + rotatedX, mixedY, aircraftZ + rotatedZ);
-    }
-
     private static double clamp(double value, double minimum, double maximum) {
         return Math.max(minimum, Math.min(maximum, value));
-    }
-
-    private static boolean finite(double... values) {
-        for (double value : values) if (!Double.isFinite(value)) return false;
-        return true;
     }
 
     public static final class Snapshot {
@@ -154,10 +125,4 @@ public final class OperatorTrimState {
         public UUID getMissionId() { return missionId; }
     }
 
-    public static final class Target {
-        public final double x, y, z;
-        private Target(double x, double y, double z) {
-            this.x = x; this.y = y; this.z = z;
-        }
-    }
 }

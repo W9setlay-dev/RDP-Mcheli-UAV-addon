@@ -127,20 +127,12 @@ public final class WingManFlightAdapter {
                 baseTargetX, baseTargetY, baseTargetZ, tick, absoluteAltitude);
         net.vas.rdp.uav.flight.OperatorTrimState.Snapshot trim =
                 OperatorTrimRegistry.snapshot(aircraft.getUniqueID(), mission.getMissionId(), tick);
-        if (trim != null) {
-            OperatorTrimState.Target mixed = OperatorTrimState.mixTarget(targetX, targetY, targetZ,
-                    state.getX(), state.getY(), state.getZ(), trim, profile,
-                    0.0D, Math.max(1.0D, world.getHeight() - 2.0D));
-            targetX = mixed.x;
-            targetZ = mixed.z;
-        }
         double horizontalDistance = Math.hypot(targetX - state.getX(), targetZ - state.getZ());
         boolean terminalCommit = mission.getExecutionStage()
                 == net.vas.rdp.uav.mission.MissionExecutionStage.TERMINAL
                 && horizontalDistance <= Math.max(48.0D, state.getHorizontalSpeed() * 40.0D);
-        double trimPitch = trim == null ? 0.0D : trim.getPitchDegrees();
         TerrainRoutePlanner.Plan terrainPlan = cachedTerrainPlan(world, aircraft,
-                mission, state, targetX, targetY, targetZ, profile, trimPitch,
+                mission, state, targetX, targetY, targetZ, profile, 0.0D,
                 terminalCommit, tick);
         targetX = terrainPlan.getX();
         targetY = terrainPlan.getY();
@@ -150,9 +142,7 @@ public final class WingManFlightAdapter {
                     "mission", mission.getMissionId(), "aircraft", aircraft.getUniqueID(),
                     "tick", tick, "reason", terrainPlan.getReason(),
                     "position", state.getX() + "," + state.getY() + "," + state.getZ(),
-                    "safeNode", targetX + "," + targetY + "," + targetZ,
-                    "operatorTrimYaw", trim == null ? 0.0D : trim.getYawDegrees(),
-                    "operatorTrimPitch", trim == null ? 0.0D : trim.getPitchDegrees());
+                    "safeNode", targetX + "," + targetY + "," + targetZ);
         }
         NativeFlightControlCommand command = controller.update(state, targetX, targetY,
                 targetZ, tick, absoluteAltitude && !terminalCommit);
@@ -162,9 +152,12 @@ public final class WingManFlightAdapter {
             return;
         }
 
-        double operatorYawDelta = trim == null ? 0.0D : trim.getYawDegrees();
-        double operatorPitchDelta = trim == null ? 0.0D : trim.getPitchDegrees();
-        double operatorRollDelta = trim == null ? 0.0D : trim.getRollDegrees();
+        double operatorYawDelta = trim == null || !terrainPlan.isSafe()
+                ? 0.0D : trim.getYawDegrees();
+        double operatorPitchDelta = trim == null || !terrainPlan.isSafe()
+                ? 0.0D : trim.getPitchDegrees();
+        double operatorRollDelta = trim == null || !terrainPlan.isSafe()
+                ? 0.0D : trim.getRollDegrees();
         // A passive UAV station is not a direct pilot takeover. Treating the
         // station worker as a full manual-control handoff drops the mission's
         // native movement lease and can stall an in-flight route on the next
@@ -181,7 +174,13 @@ public final class WingManFlightAdapter {
         NativeFlightControlCommand fusedCommand = MissionMovementAuthority.fuseAiAndOperator(
                 mission,
                 command,
-                operatorRollDelta);
+                operatorYawDelta,
+                operatorPitchDelta,
+                operatorRollDelta,
+                profile.getMaximumYawCorrectionDegrees(),
+                profile.getMaximumPitchCorrectionDegrees(),
+                NativeControlMath.maximumRollDegrees(profile,
+                        usesHelicopterFlightModel(aircraft)));
         boolean applied = NativeAircraftControlAdapter.apply(world, missions, aircraft,
                 mission, fusedCommand, tick);
         if (applied && tick % 20L == 0L) {
@@ -190,7 +189,7 @@ public final class WingManFlightAdapter {
                             + "motion=({},{},{}) yaw={} track={} desiredTrack={} courseError={} "
                             + "pitch={} roll={} throttle={} desiredVerticalSpeed={} terrain={} AGL={} "
                             + "executionStage={} cruiseAltitudeY={} routeTargetY={} "
-                            + "trimYaw={} trimPitch={} trimAge={} baseCommand=({},{},{},{}) "
+                            + "trimYaw={} trimPitch={} trimRoll={} trimAge={} baseCommand=({},{},{},{}) "
                             + "finalCommand=({},{},{},{})",
                     state.getControlOwner(), aircraft.getUniqueID(),
                     profile.getExecutionProfile(), state.getRouteNode(),
@@ -205,6 +204,7 @@ public final class WingManFlightAdapter {
                     targetY,
                     trim == null ? 0.0D : trim.getYawDegrees(),
                     trim == null ? 0.0D : trim.getPitchDegrees(),
+                    trim == null ? 0.0D : trim.getRollDegrees(),
                     trim == null ? -1L : tick - trim.getSampleTick(),
                     baseCommand.isSupported() ? baseCommand.getYaw() : Float.NaN,
                     baseCommand.isSupported() ? baseCommand.getPitch() : Float.NaN,
@@ -591,14 +591,12 @@ public final class WingManFlightAdapter {
     }
 
     /**
-     * Replaces a stale target route with a short, non-attacking hold leg while
-     * preserving the mission's control lease and the aircraft's current
-     * physical momentum. Fixed-wing aircraft continue along their current
-     * heading; FPV aircraft use their hover controller unless terminal
-     * guidance has already committed a finite approach route.
+     * Replaces a stale target route with a short, non-attacking hold leg only
+     * for profiles that support it. Other aircraft retain their current route.
      */
     public void holdForTargetReacquisition(MCH_EntityAircraft aircraft) {
         if (aircraft == null || aircraft.isDead) return;
+        if (!profileFor(aircraft).supportsStationHold()) return;
         if (isFpv(aircraft)) {
             targetLossHoldRoutes.remove(aircraft.getUniqueID());
             enterFpvHover(aircraft);

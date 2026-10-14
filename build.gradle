@@ -21,7 +21,7 @@ apply plugin: 'java'
 version = '0.1.0'
 group = 'net.vas.rdp.uav'
 archivesBaseName = 'rdp-uav-addon'
-def forgeVersion = '1.12.2-14.23.5.2859'
+def forgeVersion = '1.12.2-14.23.5.2864'
 
 sourceCompatibility = 1.8
 targetCompatibility = 1.8
