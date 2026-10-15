@@ -1,0 +1,20 @@
+# Designation TTL in ticks; 0 disables expiry. Default 24000 (20 minutes).
+designationTtlTicks=24000
+
+# Maximum unresolved designations per operator. Default 16.
+maxDesignationsPerOperator=16
+
+# Maximum designation envelope in blocks. Default 5000 (mission envelope).
+designationEnvelopeBlocks=5000
+
+# Duplicate point radius in blocks. Default 2.0.
+duplicatePointRadius=2.0
+
+# Duplicate entity policy: STRICT (same UUID only), LOOSE (same registry ID within 8 blocks). Default STRICT.
+duplicateEntityPolicy=STRICT
+
+# Rate limit: requests per second per operator. Default 4.
+requestsPerSecond=4
+
+# Rate limit: requests per minute per operator. Default 32.
+requestsPerMinute=32

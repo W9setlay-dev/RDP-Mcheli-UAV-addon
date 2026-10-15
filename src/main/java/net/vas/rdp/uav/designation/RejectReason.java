@@ -1,0 +1,17 @@
+package net.vas.rdp.uav.designation;
+
+public enum RejectReason {
+    OUT_OF_ENVELOPE,
+    CHUNK_NOT_LOADED,
+    NO_HIT,
+    ENTITY_NOT_LOADED,
+    ENTITY_NOT_ELIGIBLE,
+    FRIENDLY_CONTACT,
+    OPERATOR_NOT_AUTHORIZED,
+    QUEUE_FULL,
+    DUPLICATE,
+    TTL_EXPIRED,
+    WEAPON_POLICY_REJECTED,
+    UNSUPPORTED_OBJECTIVE,
+    INTERNAL_ERROR
+}

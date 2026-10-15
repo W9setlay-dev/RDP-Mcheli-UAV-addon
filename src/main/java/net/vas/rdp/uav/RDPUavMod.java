@@ -32,6 +32,10 @@ public final class RDPUavMod {
     private static final MissionOrchestrator ORCHESTRATOR = new MissionOrchestrator(MISSIONS);
     private static final net.vas.rdp.uav.swarm.SwarmManager SWARMS =
             new net.vas.rdp.uav.swarm.SwarmManager(MISSIONS);
+    private static final net.vas.rdp.uav.designation.DesignationManager DESIGNATIONS =
+            new net.vas.rdp.uav.designation.DesignationManager();
+    private static final java.util.Map<java.util.UUID, net.vas.rdp.uav.designation.DesignationView>
+            CLIENT_DESIGNATIONS = new java.util.LinkedHashMap<>();
     private static final net.vas.rdp.uav.ai.AiTaskingService AI =
             new net.vas.rdp.uav.ai.AiTaskingService(MISSIONS);
 
@@ -50,6 +54,7 @@ public final class RDPUavMod {
         net.vas.rdp.uav.flight.KamikazeConfig.load(event.getModConfigurationDirectory());
         net.vas.rdp.uav.flight.SquareStrikeConfig.load(event.getModConfigurationDirectory());
         net.vas.rdp.uav.weapon.GuidedWeaponRegistry.load(event.getModConfigurationDirectory());
+        net.vas.rdp.uav.designation.DesignationConfig.load(event.getModConfigurationDirectory());
     }
 
     /**
@@ -98,6 +103,43 @@ public final class RDPUavMod {
      */
     public static MissionManager missions() {
         return MISSIONS;
+    }
+
+    /**
+     * @return the designation manager used for queued operator targets
+     */
+    public static net.vas.rdp.uav.designation.DesignationManager designations() {
+        return DESIGNATIONS;
+    }
+
+    /**
+     * Client-side queue cache populated by the designation sync packet.
+     */
+    public static java.util.List<net.vas.rdp.uav.designation.DesignationView>
+    clientDesignationQueue() {
+        synchronized (CLIENT_DESIGNATIONS) {
+            return new java.util.ArrayList<>(CLIENT_DESIGNATIONS.values());
+        }
+    }
+
+    public static void replaceClientDesignationQueue(
+            java.util.List<net.vas.rdp.uav.designation.DesignationView> designations) {
+        synchronized (CLIENT_DESIGNATIONS) {
+            CLIENT_DESIGNATIONS.clear();
+            if (designations != null) {
+                for (net.vas.rdp.uav.designation.DesignationView designation : designations) {
+                    if (designation != null && designation.getDesignationId() != null) {
+                        CLIENT_DESIGNATIONS.put(designation.getDesignationId(), designation);
+                    }
+                }
+            }
+        }
+    }
+
+    public static void removeClientDesignation(java.util.UUID designationId) {
+        synchronized (CLIENT_DESIGNATIONS) {
+            CLIENT_DESIGNATIONS.remove(designationId);
+        }
     }
 
     /**
@@ -191,6 +233,7 @@ public final class RDPUavMod {
                         if (player instanceof EntityPlayerMP) {
                             RdpUavNetwork.syncTargetTelemetry((EntityPlayerMP) player);
                             RdpUavNetwork.syncSwarmTelemetry((EntityPlayerMP) player);
+                            RdpUavNetwork.syncDesignationQueue((EntityPlayerMP) player);
                         }
                     }
                 }

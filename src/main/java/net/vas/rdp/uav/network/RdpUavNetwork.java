@@ -24,6 +24,10 @@ import net.vas.rdp.uav.weapon.GuidedWeaponDecision;
 import net.vas.rdp.uav.mission.MissionDefinition;
 import net.vas.rdp.uav.mission.MissionValidationResult;
 
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Objects;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -42,6 +46,10 @@ public final class RdpUavNetwork {
             new GuidedWeaponAdapter(FLIGHT_ADAPTER);
     private static final net.vas.rdp.uav.target.TargetResolver TARGET_RESOLVER =
             new net.vas.rdp.uav.target.TargetResolver();
+    private static final Map<java.util.UUID, Deque<Long>> DESIGNATION_REQUESTS_PER_SECOND =
+            new HashMap<>();
+    private static final Map<java.util.UUID, Deque<Long>> DESIGNATION_REQUESTS_PER_MINUTE =
+            new HashMap<>();
     private static boolean initialized;
 
     private RdpUavNetwork() { }
@@ -83,6 +91,12 @@ public final class RdpUavNetwork {
                 SwarmConfigurationUpdate.class, 28, Side.SERVER);
         CHANNEL.registerMessage(ServerSwarmSharedTargetHandler.class,
                 SwarmSharedTargetCommand.class, 29, Side.SERVER);
+        CHANNEL.registerMessage(ServerDesignationRequestHandler.class,
+                PacketDesignationRequest.class, 30, Side.SERVER);
+        CHANNEL.registerMessage(ServerDesignationRemoveRequestHandler.class,
+                PacketDesignationRemoveRequest.class, 31, Side.SERVER);
+        CHANNEL.registerMessage(ServerDesignationPromoteToMissionHandler.class,
+                PacketDesignationPromoteToMission.class, 32, Side.SERVER);
         if (FMLCommonHandler.instance().getSide().isClient()) {
             CHANNEL.registerMessage(ClientSwarmSnapshotHandler.class,
                     SwarmSnapshot.class, 26, Side.CLIENT);
@@ -94,11 +108,96 @@ public final class RdpUavNetwork {
                     TargetTelemetry.class, 7, Side.CLIENT);
             CHANNEL.registerMessage(ClientSwarmTelemetryHandler.class,
                     SwarmTelemetry.class, 11, Side.CLIENT);
+            CHANNEL.registerMessage(ClientDesignationConfirmHandler.class,
+                    PacketDesignationConfirm.class, 33, Side.CLIENT);
+            CHANNEL.registerMessage(ClientDesignationRejectHandler.class,
+                    PacketDesignationReject.class, 34, Side.CLIENT);
+            CHANNEL.registerMessage(ClientDesignationQueueSyncHandler.class,
+                    PacketDesignationQueueSync.class, 35, Side.CLIENT);
         }
     }
 
     public static void openMissionControl(EntityPlayerMP player) {
         CHANNEL.sendTo(new OpenMissionControl(), player);
+    }
+
+    public static void syncDesignationQueue(EntityPlayerMP player) {
+        if (player == null || player.world == null || player.world.isRemote) return;
+        java.util.List<net.vas.rdp.uav.designation.DesignationView> views =
+                net.vas.rdp.uav.designation.DesignationManager.forWorld(player.world)
+                        .snapshotForOperator(player.getUniqueID());
+        CHANNEL.sendTo(new PacketDesignationQueueSync(views), player);
+    }
+
+    public static void notifyDesignationReject(EntityPlayerMP player,
+                                              net.vas.rdp.uav.designation.DesignationSource source,
+                                              net.vas.rdp.uav.designation.RejectReason reason,
+                                              String detail) {
+        if (player == null) return;
+        CHANNEL.sendTo(new PacketDesignationReject(source, reason, detail,
+                player.world == null ? 0L : player.world.getTotalWorldTime()), player);
+    }
+
+    public static void notifyDesignationConfirm(EntityPlayerMP player,
+                                               net.vas.rdp.uav.designation.Designation designation) {
+        if (player == null || designation == null) return;
+        CHANNEL.sendTo(new PacketDesignationConfirm(designation.getDesignationId(),
+                        designation.getType(), designation.getSource(),
+                        designation.getPoint() != null ? designation.getPoint().x : 0D,
+                        designation.getPoint() != null ? designation.getPoint().y : 0D,
+                        designation.getPoint() != null ? designation.getPoint().z : 0D,
+                        designation.getEntity() != null ? designation.getEntity().entityUuid : null,
+                        designation.getProvenance(), designation.getConfidence(),
+                        designation.getExpiresAtTick()), player);
+    }
+
+    private static boolean allowDesignationRequest(java.util.UUID operatorId) {
+        long now = System.currentTimeMillis();
+        Deque<Long> secondWindow = DESIGNATION_REQUESTS_PER_SECOND.get(operatorId);
+        if (secondWindow == null) {
+            secondWindow = new ArrayDeque<>();
+            DESIGNATION_REQUESTS_PER_SECOND.put(operatorId, secondWindow);
+        }
+        while (!secondWindow.isEmpty() && now - secondWindow.peekFirst() > 1000L) {
+            secondWindow.removeFirst();
+        }
+        Deque<Long> minuteWindow = DESIGNATION_REQUESTS_PER_MINUTE.get(operatorId);
+        if (minuteWindow == null) {
+            minuteWindow = new ArrayDeque<>();
+            DESIGNATION_REQUESTS_PER_MINUTE.put(operatorId, minuteWindow);
+        }
+        while (!minuteWindow.isEmpty() && now - minuteWindow.peekFirst() > 60000L) {
+            minuteWindow.removeFirst();
+        }
+        if (secondWindow.size() >= net.vas.rdp.uav.designation.DesignationConfig.requestsPerSecond
+                || minuteWindow.size() >= net.vas.rdp.uav.designation.DesignationConfig.requestsPerMinute) {
+            return false;
+        }
+        secondWindow.addLast(now);
+        minuteWindow.addLast(now);
+        return true;
+    }
+
+    private static boolean isDuplicateDesignation(net.vas.rdp.uav.designation.DesignationManager manager,
+                                                EntityPlayerMP player,
+                                                net.vas.rdp.uav.designation.Designation candidate) {
+        if (manager == null || candidate == null) return false;
+        for (net.vas.rdp.uav.designation.Designation existing : manager.byOwner(player.getUniqueID())) {
+            if (existing == null || existing.isExpired(player.world.getTotalWorldTime())
+                    || existing.getAttachedMissionId() != null) continue;
+            if (existing.getEntity() != null && candidate.getEntity() != null
+                    && existing.getEntity().entityUuid.equals(candidate.getEntity().entityUuid)) {
+                return true;
+            }
+            if (existing.getPoint() != null && candidate.getPoint() != null) {
+                double dx = existing.getPoint().x - candidate.getPoint().x;
+                double dy = existing.getPoint().y - candidate.getPoint().y;
+                double dz = existing.getPoint().z - candidate.getPoint().z;
+                double radiusSq = net.vas.rdp.uav.designation.DesignationConfig.duplicatePointRadius;
+                if (dx * dx + dy * dy + dz * dz <= radiusSq * radiusSq) return true;
+            }
+        }
+        return false;
     }
 
     public static void requestMissionData() {
@@ -1392,6 +1491,467 @@ public final class RdpUavNetwork {
                 buffer.writeLong(targetMost);
                 buffer.writeLong(targetLeast);
             }
+        }
+    }
+
+    public static final class PacketDesignationRequest implements IMessage {
+        private net.vas.rdp.uav.designation.DesignationSource source;
+        private net.vas.rdp.uav.designation.DesignationType hintedType;
+        private double rayOriginX, rayOriginY, rayOriginZ;
+        private double rayDirX, rayDirY, rayDirZ;
+        private double rayMaxDistance;
+        private long candidateEntityMost, candidateEntityLeast;
+        private String candidateRegistryId = "";
+        private int clientScreenWidth, clientScreenHeight;
+        private long clientFrameSequence;
+
+        public PacketDesignationRequest() { }
+
+        public PacketDesignationRequest(net.vas.rdp.uav.designation.DesignationSource source,
+                                      net.vas.rdp.uav.designation.DesignationType hintedType,
+                                      double rayOriginX, double rayOriginY, double rayOriginZ,
+                                      double rayDirX, double rayDirY, double rayDirZ,
+                                      double rayMaxDistance, java.util.UUID candidateEntityUuid,
+                                      String candidateRegistryId, int clientScreenWidth,
+                                      int clientScreenHeight, long clientFrameSequence) {
+            this.source = source;
+            this.hintedType = hintedType;
+            this.rayOriginX = rayOriginX; this.rayOriginY = rayOriginY; this.rayOriginZ = rayOriginZ;
+            this.rayDirX = rayDirX; this.rayDirY = rayDirY; this.rayDirZ = rayDirZ;
+            this.rayMaxDistance = rayMaxDistance;
+            if (candidateEntityUuid != null) {
+                candidateEntityMost = candidateEntityUuid.getMostSignificantBits();
+                candidateEntityLeast = candidateEntityUuid.getLeastSignificantBits();
+            }
+            this.candidateRegistryId = candidateRegistryId == null ? "" : candidateRegistryId;
+            this.clientScreenWidth = clientScreenWidth; this.clientScreenHeight = clientScreenHeight;
+            this.clientFrameSequence = clientFrameSequence;
+        }
+
+        public void fromBytes(ByteBuf buffer) {
+            source = net.vas.rdp.uav.designation.DesignationSource.values()[buffer.readByte()];
+            hintedType = net.vas.rdp.uav.designation.DesignationType.values()[buffer.readByte()];
+            rayOriginX = buffer.readDouble(); rayOriginY = buffer.readDouble(); rayOriginZ = buffer.readDouble();
+            rayDirX = buffer.readDouble(); rayDirY = buffer.readDouble(); rayDirZ = buffer.readDouble();
+            rayMaxDistance = buffer.readDouble();
+            candidateEntityMost = buffer.readLong(); candidateEntityLeast = buffer.readLong();
+            candidateRegistryId = readString(buffer);
+            clientScreenWidth = buffer.readInt(); clientScreenHeight = buffer.readInt();
+            clientFrameSequence = buffer.readLong();
+        }
+
+        public void toBytes(ByteBuf buffer) {
+            buffer.writeByte(source == null ? 0 : source.ordinal());
+            buffer.writeByte(hintedType == null ? 0 : hintedType.ordinal());
+            buffer.writeDouble(rayOriginX); buffer.writeDouble(rayOriginY); buffer.writeDouble(rayOriginZ);
+            buffer.writeDouble(rayDirX); buffer.writeDouble(rayDirY); buffer.writeDouble(rayDirZ);
+            buffer.writeDouble(rayMaxDistance);
+            buffer.writeLong(candidateEntityMost); buffer.writeLong(candidateEntityLeast);
+            writeString(buffer, candidateRegistryId == null ? "" : candidateRegistryId);
+            buffer.writeInt(clientScreenWidth); buffer.writeInt(clientScreenHeight);
+            buffer.writeLong(clientFrameSequence);
+        }
+
+        public java.util.UUID candidateEntityUuid() {
+            return candidateEntityMost == 0L && candidateEntityLeast == 0L ? null : new java.util.UUID(candidateEntityMost, candidateEntityLeast);
+        }
+    }
+
+    public static final class PacketDesignationRemoveRequest implements IMessage {
+        private long designationMost, designationLeast;
+        public PacketDesignationRemoveRequest() { }
+        public PacketDesignationRemoveRequest(java.util.UUID designationId) {
+            designationMost = designationId.getMostSignificantBits();
+            designationLeast = designationId.getLeastSignificantBits();
+        }
+        public void fromBytes(ByteBuf buffer) { designationMost = buffer.readLong(); designationLeast = buffer.readLong(); }
+        public void toBytes(ByteBuf buffer) { buffer.writeLong(designationMost); buffer.writeLong(designationLeast); }
+        public java.util.UUID designationId() { return new java.util.UUID(designationMost, designationLeast); }
+    }
+
+    public static final class PacketDesignationPromoteToMission implements IMessage {
+        private java.util.ArrayList<Long> ids = new java.util.ArrayList<>();
+        private String missionType = "STRIKE";
+        public PacketDesignationPromoteToMission() { }
+        public PacketDesignationPromoteToMission(java.util.List<java.util.UUID> designationIds, String missionType) {
+            if (designationIds != null) {
+                for (java.util.UUID designationId : designationIds) {
+                    ids.add(designationId.getMostSignificantBits());
+                    ids.add(designationId.getLeastSignificantBits());
+                }
+            }
+            this.missionType = missionType == null ? "STRIKE" : missionType;
+        }
+        public void fromBytes(ByteBuf buffer) {
+            int count = buffer.readInt();
+            ids.clear();
+            for (int i=0; i<count; i++) ids.add(buffer.readLong());
+            missionType = readString(buffer);
+        }
+        public void toBytes(ByteBuf buffer) {
+            buffer.writeInt(ids.size() / 2);
+            for (long value : ids) buffer.writeLong(value);
+            writeString(buffer, missionType);
+        }
+        public java.util.List<java.util.UUID> designationIds() {
+            java.util.ArrayList<java.util.UUID> result = new java.util.ArrayList<>();
+            for (int i = 0; i + 1 < ids.size(); i += 2) {
+                result.add(new java.util.UUID(ids.get(i), ids.get(i + 1)));
+            }
+            return result;
+        }
+        public String missionType() { return missionType; }
+    }
+
+    public static final class PacketDesignationConfirm implements IMessage {
+        private long designationMost, designationLeast;
+        private byte type;
+        private byte source;
+        private double resolvedX, resolvedY, resolvedZ;
+        private long resolvedEntityMost, resolvedEntityLeast;
+        private String provenance = "";
+        private float confidence;
+        private long expiresAtTick;
+        public PacketDesignationConfirm() { }
+        public PacketDesignationConfirm(java.util.UUID designationId, net.vas.rdp.uav.designation.DesignationType type,
+                                      net.vas.rdp.uav.designation.DesignationSource source,
+                                      double resolvedX, double resolvedY, double resolvedZ,
+                                      java.util.UUID resolvedEntityUuid, String provenance,
+                                      float confidence, long expiresAtTick) {
+            designationMost = designationId.getMostSignificantBits(); designationLeast = designationId.getLeastSignificantBits();
+            this.type = (byte) type.ordinal(); this.source = (byte) source.ordinal();
+            this.resolvedX = resolvedX; this.resolvedY = resolvedY; this.resolvedZ = resolvedZ;
+            if (resolvedEntityUuid != null) {
+                resolvedEntityMost = resolvedEntityUuid.getMostSignificantBits();
+                resolvedEntityLeast = resolvedEntityUuid.getLeastSignificantBits();
+            }
+            this.provenance = provenance == null ? "" : provenance; this.confidence = confidence; this.expiresAtTick = expiresAtTick;
+        }
+        public void fromBytes(ByteBuf buffer) {
+            designationMost = buffer.readLong(); designationLeast = buffer.readLong();
+            type = buffer.readByte(); source = buffer.readByte();
+            resolvedX = buffer.readDouble(); resolvedY = buffer.readDouble(); resolvedZ = buffer.readDouble();
+            resolvedEntityMost = buffer.readLong(); resolvedEntityLeast = buffer.readLong();
+            provenance = readString(buffer); confidence = buffer.readFloat(); expiresAtTick = buffer.readLong();
+        }
+        public void toBytes(ByteBuf buffer) {
+            buffer.writeLong(designationMost); buffer.writeLong(designationLeast);
+            buffer.writeByte(type); buffer.writeByte(source);
+            buffer.writeDouble(resolvedX); buffer.writeDouble(resolvedY); buffer.writeDouble(resolvedZ);
+            buffer.writeLong(resolvedEntityMost); buffer.writeLong(resolvedEntityLeast);
+            writeString(buffer, provenance); buffer.writeFloat(confidence); buffer.writeLong(expiresAtTick);
+        }
+        public java.util.UUID designationId() { return new java.util.UUID(designationMost, designationLeast); }
+        public net.vas.rdp.uav.designation.DesignationType type() { return net.vas.rdp.uav.designation.DesignationType.values()[type]; }
+        public net.vas.rdp.uav.designation.DesignationSource source() { return net.vas.rdp.uav.designation.DesignationSource.values()[source]; }
+        public java.util.UUID resolvedEntityUuid() { return resolvedEntityMost == 0L && resolvedEntityLeast == 0L ? null : new java.util.UUID(resolvedEntityMost, resolvedEntityLeast); }
+        public double resolvedX() { return resolvedX; } public double resolvedY() { return resolvedY; } public double resolvedZ() { return resolvedZ; }
+        public String provenance() { return provenance; } public float confidence() { return confidence; } public long expiresAtTick() { return expiresAtTick; }
+    }
+
+    public static final class PacketDesignationReject implements IMessage {
+        private byte source;
+        private byte reason;
+        private String detail = "";
+        private long serverTick;
+        public PacketDesignationReject() { }
+        public PacketDesignationReject(net.vas.rdp.uav.designation.DesignationSource source,
+                                      net.vas.rdp.uav.designation.RejectReason reason, String detail,
+                                      long serverTick) {
+            this.source = (byte) source.ordinal(); this.reason = (byte) reason.ordinal(); this.detail = detail == null ? "" : detail; this.serverTick = serverTick;
+        }
+        public void fromBytes(ByteBuf buffer) { source = buffer.readByte(); reason = buffer.readByte(); detail = readString(buffer); serverTick = buffer.readLong(); }
+        public void toBytes(ByteBuf buffer) { buffer.writeByte(source); buffer.writeByte(reason); writeString(buffer, detail); buffer.writeLong(serverTick); }
+        public net.vas.rdp.uav.designation.DesignationSource source() { return net.vas.rdp.uav.designation.DesignationSource.values()[source]; }
+        public net.vas.rdp.uav.designation.RejectReason reason() { return net.vas.rdp.uav.designation.RejectReason.values()[reason]; }
+        public String detail() { return detail; } public long serverTick() { return serverTick; }
+    }
+
+    public static final class PacketDesignationQueueSync implements IMessage {
+        private java.util.ArrayList<String> entries = new java.util.ArrayList<>();
+        public PacketDesignationQueueSync() { }
+        public PacketDesignationQueueSync(java.util.List<net.vas.rdp.uav.designation.DesignationView> designations) {
+            if (designations != null) {
+                for (net.vas.rdp.uav.designation.DesignationView designation : designations) {
+                    StringBuilder builder = new StringBuilder();
+                    builder.append(designation.getDesignationId().toString()).append('|');
+                    builder.append(designation.getType().name()).append('|');
+                    builder.append(designation.getSource().name()).append('|');
+                    builder.append(designation.getProvenance() == null ? "" : designation.getProvenance()).append('|');
+                    builder.append(designation.getConfidence()).append('|');
+                    builder.append(designation.getExpiresAtTick()).append('|');
+                    builder.append(designation.getAttachedMissionId() == null ? "" : designation.getAttachedMissionId().toString()).append('|');
+                    builder.append(designation.getResolvedX()).append('|');
+                    builder.append(designation.getResolvedY()).append('|');
+                    builder.append(designation.getResolvedZ()).append('|');
+                    builder.append(designation.getResolvedEntityUuid() == null ? "" : designation.getResolvedEntityUuid().toString());
+                    entries.add(builder.toString());
+                }
+            }
+        }
+        public void fromBytes(ByteBuf buffer) {
+            int count = buffer.readInt();
+            entries.clear();
+            for (int i = 0; i < count; i++) entries.add(readString(buffer));
+        }
+        public void toBytes(ByteBuf buffer) {
+            buffer.writeInt(entries.size());
+            for (String entry : entries) writeString(buffer, entry);
+        }
+        public java.util.List<net.vas.rdp.uav.designation.DesignationView> designations() {
+            java.util.ArrayList<net.vas.rdp.uav.designation.DesignationView> result = new java.util.ArrayList<>();
+            for (String entry : entries) {
+                String[] parts = entry.split("\\|");
+                if (parts.length < 11) continue;
+                java.util.UUID designationId = java.util.UUID.fromString(parts[0]);
+                net.vas.rdp.uav.designation.DesignationType type = net.vas.rdp.uav.designation.DesignationType.valueOf(parts[1]);
+                net.vas.rdp.uav.designation.DesignationSource source = net.vas.rdp.uav.designation.DesignationSource.valueOf(parts[2]);
+                java.util.UUID attachedMissionId = parts[6].isEmpty() ? null : java.util.UUID.fromString(parts[6]);
+                java.util.UUID resolvedEntityUuid = parts[10].isEmpty() ? null : java.util.UUID.fromString(parts[10]);
+                result.add(new net.vas.rdp.uav.designation.DesignationView(designationId, type, source, parts[3],
+                        Float.parseFloat(parts[4]), Long.parseLong(parts[5]), attachedMissionId,
+                        Double.parseDouble(parts[7]), Double.parseDouble(parts[8]), Double.parseDouble(parts[9]), resolvedEntityUuid));
+            }
+            return result;
+        }
+    }
+
+    public static final class ServerDesignationRequestHandler implements IMessageHandler<PacketDesignationRequest, IMessage> {
+        @Override
+        public IMessage onMessage(final PacketDesignationRequest message, MessageContext context) {
+            final EntityPlayerMP player = context.getServerHandler().player;
+            Objects.requireNonNull(player.getServer()).addScheduledTask(() -> {
+                try {
+                    if (message == null || player == null || player.world == null) {
+                        notifyDesignationReject(player,
+                                net.vas.rdp.uav.designation.DesignationSource.CROSSHAIR,
+                                net.vas.rdp.uav.designation.RejectReason.INTERNAL_ERROR,
+                                "Null designation request");
+                        return;
+                    }
+                    net.vas.rdp.uav.designation.DesignationManager manager =
+                            net.vas.rdp.uav.designation.DesignationManager.forWorld(player.world);
+                    if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(
+                            net.vas.rdp.uav.mission.UavControlAccess.findControlledAircraft(player), player)) {
+                        notifyDesignationReject(player,
+                                message.source == null ? net.vas.rdp.uav.designation.DesignationSource.CROSSHAIR : message.source,
+                                net.vas.rdp.uav.designation.RejectReason.OPERATOR_NOT_AUTHORIZED,
+                                "Operator is not the active aircraft owner or controller");
+                        return;
+                    }
+                    if (!allowDesignationRequest(player.getUniqueID())) {
+                        notifyDesignationReject(player,
+                                message.source == null ? net.vas.rdp.uav.designation.DesignationSource.CROSSHAIR : message.source,
+                                net.vas.rdp.uav.designation.RejectReason.INTERNAL_ERROR,
+                                "Designation request limit exceeded");
+                        return;
+                    }
+                    if (message.rayMaxDistance <= 0D
+                            || message.rayMaxDistance > net.vas.rdp.uav.designation.DesignationConfig.designationEnvelopeBlocks) {
+                        notifyDesignationReject(player,
+                                message.source == null ? net.vas.rdp.uav.designation.DesignationSource.CROSSHAIR : message.source,
+                                net.vas.rdp.uav.designation.RejectReason.OUT_OF_ENVELOPE,
+                                "Requested ray exceeds configured designation envelope");
+                        return;
+                    }
+                    if (manager.countPending(player.getUniqueID()) >=
+                            net.vas.rdp.uav.designation.DesignationConfig.maxDesignationsPerOperator) {
+                        notifyDesignationReject(player,
+                                message.source == null ? net.vas.rdp.uav.designation.DesignationSource.CROSSHAIR : message.source,
+                                net.vas.rdp.uav.designation.RejectReason.QUEUE_FULL,
+                                "Operator designation queue is full");
+                        return;
+                    }
+
+                    java.util.UUID candidateEntityUuid = message.candidateEntityUuid();
+                    net.minecraft.entity.Entity candidateEntity = null;
+                    if (candidateEntityUuid != null) {
+                        for (net.minecraft.entity.Entity loaded : player.world.loadedEntityList) {
+                            if (loaded.getUniqueID().equals(candidateEntityUuid)) {
+                                candidateEntity = loaded;
+                                break;
+                            }
+                        }
+                    }
+                    if (candidateEntityUuid != null && (candidateEntity == null || candidateEntity.isDead
+                            || candidateEntity.dimension != player.world.provider.getDimension())) {
+                        notifyDesignationReject(player,
+                                message.source == null ? net.vas.rdp.uav.designation.DesignationSource.CROSSHAIR : message.source,
+                                net.vas.rdp.uav.designation.RejectReason.ENTITY_NOT_LOADED,
+                                "Candidate entity is not loaded in this dimension");
+                        return;
+                    }
+                    if (candidateEntity != null
+                            && !net.vas.rdp.uav.target.TargetPolicy.isSelectableExactContact(
+                                    player.world, candidateEntity, player)) {
+                        notifyDesignationReject(player,
+                                message.source == null ? net.vas.rdp.uav.designation.DesignationSource.CROSSHAIR : message.source,
+                                net.vas.rdp.uav.designation.RejectReason.ENTITY_NOT_ELIGIBLE,
+                                "Candidate entity is not eligible for designation");
+                        return;
+                    }
+
+                    final net.vas.rdp.uav.designation.DesignationSource source =
+                            message.source == null ? net.vas.rdp.uav.designation.DesignationSource.CROSSHAIR : message.source;
+                    final net.vas.rdp.uav.designation.DesignationType type =
+                            message.hintedType == null ? net.vas.rdp.uav.designation.DesignationType.POINT : message.hintedType;
+                    net.minecraft.util.math.Vec3d origin = new net.minecraft.util.math.Vec3d(
+                            message.rayOriginX, message.rayOriginY, message.rayOriginZ);
+                    net.minecraft.util.math.Vec3d direction = new net.minecraft.util.math.Vec3d(
+                            message.rayDirX, message.rayDirY, message.rayDirZ);
+                    if (direction.lengthSquared() <= 0.0D) {
+                        notifyDesignationReject(player, source,
+                                net.vas.rdp.uav.designation.RejectReason.NO_HIT,
+                                "Invalid ray direction");
+                        return;
+                    }
+                    net.minecraft.util.math.Vec3d normalized = direction.normalize();
+                    net.minecraft.util.math.Vec3d end = origin.add(normalized.scale(message.rayMaxDistance));
+                    net.minecraft.util.math.RayTraceResult hit = player.world.rayTraceBlocks(origin, end, false, true, false);
+                    net.vas.rdp.uav.designation.Designation.PointPayload pointPayload = null;
+                    net.vas.rdp.uav.designation.Designation.EntityPayload entityPayload = null;
+                    if (candidateEntity != null) {
+                        entityPayload = new net.vas.rdp.uav.designation.Designation.EntityPayload(
+                                candidateEntity.getUniqueID(),
+                                net.minecraft.entity.EntityList.getKey(candidateEntity) == null ? null
+                                        : net.minecraft.entity.EntityList.getKey(candidateEntity).toString(),
+                                candidateEntity.posX, candidateEntity.posY, candidateEntity.posZ,
+                                player.world.getTotalWorldTime());
+                    } else {
+                        if (hit == null) {
+                            notifyDesignationReject(player, source,
+                                    net.vas.rdp.uav.designation.RejectReason.NO_HIT,
+                                    "No valid target was resolved from the client ray");
+                            return;
+                        }
+                        net.minecraft.util.math.Vec3d resolved = hit.hitVec == null ? end : hit.hitVec;
+                        pointPayload = new net.vas.rdp.uav.designation.Designation.PointPayload(
+                                resolved.x, resolved.y, resolved.z, false,
+                                (int) Math.floor(resolved.y));
+                    }
+
+                    net.vas.rdp.uav.designation.Designation designation = net.vas.rdp.uav.designation.Designation.builder()
+                            .operatorId(player.getUniqueID())
+                            .dimension(player.dimension)
+                            .type(type)
+                            .source(source)
+                            .createdAtTick(player.world.getTotalWorldTime())
+                            .expiresAtTick(player.world.getTotalWorldTime() + net.vas.rdp.uav.designation.DesignationConfig.designationTtlTicks)
+                            .confidence(1.0F)
+                            .provenance(candidateEntity != null
+                                    ? (net.minecraft.entity.EntityList.getKey(candidateEntity) == null ? "entity" : net.minecraft.entity.EntityList.getKey(candidateEntity).toString())
+                                    : (hit == null ? "ray" : "ray-hit"))
+                            .point(pointPayload)
+                            .entity(entityPayload)
+                            .priority(net.vas.rdp.uav.target.TargetPriority.NORMAL)
+                            .notes("Queued from server-authoritative operator designation")
+                            .build();
+
+                    if (isDuplicateDesignation(manager, player, designation)) {
+                        notifyDesignationReject(player, source,
+                                net.vas.rdp.uav.designation.RejectReason.DUPLICATE,
+                                "Another designation already matches this target");
+                        return;
+                    }
+
+                    net.vas.rdp.uav.designation.DesignationWorldData.get(player.world).add(designation);
+                    manager.add(designation);
+                    notifyDesignationConfirm(player, designation);
+                    syncDesignationQueue(player);
+                } catch (RuntimeException ex) {
+                    notifyDesignationReject(player,
+                            net.vas.rdp.uav.designation.DesignationSource.CROSSHAIR,
+                            net.vas.rdp.uav.designation.RejectReason.INTERNAL_ERROR,
+                            ex.getClass().getSimpleName() + ": " + ex.getMessage());
+                    RdpUavDebug.warn("Designation", "Request rejected: " + ex.getMessage());
+                }
+            });
+            return null;
+        }
+    }
+
+    public static final class ServerDesignationRemoveRequestHandler implements IMessageHandler<PacketDesignationRemoveRequest, IMessage> {
+        @Override
+        public IMessage onMessage(final PacketDesignationRemoveRequest message, MessageContext context) {
+            final EntityPlayerMP player = context.getServerHandler().player;
+            Objects.requireNonNull(player.getServer()).addScheduledTask(() -> {
+                if (message == null || player == null) return;
+                net.vas.rdp.uav.designation.DesignationManager manager =
+                        net.vas.rdp.uav.designation.DesignationManager.forWorld(player.world);
+                net.vas.rdp.uav.designation.Designation designation = manager.find(message.designationId());
+                if (designation == null || !player.getUniqueID().equals(designation.getOperatorId())) {
+                    return;
+                }
+                net.vas.rdp.uav.designation.DesignationWorldData.get(player.world).remove(designation.getDesignationId());
+                manager.remove(designation.getDesignationId());
+                syncDesignationQueue(player);
+            });
+            return null;
+        }
+    }
+
+    public static final class ServerDesignationPromoteToMissionHandler implements IMessageHandler<PacketDesignationPromoteToMission, IMessage> {
+        @Override
+        public IMessage onMessage(final PacketDesignationPromoteToMission message, MessageContext context) {
+            final EntityPlayerMP player = context.getServerHandler().player;
+            Objects.requireNonNull(player.getServer()).addScheduledTask(() -> {
+                if (message == null || player == null) return;
+                net.vas.rdp.uav.designation.DesignationManager manager =
+                        net.vas.rdp.uav.designation.DesignationManager.forWorld(player.world);
+                for (java.util.UUID designationId : message.designationIds()) {
+                    net.vas.rdp.uav.designation.Designation designation = manager.find(designationId);
+                    if (designation == null || !player.getUniqueID().equals(designation.getOperatorId())) {
+                        continue;
+                    }
+                    try {
+                        net.vas.rdp.uav.mission.MissionType missionType =
+                                net.vas.rdp.uav.mission.MissionType.STRIKE;
+                        net.vas.rdp.uav.mission.RDPMission mission =
+                                manager.promoteToMission(player, designationId, missionType);
+                        if (mission != null) {
+                            notifyDesignationConfirm(player, designation);
+                        } else {
+                            notifyDesignationReject(player,
+                                    designation.getSource(),
+                                    net.vas.rdp.uav.designation.RejectReason.INTERNAL_ERROR,
+                                    "Designation could not be promoted to a mission");
+                        }
+                    } catch (RuntimeException ex) {
+                        notifyDesignationReject(player,
+                                designation.getSource(),
+                                net.vas.rdp.uav.designation.RejectReason.INTERNAL_ERROR,
+                                ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage());
+                    }
+                }
+                syncDesignationQueue(player);
+            });
+            return null;
+        }
+    }
+
+    public static final class ClientDesignationConfirmHandler implements IMessageHandler<PacketDesignationConfirm, IMessage> {
+        @Override
+        public IMessage onMessage(final PacketDesignationConfirm message, MessageContext context) {
+            if (message == null) return null;
+            RDPUavMod.removeClientDesignation(message.designationId());
+            return null;
+        }
+    }
+
+    public static final class ClientDesignationRejectHandler implements IMessageHandler<PacketDesignationReject, IMessage> {
+        @Override
+        public IMessage onMessage(final PacketDesignationReject message, MessageContext context) {
+            if (message == null) return null;
+            return null;
+        }
+    }
+
+    public static final class ClientDesignationQueueSyncHandler implements IMessageHandler<PacketDesignationQueueSync, IMessage> {
+        @Override
+        public IMessage onMessage(final PacketDesignationQueueSync message, MessageContext context) {
+            if (message == null) return null;
+            RDPUavMod.replaceClientDesignationQueue(message.designations());
+            return null;
         }
     }
 
