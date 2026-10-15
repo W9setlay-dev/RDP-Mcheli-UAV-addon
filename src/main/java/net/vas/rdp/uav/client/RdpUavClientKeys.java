@@ -14,6 +14,9 @@ import net.vas.rdp.uav.client.vision.VisionClientConfig;
 import net.vas.rdp.uav.client.vision.VisionPresentationMode;
 import net.vas.rdp.uav.network.RdpUavNetwork;
 import org.lwjgl.input.Keyboard;
+import org.lwjgl.input.Mouse;
+
+import java.util.UUID;
 
 @SideOnly(Side.CLIENT)
 public final class RdpUavClientKeys {
@@ -49,6 +52,9 @@ public final class RdpUavClientKeys {
             "key.rdpuav.flir_toggle", Keyboard.KEY_F8, "key.categories.rdpuav");
     private static final KeyBinding CYCLE_VISION_PRESENTATION = new KeyBinding(
             "key.rdpuav.vision_presentation", Keyboard.KEY_F7, "key.categories.rdpuav");
+    private static final KeyBinding TARGET_BOX_SELECT_MODIFIER = new KeyBinding(
+            "key.rdpuav.target_box_select_modifier", Keyboard.KEY_LCONTROL,
+            "key.categories.rdpuav");
 
     private RdpUavClientKeys() { }
 
@@ -90,6 +96,7 @@ public final class RdpUavClientKeys {
         ClientRegistry.registerKeyBinding(PREVIOUS_CONTACT);
         ClientRegistry.registerKeyBinding(FLIR_TOGGLE);
         ClientRegistry.registerKeyBinding(CYCLE_VISION_PRESENTATION);
+        ClientRegistry.registerKeyBinding(TARGET_BOX_SELECT_MODIFIER);
         net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(new RdpUavClientKeys());
         net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(new OperatorTrimClientHandler());
     }
@@ -140,6 +147,26 @@ public final class RdpUavClientKeys {
         if (FIRE_SELF_DESTRUCT.isPressed()) RdpUavNetwork.fireSelfDestruct();
         if (NEXT_CONTACT.isPressed()) RdpUavNetwork.cycleContact(true);
         if (PREVIOUS_CONTACT.isPressed()) RdpUavNetwork.cycleContact(false);
+    }
+
+    @SubscribeEvent
+    public void onMouseInput(InputEvent.MouseInputEvent event) {
+        if (Mouse.getEventButton() != 0 || !Mouse.getEventButtonState()
+                || !TARGET_BOX_SELECT_MODIFIER.isKeyDown()) return;
+        Minecraft minecraft = net.minecraftforge.fml.client.FMLClientHandler.instance().getClient();
+        if (minecraft == null || minecraft.player == null || minecraft.world == null
+                || minecraft.currentScreen != null || minecraft.displayWidth <= 0
+                || minecraft.displayHeight <= 0) return;
+        net.minecraft.client.gui.ScaledResolution resolution =
+                new net.minecraft.client.gui.ScaledResolution(minecraft);
+        int mouseX = Mouse.getEventX() * resolution.getScaledWidth() / minecraft.displayWidth;
+        int mouseY = resolution.getScaledHeight()
+                - Mouse.getEventY() * resolution.getScaledHeight() / minecraft.displayHeight - 1;
+        UUID targetId = RdpUavTargetHud.instance()
+                .selectProjectedContact(minecraft, mouseX, mouseY);
+        if (targetId == null) return;
+        RdpUavNetwork.lockAiTarget(targetId);
+        event.setCanceled(true);
     }
 
     /** Shared by the point-task key and the mission-control button. */

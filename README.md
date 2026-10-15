@@ -97,7 +97,7 @@ player's mission summaries from the server; select a mission and use
 snapshot, and Close exits the screen. The dashboard provides an ALL/ACTIVE/ALERTS
 mission filter, free-text filtering, selected-mission details, and a live
 target-telemetry pane. `Lock crosshair [3]` sends a single-press, server-validated exact target-lock
-request for the entity or McHeli vehicle under the crosshair. `J`, or
+request for the entity or McHeli vehicle under the crosshair. `5`, or
 **Clear lock** in the dashboard, requests lock cancellation and normal WingMan
 recovery. Locking does not require a destructive weapon and does not bypass
 aircraft ownership or target validation. For entity missions, enter the exact
@@ -131,7 +131,8 @@ selected/controlled mission.
 | `E` | Authorize attack | Requires owner, operator, `TARGET_LOCKED`, live target, and a valid WingMan attack route |
 | `1` | Kamikaze/nose-dive | Explicit operator action; server requires a supported aircraft, target, payload, and route |
 | `2` | Fire SelfDestruct payload | Requires operator control, supported aircraft, destructive weapon, and ammunition |
-| `3` | Exact target lock | Locks only a loaded, hostile, non-vehicle contact under the crosshair; no destructive payload is implied |
+| `3` | Exact target lock | Locks a loaded contact accepted by the target policy, including configured vehicle targets; no destructive payload is implied |
+| Left Control + left-click | Box designation | Requests a lock for an eligible visible contact box; the modifier is configurable in Controls |
 | `4` | Area/sight lock | Stabilizes the selected ground point without using underground block Y as flight altitude |
 | `5` | Clear target lock | Requests lock cancellation and normal WingMan recovery |
 | `N` | Abort selected mission | Requires a server-owned mission and releases the aircraft after aborting |
@@ -400,13 +401,24 @@ not RDPMixins.
 
 When piloting or operating a UAV, aim the normal Minecraft crosshair at an exact
 loaded entity or vehicle and press the configurable `RDP UAV AI target lock`
-key (default `L`). The client sends only that entity UUID; the server
+key (default `3`). The client sends only that entity UUID; the server
 revalidates the dimension, identity, collision state, and operator ownership.
 The server creates a non-destructive exact-target tracking mission, so ordinary
 UAVs can approach, observe, and track targets without carrying a self-destruct
 weapon.
 
-Press `J` (or use **Clear lock** in the dashboard) to clear the lock and
+With an active mission on a configured profile that supports target locking,
+the HUD can also project boxes and existing classifier labels for locally
+loaded, selectable contacts visible from the active render camera. Hold the
+configurable **Target box select modifier** (default Left Control) and
+left-click a box to send its UUID through the same server-validated lock path.
+This works with whichever render view McHeli provides; it does not require the
+modern camera-feed widget. The boxes and heuristic labels are client
+presentation only, not authoritative sensing or general IFF. Unknown vehicle
+profiles remain ineligible, and the server independently checks the target,
+range, policy, line of sight, operator, and active mission.
+
+Press `5` (or use **Clear lock** in the dashboard) to clear the lock and
 request a normal WingMan return. Destructive attack and kamikaze behavior
 remain separate, server-gated actions and are never implied by a tracking lock.
 Both keys are configurable through Minecraft's Controls menu. Locking never

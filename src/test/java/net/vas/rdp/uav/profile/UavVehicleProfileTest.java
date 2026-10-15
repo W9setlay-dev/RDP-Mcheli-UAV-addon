@@ -32,4 +32,13 @@ public class UavVehicleProfileTest {
 
         assertTrue(profile.supportsStationHold());
     }
+
+    @Test
+    public void unknownProfileDoesNotGainTargetLockSupport() {
+        UavVehicleProfile profile = new UavVehicleProfile(
+                UavExecutionProfile.UNKNOWN, 0, 0, 4096, 0,
+                false, "NONE", 256, 256, 64);
+
+        assertFalse(profile.supportsTargetLock());
+    }
 }

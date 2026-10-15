@@ -475,7 +475,7 @@ public final class GuiMissionControl extends GuiScreen {
             rebuildButtons();
         } else if (button.id == 0) requestData();
         else if (button.id == 26) {
-            if (!syncCruiseAltitude()) return;
+            if (syncCruiseAltitude()) return;
             definition.setTarget(targetField == null ? "" : targetField.getText());
             MissionValidationResult validation = MissionValidationResult.validate(definition);
             status = validation.isValid() ? "Mission definition is valid."
@@ -483,7 +483,7 @@ public final class GuiMissionControl extends GuiScreen {
             activeTab = MissionGuiTab.VALIDATION;
             rebuildButtons();
         } else if (button.id == 27) {
-            if (!syncCruiseAltitude()) return;
+            if (syncCruiseAltitude()) return;
             definition.setTarget(targetField == null ? "" : targetField.getText());
             if (MissionValidationResult.validate(definition).isValid()) {
                 savedDefinition = MissionDefinitionCodec.write(definition);
@@ -513,7 +513,7 @@ public final class GuiMissionControl extends GuiScreen {
             }
             rebuildButtons();
         } else if (button.id == 29) {
-            if (!syncCruiseAltitude()) return;
+            if (syncCruiseAltitude()) return;
             definition.setTarget(targetField == null ? "" : targetField.getText())
                     .setAttack(definition.getMissionType() == MissionType.STRIKE);
             MissionValidationResult validation = MissionValidationResult.validate(definition);
@@ -651,7 +651,7 @@ public final class GuiMissionControl extends GuiScreen {
     }
 
     private void createEntityMission(boolean attack) {
-        if (!syncCruiseAltitude()) return;
+        if (syncCruiseAltitude()) return;
         String target = targetField == null ? "" : targetField.getText().trim();
         if (!target.matches("(?i)(mod=[A-Za-z0-9_.-]+|[A-Za-z0-9_.-]+:[A-Za-z0-9_./-]+)")) {
             status = "Enter namespace:id or mod=namespace.";
@@ -678,7 +678,7 @@ public final class GuiMissionControl extends GuiScreen {
     }
 
     private void createPatrolMission() {
-        if (!syncCruiseAltitude()) return;
+        if (syncCruiseAltitude()) return;
         try {
             definition.setMissionType(MissionType.PATROL)
                     .setTarget("")
@@ -792,7 +792,7 @@ public final class GuiMissionControl extends GuiScreen {
     }
 
     private void createSquareMission() {
-        if (!syncCruiseAltitude()) return;
+        if (syncCruiseAltitude()) return;
         String parameters = targetField == null ? "" : targetField.getText().trim();
         if (!parameters.matches("-?[0-9.]+\\s+-?[0-9.]+\\s+-?[0-9.]+(\\s+[0-9.]+)?")) {
             status = "Square format: X Y Z [size].";
@@ -818,14 +818,14 @@ public final class GuiMissionControl extends GuiScreen {
         String value = cruiseAltitudeField == null ? "" : cruiseAltitudeField.getText().trim();
         if (value.isEmpty()) {
             definition.setCruiseAltitudeY(null);
-            return true;
+            return false;
         }
         try {
             definition.setCruiseAltitudeY(Integer.valueOf(value));
-            return true;
+            return false;
         } catch (IllegalArgumentException invalid) {
             status = "Cruise altitude must be a whole-number world Y in 1..4094.";
-            return false;
+            return true;
         }
     }
 

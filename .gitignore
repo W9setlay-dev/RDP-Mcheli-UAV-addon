@@ -11,6 +11,7 @@
 /libs/
 
 *.md
+!/CHANGELOG.md
 !DEVELOPER_GUIDE.md
 !README.md
 !docs/long-range-flight-rework.md

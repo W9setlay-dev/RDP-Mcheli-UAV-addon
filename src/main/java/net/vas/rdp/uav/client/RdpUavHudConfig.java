@@ -7,6 +7,7 @@ import java.io.File;
 public final class RdpUavHudConfig {
     public static boolean enabled = true;
     public static boolean markerVisible = true;
+    public static boolean contactOverlayVisible = true;
     public static boolean telemetryVisible = true;
     public static boolean flirEnabled;
     public static boolean anomalyAlertEnabled = true;
@@ -31,6 +32,8 @@ public final class RdpUavHudConfig {
             enabled = config.getBoolean("enabled", "hud", true, "Show the authoritative UAV target HUD.");
             markerVisible = config.getBoolean("markerVisible", "hud", true,
                     "Show world-space target bounds or a world-space point marker.");
+            contactOverlayVisible = config.getBoolean("contactOverlayVisible", "hud", true,
+                    "Show visible eligible contacts projected from the active render camera.");
             telemetryVisible = config.getBoolean("telemetryVisible", "hud", true,
                     "Show target and mission telemetry.");
             flirEnabled = config.getBoolean("flirEnabled", "hud", false,

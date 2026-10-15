@@ -31,10 +31,16 @@ public final class MissionRepository {
     }
 
     public synchronized RDPMission activeForAircraft(UUID aircraftId) {
+        return activeForAircraft(aircraftId, null);
+    }
+
+    public synchronized RDPMission activeForAircraft(UUID aircraftId, UUID ownerId) {
         if (aircraftId == null) return null;
         RDPMission latest = null;
         for (RDPMission mission : missions.values()) {
-            if (aircraftId.equals(mission.getAircraftId()) && !mission.isTerminal()
+            if (aircraftId.equals(mission.getAircraftId())
+                    && (ownerId == null || ownerId.equals(mission.getOwnerId()))
+                    && !mission.isTerminal()
                     && (latest == null || mission.getLastUpdateTick() > latest.getLastUpdateTick())) {
                 latest = mission;
             }

@@ -2108,18 +2108,14 @@ public final class RdpUavNetwork {
                         return new TargetTelemetry(
                                 player.dimension);
                     }
-                    java.util.List<net.vas.rdp.uav.mission.RDPMission> missions =
+                    net.vas.rdp.uav.mission.RDPMission selected =
                             net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
-                                    .getRepository().byOwner(player.getUniqueID());
-                    net.vas.rdp.uav.mission.RDPMission selected = null;
-                    for (net.vas.rdp.uav.mission.RDPMission mission : missions) {
-                        if (mission.getAircraftId().equals(ridden.getUniqueID())) {
-                            selected = mission;
-                            break;
-                        }
+                                    .getRepository().activeForAircraft(ridden.getUniqueID(),
+                                            player.getUniqueID());
+                    if (selected == null) {
+                        return new TargetTelemetry(
+                                player.dimension);
                     }
-                    if (selected == null) return new TargetTelemetry(
-                            player.dimension);
 
                     net.minecraft.entity.Entity aircraftEntity = null;
                     for (net.minecraft.entity.Entity entity : player.world.loadedEntityList) {

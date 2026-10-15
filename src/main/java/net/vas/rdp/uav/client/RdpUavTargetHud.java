@@ -2,8 +2,11 @@ package net.vas.rdp.uav.client;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.FontRenderer;
+import net.minecraft.client.gui.Gui;
 import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.EntityList;
+import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.RayTraceResult;
 import net.minecraft.util.math.Vec3d;
@@ -12,13 +15,20 @@ import net.minecraftforge.client.event.RenderWorldLastEvent;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
+import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
 
+import java.nio.FloatBuffer;
+import java.nio.IntBuffer;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
 @SideOnly(Side.CLIENT)
 public final class RdpUavTargetHud {
+    private static final long CONTACT_REFRESH_INTERVAL_MS = 50L;
     private static final RdpUavTargetHud INSTANCE = new RdpUavTargetHud();
     private Telemetry telemetry;
     private long receivedAt;
@@ -26,6 +36,15 @@ public final class RdpUavTargetHud {
     private Entity cachedTarget;
     private net.minecraft.world.World cachedWorld;
     private long nextTargetLookupAt;
+    private final FloatBuffer modelViewBuffer = BufferUtils.createFloatBuffer(16);
+    private final FloatBuffer projectionBuffer = BufferUtils.createFloatBuffer(16);
+    private final IntBuffer viewportBuffer = BufferUtils.createIntBuffer(16);
+    private List<TargetOverlayGeometry.ScreenBox> contactBoxes = Collections.emptyList();
+    private net.minecraft.world.World projectionWorld;
+    private Entity projectionCamera;
+    private long contactBoxesReceivedAt;
+    private int projectionScaledWidth;
+    private int projectionScaledHeight;
 
     private RdpUavTargetHud() { }
 
@@ -44,6 +63,12 @@ public final class RdpUavTargetHud {
             cachedWorld = null;
             nextTargetLookupAt = 0L;
         }
+        if (previous == null || value == null
+                || previous.active != value.active
+                || previous.dimension != value.dimension
+                || !same(previous.aircraftType, value.aircraftType)) {
+            clearContactBoxes();
+        }
     }
 
     public Telemetry snapshot() {
@@ -52,11 +77,15 @@ public final class RdpUavTargetHud {
 
     @SubscribeEvent
     public void render(RenderGameOverlayEvent.Post event) {
-        if (event.getType() != RenderGameOverlayEvent.ElementType.ALL
-                || !RdpUavHudConfig.enabled || telemetry == null || !telemetry.active) return;
+        if (event.getType() != RenderGameOverlayEvent.ElementType.ALL) return;
         Minecraft mc = net.minecraftforge.fml.client.FMLClientHandler.instance() == null
                 ? null : net.minecraftforge.fml.client.FMLClientHandler.instance().getClient();
-        if (mc == null || mc.player == null || mc.world == null
+        if (mc == null || mc.player == null || mc.world == null) {
+            clearContactBoxes();
+            return;
+        }
+        drawProjectedContacts(mc);
+        if (!RdpUavHudConfig.enabled || telemetry == null || !telemetry.active
                 || System.currentTimeMillis() - receivedAt > 3000L) return;
         // Eligibility is decided on the server from McHeli's actual pilot/station
         // relationship. Repeating that lookup on the client breaks station-owned
@@ -75,6 +104,7 @@ public final class RdpUavTargetHud {
     /** Draws synchronized entity bounds or a point marker in world space. */
     @SubscribeEvent
     public void renderWorldTarget(RenderWorldLastEvent event) {
+        updateProjectedContacts(event);
         if (!RdpUavHudConfig.markerVisible || telemetry == null || !telemetry.active
                 || !MissionUiState.isMarkerVisible(telemetry.missionState, telemetry.markerState)
                 || System.currentTimeMillis() - receivedAt > 3000L) return;
@@ -121,6 +151,206 @@ public final class RdpUavTargetHud {
             GlStateManager.popMatrix();
             GL11.glPopAttrib();
         }
+    }
+
+    public UUID selectProjectedContact(Minecraft mc, int mouseX, int mouseY) {
+        if (canShowContactOverlay(mc) || mc.currentScreen != null
+                || projectionWorld != mc.world
+                || projectionCamera != renderCamera(mc)
+                || !hasSupportedTelemetryProfile()
+                || !matchesScaledResolution(mc)
+                || System.currentTimeMillis() - contactBoxesReceivedAt > 500L) {
+            return null;
+        }
+        TargetOverlayGeometry.ScreenBox selected =
+                TargetOverlayGeometry.selectAt(contactBoxes, mouseX, mouseY);
+        return selected == null ? null : selected.getTargetId();
+    }
+
+    private void updateProjectedContacts(RenderWorldLastEvent event) {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (canShowContactOverlay(mc) || mc.currentScreen != null) {
+            clearContactBoxes();
+            return;
+        }
+        net.vas.rdp.uav.profile.UavVehicleProfile profile =
+                net.vas.rdp.uav.profile.UavVehicleProfiles.forAircraft(telemetry.aircraftType);
+        if (profile == null || !profile.supportsTargetLock()) {
+            clearContactBoxes();
+            return;
+        }
+
+        Entity camera = mc.getRenderViewEntity();
+        if (camera == null) camera = mc.player;
+        if (camera == null || camera.world != mc.world) {
+            clearContactBoxes();
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (projectionWorld == mc.world && projectionCamera == camera
+                && matchesScaledResolution(mc)
+                && now - contactBoxesReceivedAt < CONTACT_REFRESH_INTERVAL_MS) return;
+        clearContactBoxes();
+        float partialTicks = event.getPartialTicks();
+        Vec3d cameraPosition = camera.getPositionEyes(partialTicks);
+        if (!isFinite(cameraPosition)) return;
+
+        float[] modelView = readMatrix(GL11.GL_MODELVIEW_MATRIX, modelViewBuffer);
+        float[] projection = readMatrix(GL11.GL_PROJECTION_MATRIX, projectionBuffer);
+        viewportBuffer.clear();
+        GL11.glGetIntegerv(GL11.GL_VIEWPORT, viewportBuffer);
+        viewportBuffer.flip();
+        if (viewportBuffer.remaining() < 4) return;
+        int viewportX = viewportBuffer.get();
+        int viewportY = viewportBuffer.get();
+        int viewportWidth = viewportBuffer.get();
+        int viewportHeight = viewportBuffer.get();
+        net.minecraft.client.gui.ScaledResolution resolution =
+                new net.minecraft.client.gui.ScaledResolution(mc);
+
+        List<TargetOverlayGeometry.ScreenBox> projected = new ArrayList<>();
+        AxisAlignedBB searchBounds = camera.getEntityBoundingBox().grow(profile.getLockRange());
+        for (Entity target : mc.world.getEntitiesWithinAABBExcludingEntity(camera, searchBounds)) {
+            if (target == null || target == camera || target == mc.player || target.isDead
+                    || target.world != mc.world || !target.canBeCollidedWith()
+                    || target.getDistance(camera) > profile.getLockRange()
+                    || !net.vas.rdp.uav.target.TargetPolicy.isSelectableExactContact(
+                    mc.world, target, mc.player)) {
+                continue;
+            }
+            ResourceLocation registryId = EntityList.getKey(target);
+            if (registryId == null) continue;
+
+            AxisAlignedBB targetBounds = interpolatedBounds(target, partialTicks);
+            Vec3d targetCenter = new Vec3d(
+                    (targetBounds.minX + targetBounds.maxX) * 0.5D,
+                    (targetBounds.minY + targetBounds.maxY) * 0.5D,
+                    (targetBounds.minZ + targetBounds.maxZ) * 0.5D);
+            RayTraceResult obstruction = mc.world.rayTraceBlocks(
+                    cameraPosition, targetCenter, false, true, false);
+            if (obstruction != null && obstruction.typeOfHit == RayTraceResult.Type.BLOCK) continue;
+
+            String label = net.vas.rdp.uav.target.TargetClassifier.classify(registryId.toString())
+                    + "  " + target.getName();
+            TargetOverlayGeometry.ScreenBox screenBox =
+                    TargetOverlayGeometry.projectBounds(target.getUniqueID(), label,
+                            targetBounds.minX - cameraPosition.x,
+                            targetBounds.minY - cameraPosition.y,
+                            targetBounds.minZ - cameraPosition.z,
+                            targetBounds.maxX - cameraPosition.x,
+                            targetBounds.maxY - cameraPosition.y,
+                            targetBounds.maxZ - cameraPosition.z,
+                            modelView, projection, viewportX, viewportY,
+                            viewportWidth, viewportHeight,
+                            resolution.getScaledWidth(), resolution.getScaledHeight());
+            if (screenBox != null) projected.add(screenBox);
+        }
+        contactBoxes = Collections.unmodifiableList(projected);
+        projectionWorld = mc.world;
+        projectionCamera = renderCamera(mc);
+        contactBoxesReceivedAt = now;
+        projectionScaledWidth = resolution.getScaledWidth();
+        projectionScaledHeight = resolution.getScaledHeight();
+    }
+
+    private void drawProjectedContacts(Minecraft mc) {
+        if (canShowContactOverlay(mc) || mc.currentScreen != null
+                || projectionWorld != mc.world
+                || projectionCamera != renderCamera(mc)
+                || !matchesScaledResolution(mc)
+                || System.currentTimeMillis() - contactBoxesReceivedAt > 500L) {
+            clearContactBoxes();
+            return;
+        }
+        GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_DEPTH_BUFFER_BIT
+                | GL11.GL_COLOR_BUFFER_BIT | GL11.GL_TEXTURE_BIT);
+        try {
+            GlStateManager.disableDepth();
+            for (TargetOverlayGeometry.ScreenBox box : contactBoxes) {
+                int color = targetOverlayColor(box.getLabel());
+                int left = box.getLeft();
+                int top = box.getTop();
+                int right = box.getRight();
+                int bottom = box.getBottom();
+                Gui.drawRect(left, top, right, top + 1, color);
+                Gui.drawRect(left, bottom - 1, right, bottom, color);
+                Gui.drawRect(left, top, left + 1, bottom, color);
+                Gui.drawRect(right - 1, top, right, bottom, color);
+                mc.fontRenderer.drawStringWithShadow(box.getLabel(),
+                        left, Math.max(0, top - 10), color);
+            }
+        } finally {
+            GL11.glPopAttrib();
+        }
+    }
+
+    private boolean canShowContactOverlay(Minecraft mc) {
+        return mc == null || mc.player == null || mc.world == null
+                || !RdpUavHudConfig.enabled || !RdpUavHudConfig.contactOverlayVisible
+                || telemetry == null || !telemetry.active
+                || telemetry.dimension != mc.world.provider.getDimension()
+                || System.currentTimeMillis() - receivedAt > 3000L;
+    }
+
+    private boolean hasSupportedTelemetryProfile() {
+        if (telemetry == null || telemetry.aircraftType == null) return false;
+        net.vas.rdp.uav.profile.UavVehicleProfile profile =
+                net.vas.rdp.uav.profile.UavVehicleProfiles.forAircraft(telemetry.aircraftType);
+        return profile != null && profile.supportsTargetLock();
+    }
+
+    private boolean matchesScaledResolution(Minecraft mc) {
+        if (mc == null) return false;
+        net.minecraft.client.gui.ScaledResolution resolution =
+                new net.minecraft.client.gui.ScaledResolution(mc);
+        return projectionScaledWidth == resolution.getScaledWidth()
+                && projectionScaledHeight == resolution.getScaledHeight();
+    }
+
+    private static Entity renderCamera(Minecraft mc) {
+        Entity camera = mc == null ? null : mc.getRenderViewEntity();
+        return camera == null && mc != null ? mc.player : camera;
+    }
+
+    private void clearContactBoxes() {
+        contactBoxes = Collections.emptyList();
+        projectionWorld = null;
+        projectionCamera = null;
+        contactBoxesReceivedAt = 0L;
+        projectionScaledWidth = 0;
+        projectionScaledHeight = 0;
+    }
+
+    private static AxisAlignedBB interpolatedBounds(Entity entity, float partialTicks) {
+        double x = entity.lastTickPosX + (entity.posX - entity.lastTickPosX) * partialTicks;
+        double y = entity.lastTickPosY + (entity.posY - entity.lastTickPosY) * partialTicks;
+        double z = entity.lastTickPosZ + (entity.posZ - entity.lastTickPosZ) * partialTicks;
+        return entity.getEntityBoundingBox().offset(
+                x - entity.posX, y - entity.posY, z - entity.posZ);
+    }
+
+    private float[] readMatrix(int matrix, FloatBuffer buffer) {
+        buffer.clear();
+        GL11.glGetFloatv(matrix, buffer);
+        buffer.flip();
+        float[] values = new float[16];
+        for (int i = 0; i < values.length && buffer.hasRemaining(); i++) {
+            values[i] = buffer.get();
+        }
+        return values;
+    }
+
+    private static boolean isFinite(Vec3d vector) {
+        return vector != null && Double.isFinite(vector.x)
+                && Double.isFinite(vector.y) && Double.isFinite(vector.z);
+    }
+
+    private static int targetOverlayColor(String label) {
+        if (label.startsWith("MILITARY")) return 0xFFFF6666;
+        if (label.startsWith("VEHICLE")) return 0xFF66D9FF;
+        if (label.startsWith("SCOUT")) return 0xFFFFFF66;
+        if (label.startsWith("HOSTILE")) return 0xFFFFAA55;
+        return 0xFFE0E0E0;
     }
 
     private void drawPointMarker(Minecraft mc, float partialTicks) {

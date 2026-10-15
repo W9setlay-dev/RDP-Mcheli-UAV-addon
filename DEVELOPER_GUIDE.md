@@ -538,19 +538,33 @@ the same adapter without requiring a mission target or autonomous approach.
 
 `RdpUavClientKeys` uses Minecraft's `objectMouseOver.entityHit`, so the input
 refers to the exact entity under the operator's crosshair rather than a
-registry search result. `L` locks that entity in one press; `J` (or the
+registry search result. `3` locks that entity in one press; `5` (or the
 dashboard button) clears the lock. `AiTargetLock` carries only the UUID and a
 clear flag.
+
+The client target HUD also projects selectable, locally loaded contacts into
+screen-space boxes from the active render-view camera. Box selection uses a
+configurable held modifier (default Left Control) plus left-click; a click is
+consumed only when it hits a current eligible box. This projection uses the
+current McHeli view and does not depend on modern camera-feed APIs. Existing
+`TargetClassifier` labels remain heuristic, and client visibility is
+presentation-only. Unconfigured/unknown UAV profiles do not gain lock support.
+The box click sends the same UUID-only `AiTargetLock` request as crosshair
+selection; it does not add a client-owned target state.
+
 `ServerAiTargetLockHandler` performs the authoritative checks:
 
 * the sender controls the McHeli UAV;
 * the target is loaded, collidable, and not the aircraft itself;
+* the aircraft profile supports target lock, and the contact passes the shared
+  target/team policy within the configured lock range;
+* the server verifies line of sight from the controlled aircraft to the target;
 * no other mission already owns the aircraft.
 
 After validation, the server creates a non-destructive reconnaissance mission
 with an exact manual target specification. `MissionLifecycle` refreshes a
 bounded native WingMan approach/orbit route as the target moves and only
-advances after WingMan reports route progress. The separate `J` key or
+advances after WingMan reports route progress. The separate `5` key or
 dashboard clear action clears the runtime lock and requests normal recovery.
 Destructive attack and kamikaze missions remain separate operator-authorized
 actions. Locks are runtime-only and must be re-established after restart.
@@ -761,7 +775,7 @@ The keyboard path is deliberately split between intent and execution:
   supported aircraft, target, payload, and route conditions.
 * `H` is a direct payload-fire request, but the server still validates operator
   control, aircraft support, destructive weapon metadata, and ammunition.
-* `L` and `J` lock and clear exact targets without substituting nearby entities.
+* `3` and `5` lock and clear exact targets without substituting nearby entities.
 * `N` aborts only the requesting player's own non-terminal mission. The client
   sends the request once per press; the server releases WingMan and the mission
   movement lease before manual control can resume.
@@ -783,9 +797,9 @@ A real integration validation must use a matching client and server:
 8. verify a different player cannot abort it;
 9. verify malformed or terminal abort requests do nothing;
 10. verify the mission record survives a save/restart cycle.
-11. press `L` over an exact entity or McHeli vehicle and verify the server
+11. press `3` over an exact entity or McHeli vehicle and verify the server
     reports a non-destructive reconnaissance lock;
-12. press `J` or dashboard **Clear lock** and verify recovery is requested;
+12. press `5` or dashboard **Clear lock** and verify recovery is requested;
 13. create a mission from the GUI using Recon, Auto attack, and Point task;
 12. verify malformed target IDs are rejected without creating a mission;
 13. verify an Auto attack mission arms WingMan only after `TARGET_LOCKED`;
