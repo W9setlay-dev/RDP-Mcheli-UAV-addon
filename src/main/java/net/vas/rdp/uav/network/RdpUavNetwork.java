@@ -24,10 +24,6 @@ import net.vas.rdp.uav.weapon.GuidedWeaponDecision;
 import net.vas.rdp.uav.mission.MissionDefinition;
 import net.vas.rdp.uav.mission.MissionValidationResult;
 
-import java.util.ArrayDeque;
-import java.util.Deque;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.Objects;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -46,10 +42,8 @@ public final class RdpUavNetwork {
             new GuidedWeaponAdapter(FLIGHT_ADAPTER);
     private static final net.vas.rdp.uav.target.TargetResolver TARGET_RESOLVER =
             new net.vas.rdp.uav.target.TargetResolver();
-    private static final Map<java.util.UUID, Deque<Long>> DESIGNATION_REQUESTS_PER_SECOND =
-            new HashMap<>();
-    private static final Map<java.util.UUID, Deque<Long>> DESIGNATION_REQUESTS_PER_MINUTE =
-            new HashMap<>();
+    private static final net.vas.rdp.uav.designation.DesignationRateLimiter
+            DESIGNATION_RATE_LIMITER = new net.vas.rdp.uav.designation.DesignationRateLimiter();
     private static boolean initialized;
 
     private RdpUavNetwork() { }
@@ -163,6 +157,31 @@ public final class RdpUavNetwork {
         CHANNEL.sendTo(new PacketDesignationQueueSync(views), player);
     }
 
+    public static void requestDesignation(
+            net.vas.rdp.uav.designation.DesignationSource source,
+            net.vas.rdp.uav.designation.DesignationType hintedType,
+            double originX, double originY, double originZ,
+            double directionX, double directionY, double directionZ,
+            double maxDistance, java.util.UUID candidateEntityId,
+            int screenWidth, int screenHeight, long frameSequence) {
+        CHANNEL.sendToServer(new PacketDesignationRequest(source, hintedType,
+                originX, originY, originZ, directionX, directionY, directionZ,
+                maxDistance, candidateEntityId, "", screenWidth, screenHeight, frameSequence));
+    }
+
+    public static void removeDesignation(java.util.UUID designationId) {
+        if (designationId != null) CHANNEL.sendToServer(
+                new PacketDesignationRemoveRequest(designationId));
+    }
+
+    public static void promoteDesignations(java.util.List<java.util.UUID> designationIds,
+                                           net.vas.rdp.uav.mission.MissionType missionType) {
+        if (designationIds != null && !designationIds.isEmpty() && missionType != null) {
+            CHANNEL.sendToServer(new PacketDesignationPromoteToMission(
+                    designationIds, missionType.name()));
+        }
+    }
+
     public static void notifyDesignationReject(EntityPlayerMP player,
                                               net.vas.rdp.uav.designation.DesignationSource source,
                                               net.vas.rdp.uav.designation.RejectReason reason,
@@ -185,53 +204,14 @@ public final class RdpUavNetwork {
                         designation.getExpiresAtTick()), player);
     }
 
-    private static boolean allowDesignationRequest(java.util.UUID operatorId) {
-        long now = System.currentTimeMillis();
-        Deque<Long> secondWindow = DESIGNATION_REQUESTS_PER_SECOND.get(operatorId);
-        if (secondWindow == null) {
-            secondWindow = new ArrayDeque<>();
-            DESIGNATION_REQUESTS_PER_SECOND.put(operatorId, secondWindow);
-        }
-        while (!secondWindow.isEmpty() && now - secondWindow.peekFirst() > 1000L) {
-            secondWindow.removeFirst();
-        }
-        Deque<Long> minuteWindow = DESIGNATION_REQUESTS_PER_MINUTE.get(operatorId);
-        if (minuteWindow == null) {
-            minuteWindow = new ArrayDeque<>();
-            DESIGNATION_REQUESTS_PER_MINUTE.put(operatorId, minuteWindow);
-        }
-        while (!minuteWindow.isEmpty() && now - minuteWindow.peekFirst() > 60000L) {
-            minuteWindow.removeFirst();
-        }
-        if (secondWindow.size() >= net.vas.rdp.uav.designation.DesignationConfig.requestsPerSecond
-                || minuteWindow.size() >= net.vas.rdp.uav.designation.DesignationConfig.requestsPerMinute) {
-            return false;
-        }
-        secondWindow.addLast(now);
-        minuteWindow.addLast(now);
-        return true;
+    private static boolean allowDesignationRequest(java.util.UUID operatorId, long currentTick) {
+        return DESIGNATION_RATE_LIMITER.allow(operatorId, currentTick,
+                net.vas.rdp.uav.designation.DesignationConfig.requestsPerSecond,
+                net.vas.rdp.uav.designation.DesignationConfig.requestsPerMinute);
     }
 
-    private static boolean isDuplicateDesignation(net.vas.rdp.uav.designation.DesignationManager manager,
-                                                EntityPlayerMP player,
-                                                net.vas.rdp.uav.designation.Designation candidate) {
-        if (manager == null || candidate == null) return false;
-        for (net.vas.rdp.uav.designation.Designation existing : manager.byOwner(player.getUniqueID())) {
-            if (existing == null || existing.isExpired(player.world.getTotalWorldTime())
-                    || existing.getAttachedMissionId() != null) continue;
-            if (existing.getEntity() != null && candidate.getEntity() != null
-                    && existing.getEntity().entityUuid.equals(candidate.getEntity().entityUuid)) {
-                return true;
-            }
-            if (existing.getPoint() != null && candidate.getPoint() != null) {
-                double dx = existing.getPoint().x - candidate.getPoint().x;
-                double dy = existing.getPoint().y - candidate.getPoint().y;
-                double dz = existing.getPoint().z - candidate.getPoint().z;
-                double radiusSq = net.vas.rdp.uav.designation.DesignationConfig.duplicatePointRadius;
-                if (dx * dx + dy * dy + dz * dz <= radiusSq * radiusSq) return true;
-            }
-        }
-        return false;
+    public static void clearDesignationRequests(java.util.UUID operatorId) {
+        DESIGNATION_RATE_LIMITER.clear(operatorId);
     }
 
     public static void requestMissionData() {
@@ -1529,6 +1509,7 @@ public final class RdpUavNetwork {
     }
 
     public static final class PacketDesignationRequest implements IMessage {
+        private static final int MAX_REGISTRY_ID_LENGTH = 256;
         private net.vas.rdp.uav.designation.DesignationSource source;
         private net.vas.rdp.uav.designation.DesignationType hintedType;
         private double rayOriginX, rayOriginY, rayOriginZ;
@@ -1563,15 +1544,29 @@ public final class RdpUavNetwork {
         }
 
         public void fromBytes(ByteBuf buffer) {
-            source = net.vas.rdp.uav.designation.DesignationSource.values()[buffer.readByte()];
-            hintedType = net.vas.rdp.uav.designation.DesignationType.values()[buffer.readByte()];
+            int sourceIndex = buffer.readUnsignedByte();
+            int typeIndex = buffer.readUnsignedByte();
+            if (sourceIndex >= net.vas.rdp.uav.designation.DesignationSource.values().length
+                    || typeIndex >= net.vas.rdp.uav.designation.DesignationType.values().length) {
+                throw new IllegalArgumentException("Invalid designation source or type");
+            }
+            source = net.vas.rdp.uav.designation.DesignationSource.values()[sourceIndex];
+            hintedType = net.vas.rdp.uav.designation.DesignationType.values()[typeIndex];
             rayOriginX = buffer.readDouble(); rayOriginY = buffer.readDouble(); rayOriginZ = buffer.readDouble();
             rayDirX = buffer.readDouble(); rayDirY = buffer.readDouble(); rayDirZ = buffer.readDouble();
             rayMaxDistance = buffer.readDouble();
             candidateEntityMost = buffer.readLong(); candidateEntityLeast = buffer.readLong();
             candidateRegistryId = readString(buffer);
+            if (candidateRegistryId.length() > MAX_REGISTRY_ID_LENGTH) {
+                throw new IllegalArgumentException("Candidate registry ID is too long");
+            }
             clientScreenWidth = buffer.readInt(); clientScreenHeight = buffer.readInt();
             clientFrameSequence = buffer.readLong();
+            if (clientScreenWidth < 0 || clientScreenWidth > 16384
+                    || clientScreenHeight < 0 || clientScreenHeight > 16384
+                    || clientFrameSequence < 0L) {
+                throw new IllegalArgumentException("Invalid client frame metadata");
+            }
         }
 
         public void toBytes(ByteBuf buffer) {
@@ -1604,12 +1599,21 @@ public final class RdpUavNetwork {
     }
 
     public static final class PacketDesignationPromoteToMission implements IMessage {
+        private static final int MAX_DESIGNATIONS =
+                net.vas.rdp.uav.mission.RDPMission.MAX_COMPOSED_OBJECTIVES;
         private java.util.ArrayList<Long> ids = new java.util.ArrayList<>();
         private String missionType = "STRIKE";
         public PacketDesignationPromoteToMission() { }
         public PacketDesignationPromoteToMission(java.util.List<java.util.UUID> designationIds, String missionType) {
+            if (designationIds != null && designationIds.size() > MAX_DESIGNATIONS) {
+                throw new IllegalArgumentException("Too many selected designations");
+            }
             if (designationIds != null) {
+                java.util.HashSet<java.util.UUID> seen = new java.util.HashSet<>();
                 for (java.util.UUID designationId : designationIds) {
+                    if (designationId == null || !seen.add(designationId)) {
+                        throw new IllegalArgumentException("Designation IDs must be non-null and unique");
+                    }
                     ids.add(designationId.getMostSignificantBits());
                     ids.add(designationId.getLeastSignificantBits());
                 }
@@ -1618,9 +1622,24 @@ public final class RdpUavNetwork {
         }
         public void fromBytes(ByteBuf buffer) {
             int count = buffer.readInt();
+            if (count < 0 || count > MAX_DESIGNATIONS) {
+                throw new IllegalArgumentException("Invalid designation selection size");
+            }
             ids.clear();
-            for (int i=0; i<count; i++) ids.add(buffer.readLong());
+            java.util.HashSet<java.util.UUID> seen = new java.util.HashSet<>();
+            for (int i = 0; i < count; i++) {
+                long most = buffer.readLong();
+                long least = buffer.readLong();
+                if (!seen.add(new java.util.UUID(most, least))) {
+                    throw new IllegalArgumentException("Duplicate designation ID");
+                }
+                ids.add(most);
+                ids.add(least);
+            }
             missionType = readString(buffer);
+            if (!"STRIKE".equals(missionType) && !"DESTROYING".equals(missionType)) {
+                throw new IllegalArgumentException("Unsupported designation mission type");
+            }
         }
         public void toBytes(ByteBuf buffer) {
             buffer.writeInt(ids.size() / 2);
@@ -1751,6 +1770,8 @@ public final class RdpUavNetwork {
     }
 
     public static final class ServerDesignationRequestHandler implements IMessageHandler<PacketDesignationRequest, IMessage> {
+        private static final double MAX_CAMERA_OFFSET_SQUARED = 64.0D * 64.0D;
+
         @Override
         public IMessage onMessage(final PacketDesignationRequest message, MessageContext context) {
             final EntityPlayerMP player = context.getServerHandler().player;
@@ -1763,17 +1784,17 @@ public final class RdpUavNetwork {
                                 "Null designation request");
                         return;
                     }
-                    net.vas.rdp.uav.designation.DesignationManager manager =
-                            net.vas.rdp.uav.designation.DesignationManager.forWorld(player.world);
-                    if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(
-                            net.vas.rdp.uav.mission.UavControlAccess.findControlledAircraft(player), player)) {
+                    final com.norwood.mcheli.aircraft.MCH_EntityAircraft controlledAircraft =
+                            net.vas.rdp.uav.mission.UavControlAccess.findControlledAircraft(player);
+                    if (!net.vas.rdp.uav.mission.UavControlAccess.isOperator(controlledAircraft, player)) {
                         notifyDesignationReject(player,
                                 message.source == null ? net.vas.rdp.uav.designation.DesignationSource.CROSSHAIR : message.source,
                                 net.vas.rdp.uav.designation.RejectReason.OPERATOR_NOT_AUTHORIZED,
                                 "Operator is not the active aircraft owner or controller");
                         return;
                     }
-                    if (!allowDesignationRequest(player.getUniqueID())) {
+                    if (!allowDesignationRequest(player.getUniqueID(),
+                            player.world.getTotalWorldTime())) {
                         notifyDesignationReject(player,
                                 message.source == null ? net.vas.rdp.uav.designation.DesignationSource.CROSSHAIR : message.source,
                                 net.vas.rdp.uav.designation.RejectReason.INTERNAL_ERROR,
@@ -1781,54 +1802,18 @@ public final class RdpUavNetwork {
                         return;
                     }
                     if (message.rayMaxDistance <= 0D
-                            || message.rayMaxDistance > net.vas.rdp.uav.designation.DesignationConfig.designationEnvelopeBlocks) {
+                            || !Double.isFinite(message.rayMaxDistance)
+                            || message.rayMaxDistance > net.vas.rdp.uav.designation.DesignationConfig.designationEnvelopeBlocks
+                            || !isValidRay(message, player, controlledAircraft)) {
                         notifyDesignationReject(player,
                                 message.source == null ? net.vas.rdp.uav.designation.DesignationSource.CROSSHAIR : message.source,
                                 net.vas.rdp.uav.designation.RejectReason.OUT_OF_ENVELOPE,
-                                "Requested ray exceeds configured designation envelope");
-                        return;
-                    }
-                    if (manager.countPending(player.getUniqueID()) >=
-                            net.vas.rdp.uav.designation.DesignationConfig.maxDesignationsPerOperator) {
-                        notifyDesignationReject(player,
-                                message.source == null ? net.vas.rdp.uav.designation.DesignationSource.CROSSHAIR : message.source,
-                                net.vas.rdp.uav.designation.RejectReason.QUEUE_FULL,
-                                "Operator designation queue is full");
-                        return;
-                    }
-
-                    java.util.UUID candidateEntityUuid = message.candidateEntityUuid();
-                    net.minecraft.entity.Entity candidateEntity = null;
-                    if (candidateEntityUuid != null) {
-                        for (net.minecraft.entity.Entity loaded : player.world.loadedEntityList) {
-                            if (loaded.getUniqueID().equals(candidateEntityUuid)) {
-                                candidateEntity = loaded;
-                                break;
-                            }
-                        }
-                    }
-                    if (candidateEntityUuid != null && (candidateEntity == null || candidateEntity.isDead
-                            || candidateEntity.dimension != player.world.provider.getDimension())) {
-                        notifyDesignationReject(player,
-                                message.source == null ? net.vas.rdp.uav.designation.DesignationSource.CROSSHAIR : message.source,
-                                net.vas.rdp.uav.designation.RejectReason.ENTITY_NOT_LOADED,
-                                "Candidate entity is not loaded in this dimension");
-                        return;
-                    }
-                    if (candidateEntity != null
-                            && !net.vas.rdp.uav.target.TargetPolicy.isSelectableExactContact(
-                                    player.world, candidateEntity, player)) {
-                        notifyDesignationReject(player,
-                                message.source == null ? net.vas.rdp.uav.designation.DesignationSource.CROSSHAIR : message.source,
-                                net.vas.rdp.uav.designation.RejectReason.ENTITY_NOT_ELIGIBLE,
-                                "Candidate entity is not eligible for designation");
+                                "Requested ray is invalid or outside the configured designation envelope");
                         return;
                     }
 
                     final net.vas.rdp.uav.designation.DesignationSource source =
                             message.source == null ? net.vas.rdp.uav.designation.DesignationSource.CROSSHAIR : message.source;
-                    final net.vas.rdp.uav.designation.DesignationType type =
-                            message.hintedType == null ? net.vas.rdp.uav.designation.DesignationType.POINT : message.hintedType;
                     net.minecraft.util.math.Vec3d origin = new net.minecraft.util.math.Vec3d(
                             message.rayOriginX, message.rayOriginY, message.rayOriginZ);
                     net.minecraft.util.math.Vec3d direction = new net.minecraft.util.math.Vec3d(
@@ -1842,6 +1827,8 @@ public final class RdpUavNetwork {
                     net.minecraft.util.math.Vec3d normalized = direction.normalize();
                     net.minecraft.util.math.Vec3d end = origin.add(normalized.scale(message.rayMaxDistance));
                     net.minecraft.util.math.RayTraceResult hit = player.world.rayTraceBlocks(origin, end, false, true, false);
+                    net.minecraft.entity.Entity candidateEntity = resolveEntityAlongRay(
+                            player, controlledAircraft, origin, end, hit);
                     net.vas.rdp.uav.designation.Designation.PointPayload pointPayload = null;
                     net.vas.rdp.uav.designation.Designation.EntityPayload entityPayload = null;
                     if (candidateEntity != null) {
@@ -1863,33 +1850,60 @@ public final class RdpUavNetwork {
                                 resolved.x, resolved.y, resolved.z, false,
                                 (int) Math.floor(resolved.y));
                     }
+                    if (candidateEntity == null && (hit == null || hit.hitVec == null)) {
+                        notifyDesignationReject(player, source,
+                                net.vas.rdp.uav.designation.RejectReason.NO_HIT,
+                                "No valid target was resolved from the server ray");
+                        return;
+                    }
 
                     net.vas.rdp.uav.designation.Designation designation = net.vas.rdp.uav.designation.Designation.builder()
                             .operatorId(player.getUniqueID())
                             .dimension(player.dimension)
-                            .type(type)
+                            .type(candidateEntity == null
+                                    ? net.vas.rdp.uav.designation.DesignationType.POINT
+                                    : net.vas.rdp.uav.designation.DesignationType.ENTITY)
                             .source(source)
                             .createdAtTick(player.world.getTotalWorldTime())
                             .expiresAtTick(player.world.getTotalWorldTime() + net.vas.rdp.uav.designation.DesignationConfig.designationTtlTicks)
                             .confidence(1.0F)
                             .provenance(candidateEntity != null
                                     ? (net.minecraft.entity.EntityList.getKey(candidateEntity) == null ? "entity" : net.minecraft.entity.EntityList.getKey(candidateEntity).toString())
-                                    : (hit == null ? "ray" : "ray-hit"))
+                                    : "ray-hit")
                             .point(pointPayload)
                             .entity(entityPayload)
                             .priority(net.vas.rdp.uav.target.TargetPriority.NORMAL)
                             .notes("Queued from server-authoritative operator designation")
                             .build();
 
-                    if (isDuplicateDesignation(manager, player, designation)) {
+                    net.vas.rdp.uav.designation.DesignationWorldData data =
+                            net.vas.rdp.uav.designation.DesignationWorldData.get(player.world);
+                    if (data == null) {
                         notifyDesignationReject(player, source,
-                                net.vas.rdp.uav.designation.RejectReason.DUPLICATE,
-                                "Another designation already matches this target");
+                                net.vas.rdp.uav.designation.RejectReason.INTERNAL_ERROR,
+                                "Designation storage is unavailable");
                         return;
                     }
-
-                    net.vas.rdp.uav.designation.DesignationWorldData.get(player.world).add(designation);
-                    manager.add(designation);
+                    net.vas.rdp.uav.designation.DesignationRegistry.AddResult addResult = data.tryAdd(
+                            designation, player.world.getTotalWorldTime(),
+                            net.vas.rdp.uav.designation.DesignationConfig.maxDesignationsPerOperator,
+                            net.vas.rdp.uav.designation.DesignationConfig.duplicatePointRadius,
+                            net.vas.rdp.uav.designation.DesignationConfig.duplicateEntityPolicy);
+                    if (addResult != net.vas.rdp.uav.designation.DesignationRegistry.AddResult.ADDED) {
+                        net.vas.rdp.uav.designation.RejectReason reason =
+                                addResult == net.vas.rdp.uav.designation.DesignationRegistry.AddResult.QUEUE_FULL
+                                        ? net.vas.rdp.uav.designation.RejectReason.QUEUE_FULL
+                                        : addResult == net.vas.rdp.uav.designation.DesignationRegistry.AddResult.TTL_EXPIRED
+                                        ? net.vas.rdp.uav.designation.RejectReason.TTL_EXPIRED
+                                        : net.vas.rdp.uav.designation.RejectReason.DUPLICATE;
+                        notifyDesignationReject(player, source, reason,
+                                reason == net.vas.rdp.uav.designation.RejectReason.QUEUE_FULL
+                                        ? "Operator designation queue is full"
+                                        : reason == net.vas.rdp.uav.designation.RejectReason.TTL_EXPIRED
+                                        ? "Designation has already expired"
+                                        : "Another designation already matches this target");
+                        return;
+                    }
                     notifyDesignationConfirm(player, designation);
                     syncDesignationQueue(player);
                 } catch (RuntimeException ex) {
@@ -1902,6 +1916,62 @@ public final class RdpUavNetwork {
             });
             return null;
         }
+
+        private static boolean isValidRay(PacketDesignationRequest message, EntityPlayerMP player,
+                                          com.norwood.mcheli.aircraft.MCH_EntityAircraft aircraft) {
+            if (!Double.isFinite(message.rayOriginX) || !Double.isFinite(message.rayOriginY)
+                    || !Double.isFinite(message.rayOriginZ) || !Double.isFinite(message.rayDirX)
+                    || !Double.isFinite(message.rayDirY) || !Double.isFinite(message.rayDirZ)) {
+                return false;
+            }
+            net.minecraft.util.math.Vec3d origin = new net.minecraft.util.math.Vec3d(
+                    message.rayOriginX, message.rayOriginY, message.rayOriginZ);
+            net.minecraft.util.math.Vec3d playerEyes = player.getPositionEyes(1.0F);
+            double playerDistance = origin.squareDistanceTo(playerEyes);
+            double aircraftDistance = origin.squareDistanceTo(
+                    new net.minecraft.util.math.Vec3d(aircraft.posX, aircraft.posY + aircraft.height * 0.5D,
+                            aircraft.posZ));
+            return Double.isFinite(message.rayDirX * message.rayDirX
+                    + message.rayDirY * message.rayDirY + message.rayDirZ * message.rayDirZ)
+                    && message.rayDirX * message.rayDirX + message.rayDirY * message.rayDirY
+                    + message.rayDirZ * message.rayDirZ > 1.0E-12D
+                    && (playerDistance <= MAX_CAMERA_OFFSET_SQUARED
+                    || aircraftDistance <= MAX_CAMERA_OFFSET_SQUARED);
+        }
+
+        private static net.minecraft.entity.Entity resolveEntityAlongRay(
+                EntityPlayerMP player, com.norwood.mcheli.aircraft.MCH_EntityAircraft aircraft,
+                net.minecraft.util.math.Vec3d origin, net.minecraft.util.math.Vec3d end,
+                net.minecraft.util.math.RayTraceResult blockHit) {
+            boolean hasBlockHit = blockHit != null
+                    && blockHit.typeOfHit == net.minecraft.util.math.RayTraceResult.Type.BLOCK
+                    && blockHit.hitVec != null;
+            net.minecraft.util.math.Vec3d traceEnd = hasBlockHit ? blockHit.hitVec : end;
+            double closestDistance = origin.squareDistanceTo(traceEnd);
+            net.minecraft.util.math.AxisAlignedBB search = new net.minecraft.util.math.AxisAlignedBB(
+                    Math.min(origin.x, traceEnd.x), Math.min(origin.y, traceEnd.y),
+                    Math.min(origin.z, traceEnd.z), Math.max(origin.x, traceEnd.x),
+                    Math.max(origin.y, traceEnd.y), Math.max(origin.z, traceEnd.z)).grow(1.0D);
+            net.minecraft.entity.Entity closest = null;
+            for (net.minecraft.entity.Entity entity
+                    : player.world.getEntitiesWithinAABBExcludingEntity(aircraft, search)) {
+                if (entity == null || entity == player || entity == aircraft || entity.isDead
+                        || entity.dimension != player.dimension || !entity.canBeCollidedWith()
+                        || !net.vas.rdp.uav.target.TargetPolicy.isSelectableExactContact(
+                                player.world, entity, player)) {
+                    continue;
+                }
+                net.minecraft.util.math.RayTraceResult intercept =
+                        entity.getEntityBoundingBox().calculateIntercept(origin, traceEnd);
+                if (intercept == null || intercept.hitVec == null) continue;
+                double distance = origin.squareDistanceTo(intercept.hitVec);
+                if (distance < closestDistance) {
+                    closestDistance = distance;
+                    closest = entity;
+                }
+            }
+            return closest;
+        }
     }
 
     public static final class ServerDesignationRemoveRequestHandler implements IMessageHandler<PacketDesignationRemoveRequest, IMessage> {
@@ -1913,11 +1983,15 @@ public final class RdpUavNetwork {
                 net.vas.rdp.uav.designation.DesignationManager manager =
                         net.vas.rdp.uav.designation.DesignationManager.forWorld(player.world);
                 net.vas.rdp.uav.designation.Designation designation = manager.find(message.designationId());
-                if (designation == null || !player.getUniqueID().equals(designation.getOperatorId())) {
+                if (designation == null || !player.getUniqueID().equals(designation.getOperatorId())
+                        || designation.isAttached()) {
+                    notifyDesignationReject(player,
+                            net.vas.rdp.uav.designation.DesignationSource.CROSSHAIR,
+                            net.vas.rdp.uav.designation.RejectReason.OPERATOR_NOT_AUTHORIZED,
+                            "Designation is missing, attached to a mission, or owned by another operator");
                     return;
                 }
                 net.vas.rdp.uav.designation.DesignationWorldData.get(player.world).remove(designation.getDesignationId());
-                manager.remove(designation.getDesignationId());
                 syncDesignationQueue(player);
             });
             return null;
@@ -1932,30 +2006,68 @@ public final class RdpUavNetwork {
                 if (message == null || player == null) return;
                 net.vas.rdp.uav.designation.DesignationManager manager =
                         net.vas.rdp.uav.designation.DesignationManager.forWorld(player.world);
-                for (java.util.UUID designationId : message.designationIds()) {
+                java.util.List<java.util.UUID> designationIds = message.designationIds();
+                if (designationIds.isEmpty()
+                        || designationIds.size()
+                        > net.vas.rdp.uav.mission.RDPMission.MAX_COMPOSED_OBJECTIVES) {
+                    notifyDesignationReject(player,
+                            net.vas.rdp.uav.designation.DesignationSource.CROSSHAIR,
+                            net.vas.rdp.uav.designation.RejectReason.UNSUPPORTED_OBJECTIVE,
+                            "Select between one and "
+                                    + net.vas.rdp.uav.mission.RDPMission.MAX_COMPOSED_OBJECTIVES
+                                    + " designations");
+                    return;
+                }
+                java.util.HashSet<java.util.UUID> uniqueIds = new java.util.HashSet<>();
+                java.util.List<net.vas.rdp.uav.designation.Designation> selected =
+                        new java.util.ArrayList<>();
+                for (java.util.UUID designationId : designationIds) {
                     net.vas.rdp.uav.designation.Designation designation = manager.find(designationId);
-                    if (designation == null || !player.getUniqueID().equals(designation.getOperatorId())) {
-                        continue;
-                    }
-                    try {
-                        net.vas.rdp.uav.mission.MissionType missionType =
-                                net.vas.rdp.uav.mission.MissionType.STRIKE;
-                        net.vas.rdp.uav.mission.RDPMission mission =
-                                manager.promoteToMission(player, designationId, missionType);
-                        if (mission != null) {
-                            notifyDesignationConfirm(player, designation);
-                        } else {
-                            notifyDesignationReject(player,
-                                    designation.getSource(),
-                                    net.vas.rdp.uav.designation.RejectReason.INTERNAL_ERROR,
-                                    "Designation could not be promoted to a mission");
-                        }
-                    } catch (RuntimeException ex) {
+                    if (!uniqueIds.add(designationId) || designation == null
+                            || !player.getUniqueID().equals(designation.getOperatorId())
+                            || designation.isAttached()) {
                         notifyDesignationReject(player,
-                                designation.getSource(),
-                                net.vas.rdp.uav.designation.RejectReason.INTERNAL_ERROR,
-                                ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage());
+                                net.vas.rdp.uav.designation.DesignationSource.CROSSHAIR,
+                                net.vas.rdp.uav.designation.RejectReason.OPERATOR_NOT_AUTHORIZED,
+                                "Every selected designation must be active, unattached, and owned by you");
+                        return;
                     }
+                    if (!designation.isActive() || designation.isAttached()
+                            || designation.getDimension() != player.world.provider.getDimension()) {
+                        notifyDesignationReject(player, designation.getSource(),
+                                net.vas.rdp.uav.designation.RejectReason.UNSUPPORTED_OBJECTIVE,
+                                "Designation is inactive, attached, or belongs to another dimension");
+                        return;
+                    }
+                    if (designation.isExpired(player.world.getTotalWorldTime())) {
+                        notifyDesignationReject(player, designation.getSource(),
+                                net.vas.rdp.uav.designation.RejectReason.TTL_EXPIRED,
+                                "Designation has expired");
+                        return;
+                    }
+                    selected.add(designation);
+                }
+                try {
+                    net.vas.rdp.uav.mission.MissionType missionType =
+                            net.vas.rdp.uav.mission.MissionType.valueOf(message.missionType());
+                    net.vas.rdp.uav.mission.RDPMission mission =
+                            manager.promoteToMission(player, designationIds, missionType);
+                    if (mission == null) {
+                        notifyDesignationReject(player,
+                                selected.get(0).getSource(),
+                                net.vas.rdp.uav.designation.RejectReason.UNSUPPORTED_OBJECTIVE,
+                                "Composed mission failed server validation or aircraft capability checks");
+                        return;
+                    }
+                    for (net.vas.rdp.uav.designation.Designation designation : selected) {
+                        notifyDesignationConfirm(player, designation);
+                    }
+                } catch (RuntimeException ex) {
+                    notifyDesignationReject(player,
+                            selected.get(0).getSource(),
+                            net.vas.rdp.uav.designation.RejectReason.INTERNAL_ERROR,
+                            ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage());
+                    return;
                 }
                 syncDesignationQueue(player);
             });
@@ -1967,7 +2079,11 @@ public final class RdpUavNetwork {
         @Override
         public IMessage onMessage(final PacketDesignationConfirm message, MessageContext context) {
             if (message == null) return null;
-            RDPUavMod.removeClientDesignation(message.designationId());
+            net.minecraftforge.fml.client.FMLClientHandler.instance().getClient().addScheduledTask(() -> {
+                RDPUavMod.removeClientDesignation(message.designationId());
+                net.vas.rdp.uav.client.GuiMissionControl.designationResult(
+                        "Server confirmed designation or mission promotion.");
+            });
             return null;
         }
     }
@@ -1976,6 +2092,9 @@ public final class RdpUavNetwork {
         @Override
         public IMessage onMessage(final PacketDesignationReject message, MessageContext context) {
             if (message == null) return null;
+            net.minecraftforge.fml.client.FMLClientHandler.instance().getClient().addScheduledTask(
+                    () -> net.vas.rdp.uav.client.GuiMissionControl.designationResult(
+                            "Designation rejected: " + message.detail()));
             return null;
         }
     }
@@ -1984,7 +2103,10 @@ public final class RdpUavNetwork {
         @Override
         public IMessage onMessage(final PacketDesignationQueueSync message, MessageContext context) {
             if (message == null) return null;
-            RDPUavMod.replaceClientDesignationQueue(message.designations());
+            net.minecraftforge.fml.client.FMLClientHandler.instance().getClient().addScheduledTask(() -> {
+                RDPUavMod.replaceClientDesignationQueue(message.designations());
+                net.vas.rdp.uav.client.GuiMissionControl.designationQueueUpdated();
+            });
             return null;
         }
     }
@@ -2669,8 +2791,14 @@ public final class RdpUavNetwork {
                 private boolean visible;
                 private String lifecycle = "NONE";
                 private String markerState = "HIDDEN";
+                private String classification = "UNKNOWN";
+                private double classificationConfidence;
+                private boolean classificationConflict;
 
                 public TargetTelemetry() { }
+                public String getClassification() { return classification; }
+                public double getClassificationConfidence() { return classificationConfidence; }
+                public boolean hasClassificationConflict() { return classificationConflict; }
 
                 private TargetTelemetry(int dimension) {
                     this(false, false, "", "", "NO TARGET", "NO TARGET",
@@ -2766,6 +2894,17 @@ public final class RdpUavNetwork {
                             selected.getTargetPriority().name(), scan, deep,
                             selected.getFailureReason(), wingmanState, wingmanNode, selected.getDimension(),
                             tx, ty, tz, distance);
+                    net.vas.rdp.uav.target.TargetClassificationResult targetClassification =
+                            target == null
+                                    ? net.vas.rdp.uav.target.TargetClassifier.classifyDetailed(
+                                            registry.isEmpty() ? "rdpuav:unknown" : registry)
+                                    : net.vas.rdp.uav.target.TargetClassifier.classifyDetailed(
+                                            target, selected.getDimension());
+                    telemetry.classification =
+                            targetClassification.getClassification().name();
+                    telemetry.classificationConfidence = targetClassification.getConfidence();
+                    telemetry.classificationConflict =
+                            targetClassification.hasConflictingEvidence();
                     telemetry.entityName = target == null ? (point ? "POINT" : "") : target.getName();
                     if (contact != null) {
                         telemetry.velocityX = contact.getVelocityX();
@@ -2822,6 +2961,21 @@ public final class RdpUavNetwork {
                     previousX = buffer.readDouble(); previousY = buffer.readDouble(); previousZ = buffer.readDouble();
                     lastDetectionTick = buffer.readLong(); lastUpdateTick = buffer.readLong();
                     visible = buffer.readBoolean(); lifecycle = readString(buffer); markerState = readString(buffer);
+                    classification = readString(buffer);
+                    classificationConfidence = buffer.readDouble();
+                    classificationConflict = buffer.readBoolean();
+                    try {
+                        net.vas.rdp.uav.target.Classification.valueOf(classification);
+                    } catch (IllegalArgumentException invalid) {
+                        throw new IllegalArgumentException(
+                                "Invalid target classification in telemetry", invalid);
+                    }
+                    if (!Double.isFinite(classificationConfidence)
+                            || classificationConfidence < 0.0D
+                            || classificationConfidence > 1.0D) {
+                        throw new IllegalArgumentException(
+                                "Invalid target classification confidence in telemetry");
+                    }
                 }
 
                 public void toBytes(ByteBuf buffer) {
@@ -2839,6 +2993,8 @@ public final class RdpUavNetwork {
                     buffer.writeDouble(previousX).writeDouble(previousY).writeDouble(previousZ);
                     buffer.writeLong(lastDetectionTick).writeLong(lastUpdateTick);
                     buffer.writeBoolean(visible); writeString(buffer, lifecycle); writeString(buffer, markerState);
+                    writeString(buffer, classification);
+                    buffer.writeDouble(classificationConfidence).writeBoolean(classificationConflict);
                 }
             }
 
@@ -3065,6 +3221,17 @@ public final class RdpUavNetwork {
                                 "Attack authorization rejected: locked target is not freshly visible."));
                         return;
                     }
+                    long authorizationTick = player.world.getTotalWorldTime();
+                    java.util.UUID authorizationGrant =
+                            net.vas.rdp.uav.mission.DestructiveAuthorizationRegistry.issue(
+                                    mission.getMissionId(), player.getUniqueID(),
+                                    aircraft.getUniqueID(), mission.getTargetId(),
+                                    player.world.provider.getDimension(), authorizationTick);
+                    if (authorizationGrant == null) {
+                        player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                "Attack authorization rejected: server authorization capacity is full."));
+                        return;
+                    }
                     GuidedStrikeObjective objective = mission.getTargetId() == null
                             ? GuidedStrikeObjective.square(mission.getMissionId(),
                             player.world.provider.getDimension(), x, y, z,
@@ -3074,6 +3241,15 @@ public final class RdpUavNetwork {
                             x, y, z, player.world.getTotalWorldTime());
                     objective.authorize();
                     objective.beginTracking();
+                    if (!net.vas.rdp.uav.mission.DestructiveAuthorizationRegistry.consume(
+                            authorizationGrant, mission.getMissionId(), player.getUniqueID(),
+                            aircraft.getUniqueID(), mission.getTargetId(),
+                            player.world.provider.getDimension(),
+                            player.world.getTotalWorldTime())) {
+                        player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                                "Attack authorization rejected: authorization grant expired or changed."));
+                        return;
+                    }
                     GuidedWeaponDecision guided = GUIDED_ADAPTER.arm(player.world, aircraft,
                             objective, Math.sqrt(aircraft.motionX * aircraft.motionX
                                     + aircraft.motionY * aircraft.motionY
@@ -3100,7 +3276,6 @@ public final class RdpUavNetwork {
                                         "Attack authorization rejected: native attack arming failed."));
                         return;
                     }
-                    long authorizationTick = player.world.getTotalWorldTime();
                     mission.authorizeDestructiveAction(authorizationTick);
                     mission.transitionTo(net.vas.rdp.uav.mission.MissionState.ATTACK_TARGET,
                             authorizationTick);
@@ -3170,6 +3345,22 @@ public final class RdpUavNetwork {
                             return;
                         }
                     }
+                    long authorizationTick = player.world.getTotalWorldTime();
+                    java.util.UUID authorizationGrant =
+                            net.vas.rdp.uav.mission.DestructiveAuthorizationRegistry.issue(
+                                    mission.getMissionId(), player.getUniqueID(),
+                                    aircraft.getUniqueID(), mission.getTargetId(),
+                                    player.world.provider.getDimension(), authorizationTick);
+                    if (authorizationGrant == null
+                            || !net.vas.rdp.uav.mission.DestructiveAuthorizationRegistry.consume(
+                            authorizationGrant, mission.getMissionId(), player.getUniqueID(),
+                            aircraft.getUniqueID(), mission.getTargetId(),
+                            player.world.provider.getDimension(),
+                            player.world.getTotalWorldTime())) {
+                        rejectKamikaze(player,
+                                "Nose-dive rejected: server authorization grant expired or is unavailable.");
+                        return;
+                    }
                     if (FLIGHT_ADAPTER.armKamikaze(aircraft, x, y, z,
                             mission.getObservationDistance(), mission.getTargetId())) {
                         rejectKamikaze(player,
@@ -3178,7 +3369,6 @@ public final class RdpUavNetwork {
                     }
                     // Reusable and long-range airframes may only enter a
                     // destructive route through this operator-authenticated request.
-                    long authorizationTick = player.world.getTotalWorldTime();
                     mission.authorizeDestructiveAction(authorizationTick);
                     KamikazePilotOverride.lock(aircraft.getUniqueID(), mission.getTargetId(),
                             mission.getMissionId());
@@ -3984,6 +4174,8 @@ public final class RdpUavNetwork {
                     hud.setRichTelemetry(message.velocityX, message.velocityY, message.velocityZ,
                             message.confidence, message.bearing, message.elevation,
                             message.visible, message.lifecycle, message.markerState);
+                    hud.setClassificationProjection(message.classification,
+                            message.classificationConfidence, message.classificationConflict);
                     net.vas.rdp.uav.client.RdpUavTargetHud.instance().receive(hud);
                 });
                 return null;

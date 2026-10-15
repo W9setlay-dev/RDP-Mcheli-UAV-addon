@@ -4,8 +4,10 @@ import com.norwood.mcheli.aircraft.MCH_EntityAircraft;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.world.World;
+import net.minecraft.world.World;
 import net.vas.rdp.uav.RDPUavMod;
 import net.vas.rdp.uav.mission.MissionType;
+import net.vas.rdp.uav.mission.MissionObjective;
 import net.vas.rdp.uav.mission.RDPMission;
 import net.vas.rdp.uav.mission.UavControlAccess;
 import net.vas.rdp.uav.persistence.RDPMissionWorldData;
@@ -18,6 +20,7 @@ import net.vas.rdp.uav.target.TargetSpec;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.UUID;
 
@@ -49,7 +52,9 @@ public final class DesignationManager {
     public synchronized List<DesignationView> snapshotForOperator(UUID operatorId) {
         List<Designation> designations = byOwner(operatorId);
         List<DesignationView> views = new ArrayList<>();
-        for (Designation designation : designations) views.add(designation.toView());
+        for (Designation designation : designations) {
+            if (designation.isActive()) views.add(designation.toView());
+        }
         return views;
     }
 
@@ -65,35 +70,42 @@ public final class DesignationManager {
     public synchronized Designation attachMission(UUID designationId, UUID missionId) {
         Designation designation = registry.find(designationId);
         if (designation == null || designation.getAttachedMissionId() != null) return designation;
-        Designation updated = Designation.builder()
-                .designationId(designation.getDesignationId())
-                .operatorId(designation.getOperatorId())
-                .dimension(designation.getDimension())
-                .type(designation.getType())
-                .source(designation.getSource())
-                .createdAtTick(designation.getCreatedAtTick())
-                .expiresAtTick(designation.getExpiresAtTick())
-                .confidence(designation.getConfidence())
-                .provenance(designation.getProvenance())
-                .point(designation.getPoint())
-                .entity(designation.getEntity())
-                .area(designation.getArea())
-                .composite(designation.getComposite())
-                .priority(designation.getPriority())
-                .notes(designation.getNotes())
-                .attachedMissionId(missionId)
-                .build();
+        Designation updated = designation.withAttachedMission(missionId);
         registry.remove(designationId);
         registry.add(updated);
         return updated;
     }
 
-    public synchronized RDPMission promoteToMission(EntityPlayerMP player, UUID designationId, MissionType requestedType) {
-        if (player == null || player.world == null || designationId == null) return null;
+    public synchronized void moveMissionAttachment(World world, UUID designationId, UUID missionId) {
         Designation designation = registry.find(designationId);
-        if (designation == null || designation.isAttached() || !player.getUniqueID().equals(designation.getOperatorId())) {
-            return null;
-        }
+        if (designation == null || missionId == null || !designation.isActive()) return;
+        if (missionId.equals(designation.getAttachedMissionId())) return;
+        registry.remove(designationId);
+        registry.add(designation.withAttachedMission(missionId));
+        DesignationWorldData data = DesignationWorldData.get(world);
+        if (data != null) data.markRegistryDirty();
+    }
+
+    public synchronized void detachMission(World world, UUID designationId, UUID missionId) {
+        Designation designation = registry.find(designationId);
+        if (designation == null || missionId == null
+                || !missionId.equals(designation.getAttachedMissionId())) return;
+        registry.remove(designationId);
+        registry.add(designation.withAttachedMission(null));
+        DesignationWorldData data = DesignationWorldData.get(world);
+        if (data != null) data.markRegistryDirty();
+    }
+
+    public synchronized RDPMission promoteToMission(EntityPlayerMP player, UUID designationId, MissionType requestedType) {
+        return promoteToMission(player, Collections.singletonList(designationId), requestedType);
+    }
+
+    public synchronized RDPMission promoteToMission(EntityPlayerMP player,
+                                                    List<UUID> designationIds,
+                                                    MissionType requestedType) {
+        if (player == null || player.world == null || designationIds == null
+                || designationIds.isEmpty()
+                || designationIds.size() > RDPMission.MAX_COMPOSED_OBJECTIVES) return null;
         MCH_EntityAircraft aircraft = UavControlAccess.findControlledAircraft(player);
         if (aircraft == null || !UavControlAccess.isOperator(aircraft, player)
                 || RDPUavMod.missions().ensureAuthorized(aircraft, player)
@@ -108,46 +120,77 @@ public final class DesignationManager {
         if (missionType != MissionType.STRIKE && missionType != MissionType.DESTROYING)
             missionType = MissionType.STRIKE;
 
-        UUID entityId = resolveEntityId(designation);
-        String registryId = resolveRegistryId(designation);
-        double targetX = resolvePointX(designation);
-        double targetY = resolvePointY(designation);
-        double targetZ = resolvePointZ(designation);
+        List<Designation> selected = new ArrayList<>();
+        List<MissionObjective> objectives = new ArrayList<>();
+        HashSet<UUID> seenDesignations = new HashSet<>();
+        HashSet<UUID> seenEntities = new HashSet<>();
+        for (UUID designationId : designationIds) {
+            if (designationId == null || !seenDesignations.add(designationId)) return null;
+            Designation designation = registry.find(designationId);
+            if (designation == null || !designation.isActive() || designation.isAttached()
+                    || designation.isExpired(player.world.getTotalWorldTime())
+                    || designation.getDimension() != player.world.provider.getDimension()
+                    || !player.getUniqueID().equals(designation.getOperatorId())) return null;
 
-        if (entityId != null) {
-            Entity target = new net.vas.rdp.uav.target.TargetResolver().findLoaded(player.world, entityId);
-            if (target == null || target == aircraft || target == player || !target.canBeCollidedWith()
-                    || !TargetPolicy.isSelectableExactContact(player.world, target, player)
-                    || target.getDistance(aircraft) > profile.getLockRange()) {
-                return null;
+            UUID entityId = resolveEntityId(designation);
+            String registryId = resolveRegistryId(designation);
+            double targetX = resolvePointX(designation);
+            double targetY = resolvePointY(designation);
+            double targetZ = resolvePointZ(designation);
+            TargetSpec targetSpec;
+            if (entityId != null) {
+                if (!seenEntities.add(entityId)) return null;
+                Entity target = new net.vas.rdp.uav.target.TargetResolver()
+                        .findLoaded(player.world, entityId);
+                if (target == null || target == aircraft || target == player
+                        || !target.canBeCollidedWith()
+                        || !TargetPolicy.isSelectableExactContact(player.world, target, player)
+                        || target.getDistance(aircraft) > profile.getLockRange()) return null;
+                if (registryId == null || registryId.trim().isEmpty()) {
+                    net.minecraft.util.ResourceLocation key =
+                            net.minecraft.entity.EntityList.getKey(target);
+                    registryId = key == null ? null : key.toString();
+                }
+                if (registryId == null || registryId.trim().isEmpty()) return null;
+                targetSpec = TargetSpec.manual(registryId, TargetPriority.HIGH);
+            } else {
+                if (!Double.isFinite(targetX) || !Double.isFinite(targetY)
+                        || !Double.isFinite(targetZ)) return null;
+                double dx = aircraft.posX - targetX;
+                double dy = aircraft.posY - targetY;
+                double dz = aircraft.posZ - targetZ;
+                if (dx * dx + dy * dy + dz * dz
+                        > profile.getDetectionRange() * profile.getDetectionRange()) return null;
+                targetSpec = TargetSpec.point(targetX, targetY, targetZ, TargetPriority.HIGH);
             }
-            if (registryId == null || registryId.trim().isEmpty()) {
-                registryId = net.minecraft.entity.EntityList.getKey(target) == null ? null : net.minecraft.entity.EntityList.getKey(target).toString();
-            }
-            if (registryId == null || registryId.trim().isEmpty()) return null;
-        } else {
-            if (!Double.isFinite(targetX) || !Double.isFinite(targetY) || !Double.isFinite(targetZ)) return null;
-            double dx = aircraft.posX - targetX;
-            double dy = aircraft.posY - targetY;
-            double dz = aircraft.posZ - targetZ;
-            if (dx * dx + dy * dy + dz * dz > profile.getDetectionRange() * profile.getDetectionRange()) {
-                return null;
-            }
+            selected.add(designation);
+            objectives.add(new MissionObjective(designation.getDesignationId(),
+                    targetSpec, entityId));
         }
 
+        MissionObjective first = objectives.get(0);
+        List<MissionObjective> followOn = objectives.size() == 1
+                ? Collections.emptyList() : objectives.subList(1, objectives.size());
         long tick = player.world.getTotalWorldTime();
-        TargetSpec targetSpec = entityId != null
-                ? TargetSpec.manual(registryId, TargetPriority.HIGH)
-                : TargetSpec.point(targetX, targetY, targetZ, TargetPriority.HIGH);
-        RDPMission mission = new RDPMission(UUID.randomUUID(), player.getUniqueID(), aircraft.getUniqueID(),
-                aircraft.getAcInfo().name, missionType, targetSpec,
-                true, false, false, profile.getDetectionRange(), profile.getMissionExecutionRange(), tick);
-        mission.setDimension(designation.getDimension());
-        if (entityId != null) mission.reacquireTarget(entityId, tick);
+        RDPMission mission = new RDPMission(UUID.randomUUID(), player.getUniqueID(),
+                aircraft.getUniqueID(),
+                aircraft.getAcInfo().name, missionType, first.getTargetSpec(),
+                true, false, false, profile.getDetectionRange(),
+                profile.getMissionExecutionRange(), tick);
+        mission.setDimension(selected.get(0).getDimension());
+        mission.setSourceDesignationId(first.getDesignationId());
+        if (first.getTargetEntityId() != null) {
+            mission.reacquireTarget(first.getTargetEntityId(), tick);
+        }
+        mission.setFollowOnObjectives(followOn);
 
         RDPUavMod.missions().create(player.world, mission);
         RDPMissionWorldData.get(player.world).markDirty();
-        attachMission(designationId, mission.getMissionId());
+        for (Designation designation : selected) {
+            attachMission(designation.getDesignationId(), mission.getMissionId());
+        }
+        DesignationWorldData data = DesignationWorldData.get(player.world);
+        if (data != null) data.markRegistryDirty();
         return mission;
     }
 
@@ -196,8 +239,8 @@ public final class DesignationManager {
         return Double.NaN;
     }
 
-    public synchronized int countPending(UUID operatorId) {
-        return registry.unresolvedCount(operatorId);
+    public synchronized int countPending(UUID operatorId, long currentTick) {
+        return registry.unresolvedCount(operatorId, currentTick);
     }
 
     public synchronized void expire(long tick) {

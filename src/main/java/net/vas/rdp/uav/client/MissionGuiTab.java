@@ -4,6 +4,7 @@ public enum MissionGuiTab {
     OVERVIEW,
     UAVS,
     SWARM,
+    DESIGNATIONS,
     TARGET,
     SEARCH,
     TRACKING,

@@ -105,15 +105,16 @@ public final class TargetPolicy {
         if (entity instanceof EntityPlayer
                 && operator != null && operator.isOnSameTeam(entity)) return false;
         String id = EntityList.getKey(entity) == null ? "" : Objects.requireNonNull(EntityList.getKey(entity)).toString();
-        boolean actualVehicleHostile = entity instanceof MCH_EntityAircraft
-                && TargetClassifier.isHostileVehicle(entity);
+        TargetClassificationResult classification =
+                TargetClassifier.classifyDetailed(entity, world == null
+                        ? entity.dimension : world.provider.getDimension());
+        if (isProtectedOrFriendly(classification)) return false;
+        if (TargetClassifier.isVehicleId(id) && !allowHostileVehicles) return false;
         // An operator lock is an explicit crosshair selection.  When vehicle
         // targets are enabled, a loaded McHeli aircraft is a valid exact
         // contact even if its registry id is not in the hostile classifier.
         // Automatic discovery still applies the normal hostile filters.
-        if (allowHostileVehicles && actualVehicleHostile) return true;
-        return TargetClassifier.isHostileCandidate(id)
-                || (allowHostileVehicles && TargetClassifier.isHostileVehicle(id));
+        return classification.getClassification() == Classification.HOSTILE;
     }
 
     /** Server gate for an operator's explicit crosshair UUID selection. */
@@ -124,12 +125,29 @@ public final class TargetPolicy {
                 && operator != null && entity == operator.getRidingEntity()) return false;
         if (entity instanceof EntityPlayer
                 && operator != null && operator.isOnSameTeam(entity)) return false;
+        TargetClassificationResult classification =
+                TargetClassifier.classifyDetailed(entity, world == null
+                        ? entity.dimension : world.provider.getDimension());
+        if (isProtectedOrFriendly(classification)) return false;
         // Explicit crosshair selection is authoritative for McHeli vehicle
-        // contacts; do not reject an airborne/landed aircraft through the
+        // contacts unless classification explicitly marks them protected or
+        // friendly; do not reject an airborne/landed aircraft through the
         // generic embedded-contact heuristic.
-        if (entity instanceof MCH_EntityAircraft && allowHostileVehicles) return true;
+        if (allowsVehicleSelectionOverride(entity instanceof MCH_EntityAircraft,
+                allowHostileVehicles, classification)) return true;
         if (rejectDeeplyEmbedded && isSafeContact(world, entity)) return false;
         return isSelectableContact(world, entity, operator);
+    }
+
+    private static boolean isProtectedOrFriendly(TargetClassificationResult classification) {
+        return classification != null
+                && (classification.getClassification() == Classification.PROTECTED
+                || classification.getClassification() == Classification.FRIENDLY);
+    }
+
+    static boolean allowsVehicleSelectionOverride(boolean vehicle, boolean enabled,
+                                                  TargetClassificationResult classification) {
+        return vehicle && enabled && !isProtectedOrFriendly(classification);
     }
 
     /** Server-side conservative sightline check between the observer and target bounds. */
@@ -242,7 +260,12 @@ public final class TargetPolicy {
         }
 
         public Builder withMinimumConfidence(double minimumConfidence) {
-            this.minimumConfidence = Math.max(0D, minimumConfidence);
+            if (!Double.isFinite(minimumConfidence) || minimumConfidence < 0.0D
+                    || minimumConfidence > 1.0D) {
+                throw new IllegalArgumentException(
+                        "Minimum classification confidence must be in 0..1");
+            }
+            this.minimumConfidence = minimumConfidence;
             return this;
         }
 
@@ -268,16 +291,23 @@ public final class TargetPolicy {
             if (!exclude.isEmpty() && containsAny(id, exclude)) {
                 return Decision.reject(ResultCode.EXCLUDED, "EXCLUDED");
             }
-            boolean actualVehicleHostile = entity instanceof MCH_EntityAircraft
-                    && TargetClassifier.isHostileVehicle(entity);
-            if (allowVehicleTargets && actualVehicleHostile) return Decision.accept();
-            boolean hostile = TargetClassifier.isHostileCandidate(id)
-                    || (allowVehicleTargets && TargetClassifier.isHostileVehicle(id));
-            if (!hostile) return Decision.reject(ResultCode.NOT_HOSTILE, "NOT_HOSTILE");
-            if (minimumConfidence > 0D && TargetClassifier.threatScore(id) < minimumConfidence) {
-                return Decision.reject(ResultCode.LOW_CONFIDENCE, "LOW_CONFIDENCE");
+            TargetClassificationResult classification =
+                    TargetClassifier.classifyDetailed(entity, world == null
+                            ? entity.dimension : world.provider.getDimension());
+            boolean vehicle = TargetClassifier.isVehicleId(id);
+            boolean hostile = classification.getClassification() == Classification.HOSTILE;
+            if (vehicle && !allowVehicleTargets) {
+                return Decision.reject(ResultCode.NOT_HOSTILE,
+                        "HOSTILE_VEHICLES_DISABLED", classification);
             }
-            return Decision.accept();
+            if (!hostile) {
+                return Decision.reject(ResultCode.NOT_HOSTILE, "NOT_HOSTILE", classification);
+            }
+            if (minimumConfidence > classification.getConfidence()) {
+                return Decision.reject(ResultCode.LOW_CONFIDENCE,
+                        "LOW_CONFIDENCE", classification);
+            }
+            return Decision.accept(classification);
         }
 
         private static void addNormalized(List<String> destination, String[] values) {
@@ -308,27 +338,40 @@ public final class TargetPolicy {
         private final boolean accepted;
         private final ResultCode code;
         private final String reason;
+        private final TargetClassificationResult classification;
 
-        private Decision(boolean accepted, ResultCode code, String reason) {
+        private Decision(boolean accepted, ResultCode code, String reason,
+                         TargetClassificationResult classification) {
             this.accepted = accepted;
             this.code = code == null ? (accepted ? ResultCode.ACCEPTED : ResultCode.NO_ENTITY) : code;
             this.reason = reason == null ? "" : reason;
+            this.classification = classification;
         }
 
         public boolean isAccepted() { return accepted; }
         public ResultCode getCode() { return code; }
         public String getReason() { return reason; }
+        public TargetClassificationResult getClassification() { return classification; }
 
         public static Decision accept() {
-            return new Decision(true, ResultCode.ACCEPTED, "OK");
+            return new Decision(true, ResultCode.ACCEPTED, "OK", null);
+        }
+
+        public static Decision accept(TargetClassificationResult classification) {
+            return new Decision(true, ResultCode.ACCEPTED, "OK", classification);
         }
 
         public static Decision reject(String reason) {
-            return new Decision(false, inferCode(reason), reason);
+            return new Decision(false, inferCode(reason), reason, null);
         }
 
         public static Decision reject(ResultCode code, String reason) {
-            return new Decision(false, code, reason);
+            return new Decision(false, code, reason, null);
+        }
+
+        public static Decision reject(ResultCode code, String reason,
+                                      TargetClassificationResult classification) {
+            return new Decision(false, code, reason, classification);
         }
 
         private static ResultCode inferCode(String reason) {

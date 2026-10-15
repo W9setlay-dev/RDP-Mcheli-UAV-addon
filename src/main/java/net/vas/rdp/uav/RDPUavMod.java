@@ -53,6 +53,8 @@ public final class RDPUavMod {
         net.vas.rdp.uav.formation.FormationConfig.load(event.getModConfigurationDirectory());
         net.vas.rdp.uav.path.PathConfig.load(event.getModConfigurationDirectory());
         net.vas.rdp.uav.target.TargetPolicy.load(event.getModConfigurationDirectory());
+        net.vas.rdp.uav.target.TargetClassificationConfig.load(
+                event.getModConfigurationDirectory());
         net.vas.rdp.uav.flight.KamikazeConfig.load(event.getModConfigurationDirectory());
         net.vas.rdp.uav.flight.SquareStrikeConfig.load(event.getModConfigurationDirectory());
         net.vas.rdp.uav.weapon.GuidedWeaponRegistry.load(event.getModConfigurationDirectory());
@@ -224,21 +226,38 @@ public final class RDPUavMod {
                 return;
             }
             if (event.phase != TickEvent.Phase.END) return;
+            net.vas.rdp.uav.mission.DestructiveAuthorizationRegistry.expire(
+                    event.world.provider.getDimension(), event.world.getTotalWorldTime());
+            net.vas.rdp.uav.designation.DesignationWorldData designationData =
+                    net.vas.rdp.uav.designation.DesignationWorldData.getIfPresent(event.world);
+            if (designationData != null) {
+                designationData.expire(event.world.getTotalWorldTime());
+            }
             ORCHESTRATOR.tick(new MissionContext(event.world));
             net.vas.rdp.uav.weapon.MissileGuidanceController.tick(event.world);
             if (event.world.getTotalWorldTime() % net.vas.rdp.uav.swarm.SwarmConfig.updateIntervalTicks == 0L) {
                 SWARMS.reconcile(event.world);
             }
-                if (event.world.getTotalWorldTime() % 5L == 0L
-                        && event.world.getMinecraftServer() != null) {
-                    for (EntityPlayer player : event.world.playerEntities) {
-                        if (player instanceof EntityPlayerMP) {
-                            RdpUavNetwork.syncTargetTelemetry((EntityPlayerMP) player);
-                            RdpUavNetwork.syncSwarmTelemetry((EntityPlayerMP) player);
-                            RdpUavNetwork.syncDesignationQueue((EntityPlayerMP) player);
-                        }
+            if (event.world.getTotalWorldTime() % 5L == 0L
+                    && event.world.getMinecraftServer() != null) {
+                for (EntityPlayer player : event.world.playerEntities) {
+                    if (player instanceof EntityPlayerMP) {
+                        RdpUavNetwork.syncTargetTelemetry((EntityPlayerMP) player);
+                        RdpUavNetwork.syncSwarmTelemetry((EntityPlayerMP) player);
+                        RdpUavNetwork.syncDesignationQueue((EntityPlayerMP) player);
                     }
                 }
+            }
+        }
+
+        @SubscribeEvent
+        public void onPlayerLoggedOut(
+                net.minecraftforge.fml.common.gameevent.PlayerEvent.PlayerLoggedOutEvent event) {
+            if (event.player == null || event.player.world == null || event.player.world.isRemote) return;
+            RdpUavNetwork.clearDesignationRequests(event.player.getUniqueID());
+            net.vas.rdp.uav.designation.DesignationWorldData data =
+                    net.vas.rdp.uav.designation.DesignationWorldData.getIfPresent(event.player.world);
+            if (data != null) data.removeUnattached(event.player.getUniqueID());
         }
     }
 }

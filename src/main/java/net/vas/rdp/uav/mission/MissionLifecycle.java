@@ -42,6 +42,7 @@ import java.util.Map;
 import java.util.HashMap;
 import java.util.WeakHashMap;
 import java.util.List;
+import java.util.Collections;
 import java.util.UUID;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -327,6 +328,11 @@ public final class MissionLifecycle {
             if (mission.isQueued() || mission.getDimension() != world.provider.getDimension()) continue;
             if (terminal(mission.getState())) {
                 manager.release(mission);
+                if (mission.getState() == MissionState.COMPLETE) {
+                    startNextComposedObjective(world, mission, tick);
+                } else {
+                    releaseComposedObjectives(world, mission);
+                }
                 continue;
             }
             if (!mission.isMissionDeadlineExempt()
@@ -715,10 +721,93 @@ public final class MissionLifecycle {
                 if (ownsAircraft) flight.release(aircraft);
                 manager.release(mission);
                 if (ownsAircraft) routeRefreshes.remove(aircraft.getUniqueID());
+                if (mission.getState() == MissionState.COMPLETE) {
+                    startNextComposedObjective(world, mission, tick);
+                } else {
+                    releaseComposedObjectives(world, mission);
+                }
                 dirty = true;
             }
         }
         if (dirty) RDPMissionWorldData.get(world).markDirty();
+    }
+
+    private void startNextComposedObjective(World world, RDPMission previous, long tick) {
+        List<MissionObjective> remaining = previous.getFollowOnObjectives();
+        if (remaining.isEmpty()) return;
+        if (previous.getChildMissionId() != null
+                && RDPMissionWorldData.get(world).getRepository()
+                .find(previous.getChildMissionId()) != null) return;
+        if (previous.getChildMissionId() != null) {
+            previous.restoreExecutionMetadata(previous.getExecutionStage(),
+                    previous.getParentMissionId(), null);
+        }
+
+        MissionObjective next = remaining.get(0);
+        RDPMission child = new RDPMission(UUID.randomUUID(), previous.getOwnerId(),
+                previous.getAircraftId(), previous.getAircraftType(), previous.getMissionType(),
+                next.getTargetSpec(), previous.isAttack(), previous.isEliminateAllCost(),
+                previous.isDeepScan(), previous.getSearchRadius(),
+                previous.getObservationDistance(), tick);
+        child.setDimension(previous.getDimension());
+        child.setSourceDesignationId(next.getDesignationId());
+        child.setTargetPolicy(previous.getTargetPolicy());
+        if (previous.hasCruiseAltitudeY()) {
+            child.setCruiseAltitudeY(previous.getCruiseAltitudeY());
+        }
+        if (next.getTargetEntityId() != null) {
+            child.reacquireTarget(next.getTargetEntityId(), tick);
+        }
+        child.setFollowOnObjectives(remaining.subList(1, remaining.size()));
+
+        previous.linkChildMission(child);
+        boolean childCreated = false;
+        try {
+            manager.create(world, child);
+            childCreated = true;
+            previous.setFollowOnObjectives(Collections.emptyList());
+            net.vas.rdp.uav.designation.DesignationManager designations =
+                    net.vas.rdp.uav.designation.DesignationManager.forWorld(world);
+            for (MissionObjective objective : remaining) {
+                designations.moveMissionAttachment(world, objective.getDesignationId(),
+                        child.getMissionId());
+            }
+            RDPMissionWorldData.get(world).markDirty();
+            RdpUavDebug.event("MissionLifecycle", "COMPOSED_OBJECTIVE_DISPATCHED",
+                    "previousMission", previous.getMissionId(),
+                    "mission", child.getMissionId(),
+                    "designation", next.getDesignationId(),
+                    "remaining", child.getFollowOnObjectives().size(),
+                    "tick", tick);
+        } catch (RuntimeException failure) {
+            if (!childCreated) {
+                previous.restoreExecutionMetadata(previous.getExecutionStage(),
+                        previous.getParentMissionId(), null);
+            } else {
+                previous.setFollowOnObjectives(Collections.emptyList());
+                RDPMissionWorldData.get(world).markDirty();
+            }
+            if (tick % 20L == 0L) {
+                RdpUavDebug.warn("MissionLifecycle", "Could not start composed objective "
+                        + next.getDesignationId() + " for mission "
+                        + previous.getMissionId() + ": "
+                        + (failure.getMessage() == null
+                        ? failure.getClass().getSimpleName() : failure.getMessage()));
+            }
+        }
+    }
+
+    private void releaseComposedObjectives(World world, RDPMission mission) {
+        List<MissionObjective> remaining = mission.getFollowOnObjectives();
+        if (remaining.isEmpty()) return;
+        net.vas.rdp.uav.designation.DesignationManager designations =
+                net.vas.rdp.uav.designation.DesignationManager.forWorld(world);
+        for (MissionObjective objective : remaining) {
+            designations.detachMission(world, objective.getDesignationId(),
+                    mission.getMissionId());
+        }
+        mission.setFollowOnObjectives(Collections.emptyList());
+        RDPMissionWorldData.get(world).markDirty();
     }
 
     private double targetDistance(MCH_EntityAircraft aircraft, Target target) {

@@ -33,6 +33,13 @@ public final class DesignationWorldData extends WorldSavedData {
         return data;
     }
 
+    public static DesignationWorldData getIfPresent(World world) {
+        if (world == null) return null;
+        MapStorage storage = world.getMapStorage();
+        return storage == null ? null
+                : (DesignationWorldData) storage.getOrLoadData(DesignationWorldData.class, DATA_NAME);
+    }
+
     public DesignationRegistry getRegistry() {
         return registry;
     }
@@ -42,10 +49,45 @@ public final class DesignationWorldData extends WorldSavedData {
         markDirty();
     }
 
+    public DesignationRegistry.AddResult tryAdd(Designation designation, long currentTick,
+                                                 int maxPerOperator, double duplicatePointRadius,
+                                                 String duplicateEntityPolicy) {
+        DesignationRegistry.AddResult result = registry.tryAdd(designation, currentTick,
+                maxPerOperator, duplicatePointRadius, duplicateEntityPolicy);
+        if (result == DesignationRegistry.AddResult.ADDED) markDirty();
+        return result;
+    }
+
+    public DesignationRegistry.AddResult replace(UUID existingId, Designation replacement,
+                                                  long currentTick, int maxPerOperator,
+                                                  double duplicatePointRadius,
+                                                  String duplicateEntityPolicy) {
+        DesignationRegistry.AddResult result = registry.replace(existingId, replacement,
+                currentTick, maxPerOperator, duplicatePointRadius, duplicateEntityPolicy);
+        if (result == DesignationRegistry.AddResult.ADDED) markDirty();
+        return result;
+    }
+
     public Designation remove(UUID designationId) {
         Designation removed = registry.remove(designationId);
         if (removed != null) markDirty();
         return removed;
+    }
+
+    public int removeUnattached(UUID operatorId) {
+        int removed = registry.removeUnattached(operatorId);
+        if (removed > 0) markDirty();
+        return removed;
+    }
+
+    public void expire(long currentTick) {
+        int before = registry.snapshot().size();
+        registry.expire(currentTick);
+        if (registry.snapshot().size() != before) markDirty();
+    }
+
+    public void markRegistryDirty() {
+        markDirty();
     }
 
     @Override

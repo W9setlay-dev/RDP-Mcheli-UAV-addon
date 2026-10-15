@@ -126,6 +126,7 @@ selected/controlled mission.
 | --- | --- | --- |
 | `Q` | Open mission control | Opens the dashboard and requests only the player's mission data |
 | `T` | Point task | Sends a camera-point request; the server ray-traces and validates the controlled, authorized UAV |
+| `L` | Camera designation | Sends the active camera ray for server-side target resolution and queue validation |
 | `O` | Recon mission | Creates a non-destructive exact registry-target request |
 | `P` | Attack intent | Creates an attack mission intent; it does not arm weapons |
 | `E` | Authorize attack | Requires owner, operator, `TARGET_LOCKED`, live target, and a valid WingMan attack route |
@@ -145,6 +146,19 @@ payload. `N` aborts the selected mission and `K` only refreshes mission data.
 The client key names are configurable through Minecraft's Controls menu; the
 GUI displays the current bindings rather than assuming these defaults.
 
+### Designation queue
+
+Press `L` while operating an authorized UAV, or use the **Designations** tab,
+to submit the active camera ray. The server resolves and stores the result;
+client-side aim is only a request and is never treated as the confirmed target.
+The tab displays the synchronized queue and allows an ordered selection of up
+to eight unattached designations. Promotion creates linked, single-target
+missions in that order, preserving the existing mission lifecycle. Each later
+objective starts only after the preceding mission reaches `COMPLETE`, and each
+attack mission still requires its own explicit operator authorization. Failed,
+aborted, or otherwise terminal non-complete missions stop the sequence and
+release its remaining designations back to the operator queue.
+
 For an autonomous AI task, use `/rdpuav mission ai <namespace:id|mod=namespace> [attack]`.
 The `mod=namespace` form selects any loaded entity from that mod namespace;
 it is a namespace filter, not an automatic hostile classification.
@@ -163,6 +177,23 @@ strikes are supported and use their configured terminal payload behavior
 loaded terrain surface, and a one-way payload cannot release while the
 aircraft is still high above that terminal plane. Reusable square strikes
 remain under operator control until an explicit return-to-base request.
+
+Target classification is resolved by the server from configured registry
+prefixes, built-in rules, and loaded McHeli vehicle definitions. Results are
+`PROTECTED`, `FRIENDLY`, `HOSTILE`, `NEUTRAL`, or `UNKNOWN`; protected and
+friendly evidence takes precedence over hostile evidence, and disagreements
+remain visible as a conflict rather than being silently discarded. The
+generated `rdp-uav-classification.cfg` controls the protected, friendly,
+hostile, and neutral registry prefixes. The target HUD shows the synchronized
+classification, confidence, and conflict indicator as read-only information;
+classification does not itself authorize a mission or payload.
+
+Destructive attack and kamikaze requests use a server-only, single-use
+authorization grant bound to the mission, operator, aircraft, target, and
+dimension. The grant expires after 40 server ticks and is consumed at the
+validated arming boundary. Once arming succeeds, the mission records that
+committed authorization; expiry does not claim to revoke behavior that has
+already been armed.
 
 Temporary execution conditions are not immediate failures. Missing entities
 use `WAITING_FOR_TARGET`, unavailable world/chunks use `WAITING_FOR_WORLD`,

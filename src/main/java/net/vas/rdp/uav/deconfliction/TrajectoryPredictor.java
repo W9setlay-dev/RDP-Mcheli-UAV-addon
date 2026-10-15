@@ -37,11 +37,10 @@ public final class TrajectoryPredictor {
         List<TrajectorySample> samples = new ArrayList<>();
         double endConfidence = helicopter ? 0.7D : 0.6D;
         for (long tick = 0L; tick <= HORIZON_TICKS; tick += SAMPLE_INTERVAL_TICKS) {
-            double elapsed = tick;
             double confidence = 1.0D - (1.0D - endConfidence)
                     * tick / (double) HORIZON_TICKS;
-            samples.add(new TrajectorySample(x + velocityX * elapsed,
-                    y + velocityY * elapsed, z + velocityZ * elapsed,
+            samples.add(new TrajectorySample(x + velocityX * (double) tick,
+                    y + velocityY * (double) tick, z + velocityZ * (double) tick,
                     yaw, pitch, roll, tick, confidence));
         }
         return new PredictedTrajectory(aircraftId, samples, startTick);

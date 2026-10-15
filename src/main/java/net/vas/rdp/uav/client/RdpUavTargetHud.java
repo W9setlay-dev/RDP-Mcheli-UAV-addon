@@ -470,6 +470,8 @@ public final class RdpUavTargetHud {
         int y = 8 + RdpUavHudConfig.yOffset;
         String missionState = telemetry.missionState == null ? "UNKNOWN" : telemetry.missionState;
         String targetState = telemetry.targetState == null ? "NONE" : telemetry.targetState;
+        String classification = telemetry.classification == null
+                ? "UNKNOWN" : telemetry.classification;
         String targetName = telemetry.registryId == null || telemetry.registryId.trim().isEmpty()
                 ? "NO TARGET" : telemetry.registryId;
         String entityName = telemetry.entityName == null ? "" : telemetry.entityName;
@@ -489,14 +491,18 @@ public final class RdpUavTargetHud {
         font.drawStringWithShadow("STATE: " + missionState, x, y + 30, color);
         font.drawStringWithShadow("TARGET: " + targetName, x, y + 42, 0xFFFFFFFF);
         font.drawStringWithShadow("STATUS: " + targetState, x, y + 52, color);
-        font.drawStringWithShadow("ENTITY: " + entityName, x, y + 62, 0xFFFFFFFF);
-        font.drawStringWithShadow("UUID: " + targetUuid, x, y + 72, 0xFFFFFFFF);
-        font.drawStringWithShadow("PRIORITY: " + (telemetry.priority == null ? "NONE" : telemetry.priority), x, y + 82, 0xFFFFFFFF);
-        font.drawStringWithShadow("WINGMAN: " + wingmanState + " NODE " + wingmanNode, x, y + 92, 0xFFFFFFFF);
+        font.drawStringWithShadow("CLASS: " + classification + " "
+                + String.format(java.util.Locale.ROOT, "%.2f", telemetry.classificationConfidence)
+                + (telemetry.classificationConflict ? " CONFLICT" : ""), x, y + 62,
+                telemetry.classificationConflict ? 0xFFFFCC66 : 0xFFFFFFFF);
+        font.drawStringWithShadow("ENTITY: " + entityName, x, y + 72, 0xFFFFFFFF);
+        font.drawStringWithShadow("UUID: " + targetUuid, x, y + 82, 0xFFFFFFFF);
+        font.drawStringWithShadow("PRIORITY: " + (telemetry.priority == null ? "NONE" : telemetry.priority), x, y + 92, 0xFFFFFFFF);
+        font.drawStringWithShadow("WINGMAN: " + wingmanState + " NODE " + wingmanNode, x, y + 102, 0xFFFFFFFF);
         font.drawStringWithShadow("DISTANCE: " + String.format(java.util.Locale.ROOT, "%.1fm", telemetry.distance)
-                + (telemetry.outOfRange ? "  OUT OF RANGE" : ""), x, y + 102,
+                + (telemetry.outOfRange ? "  OUT OF RANGE" : ""), x, y + 112,
                 telemetry.outOfRange ? 0xFFFF5555 : 0xFFFFFFFF);
-        int detailY = y + 112;
+        int detailY = y + 122;
         font.drawStringWithShadow("CONF: " + String.format(java.util.Locale.ROOT, "%.2f", telemetry.confidence)
                 + "  VEL: " + String.format(java.util.Locale.ROOT, "%.1f,%.1f,%.1f",
                 telemetry.velocityX, telemetry.velocityY, telemetry.velocityZ), x, detailY, 0xFFFFFFFF);
@@ -535,6 +541,9 @@ public final class RdpUavTargetHud {
         public double velocityX, velocityY, velocityZ, confidence, bearing, elevation;
         public boolean visible;
         public String lifecycle, markerState;
+        public String classification = "UNKNOWN";
+        public double classificationConfidence;
+        public boolean classificationConflict;
         public final double x, y, z, distance;
 
         public Telemetry(boolean active, boolean hasPosition, String missionId, String aircraftType,
@@ -593,6 +602,18 @@ public final class RdpUavTargetHud {
             this.confidence = confidence; this.bearing = bearing; this.elevation = elevation;
             this.visible = visible; this.lifecycle = lifecycle == null ? "NONE" : lifecycle;
             this.markerState = markerState == null ? "HIDDEN" : markerState;
+        }
+
+        public void setClassificationProjection(String classification, double confidence,
+                                                boolean conflict) {
+            if (classification == null || classification.trim().isEmpty()
+                    || !Double.isFinite(confidence) || confidence < 0.0D
+                    || confidence > 1.0D) {
+                throw new IllegalArgumentException("Invalid target classification projection");
+            }
+            this.classification = classification;
+            this.classificationConfidence = confidence;
+            this.classificationConflict = conflict;
         }
     }
 }

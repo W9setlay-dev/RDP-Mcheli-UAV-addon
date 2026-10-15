@@ -1,8 +1,10 @@
 package net.vas.rdp.uav.designation;
 
 import net.minecraftforge.common.config.Configuration;
+import net.vas.rdp.uav.RdpUavDebug;
 
 import java.io.File;
+import java.util.Locale;
 
 public final class DesignationConfig {
     public static long designationTtlTicks = 24000L;
@@ -33,6 +35,12 @@ public final class DesignationConfig {
         duplicateEntityPolicy = config.getString("duplicateEntityPolicy", "designation",
                 duplicateEntityPolicy,
                 "Duplicate entity policy: STRICT or LOOSE.");
+        duplicateEntityPolicy = duplicateEntityPolicy.trim().toUpperCase(Locale.ROOT);
+        if (!"STRICT".equals(duplicateEntityPolicy) && !"LOOSE".equals(duplicateEntityPolicy)) {
+            RdpUavDebug.warn("DesignationConfig",
+                    "Invalid duplicateEntityPolicy; using STRICT instead");
+            duplicateEntityPolicy = "STRICT";
+        }
         requestsPerSecond = config.getInt("requestsPerSecond", "rateLimit",
                 requestsPerSecond, 1, 256,
                 "Maximum designation requests per second per operator.");

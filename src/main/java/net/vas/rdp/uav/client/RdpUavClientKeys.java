@@ -20,10 +20,14 @@ import java.util.UUID;
 
 @SideOnly(Side.CLIENT)
 public final class RdpUavClientKeys {
+    private static final java.util.concurrent.atomic.AtomicLong DESIGNATION_FRAME_SEQUENCE =
+            new java.util.concurrent.atomic.AtomicLong();
     private static final KeyBinding OPEN_MISSION_CONTROL = new KeyBinding(
             "key.rdpuav.mission_control", Keyboard.KEY_Q, "key.categories.rdpuav");
     private static final KeyBinding POINT_TASK = new KeyBinding(
             "key.rdpuav.point_task", Keyboard.KEY_T, "key.categories.rdpuav");
+    private static final KeyBinding DESIGNATE_TARGET = new KeyBinding(
+            "key.rdpuav.designate_target", Keyboard.KEY_L, "key.categories.rdpuav");
     private static final KeyBinding RECON_TASK = new KeyBinding(
             "key.rdpuav.recon_task", Keyboard.KEY_O, "key.categories.rdpuav");
     private static final KeyBinding AUTO_ATTACK_TASK = new KeyBinding(
@@ -65,6 +69,7 @@ public final class RdpUavClientKeys {
     @SuppressWarnings("unused")
     public static String missionControlKey() { return label(OPEN_MISSION_CONTROL); }
     public static String pointKey() { return label(POINT_TASK); }
+    public static String designateKey() { return label(DESIGNATE_TARGET); }
     public static String reconKey() { return label(RECON_TASK); }
     public static String attackKey() { return label(AUTO_ATTACK_TASK); }
     @SuppressWarnings("unused")
@@ -82,6 +87,7 @@ public final class RdpUavClientKeys {
     public static void register() {
         ClientRegistry.registerKeyBinding(OPEN_MISSION_CONTROL);
         ClientRegistry.registerKeyBinding(POINT_TASK);
+        ClientRegistry.registerKeyBinding(DESIGNATE_TARGET);
         ClientRegistry.registerKeyBinding(RECON_TASK);
         ClientRegistry.registerKeyBinding(AUTO_ATTACK_TASK);
         ClientRegistry.registerKeyBinding(REFRESH_MISSIONS);
@@ -132,6 +138,7 @@ public final class RdpUavClientKeys {
             GuiMissionControl.abortSelected();
         }
         if (POINT_TASK.isPressed()) submitPointTask(minecraft);
+        if (DESIGNATE_TARGET.isPressed()) submitDesignation(minecraft);
         MCH_EntityAircraft aircraft = net.vas.rdp.uav.mission.UavControlAccess
                 .findControlledAircraft(minecraft.player);
         if (aircraft == null) return;
@@ -191,6 +198,57 @@ public final class RdpUavClientKeys {
             minecraft.player.sendMessage(new TextComponentString(
                     "Point task not sent: no block or entity on the camera ray within 500 blocks."));
         }
+    }
+
+    /** Sends an active-camera ray for authoritative server-side designation. */
+    public static void submitDesignation(Minecraft minecraft) {
+        if (minecraft == null || minecraft.player == null || minecraft.world == null) return;
+        MCH_EntityAircraft aircraft = net.vas.rdp.uav.mission.UavControlAccess
+                .findControlledAircraft(minecraft.player);
+        if (aircraft == null) {
+            minecraft.player.sendMessage(new TextComponentString(
+                    "Designation unavailable: no controlled McHeli aircraft."));
+            return;
+        }
+        Entity camera = minecraft.getRenderViewEntity();
+        if (camera == null) camera = minecraft.player;
+        if (camera.world != minecraft.world) {
+            minecraft.player.sendMessage(new TextComponentString(
+                    "Designation not sent: the active camera is outside this world."));
+            return;
+        }
+        float partialTicks = minecraft.getRenderPartialTicks();
+        net.minecraft.util.math.Vec3d origin = camera.getPositionEyes(partialTicks);
+        net.minecraft.util.math.Vec3d direction = camera.getLook(partialTicks);
+        if (origin == null || direction == null
+                || !Double.isFinite(origin.x) || !Double.isFinite(origin.y)
+                || !Double.isFinite(origin.z) || !Double.isFinite(direction.x)
+                || !Double.isFinite(direction.y) || !Double.isFinite(direction.z)
+                || direction.lengthSquared() < 1.0E-12D) {
+            minecraft.player.sendMessage(new TextComponentString(
+                    "Designation not sent: camera ray is unavailable."));
+            return;
+        }
+        direction = direction.normalize();
+        ClientAimRayTracer.AimTarget aim = ClientAimRayTracer.trace(
+                minecraft, partialTicks, minecraft.player, aircraft);
+        if (!aim.isHit()) {
+            minecraft.player.sendMessage(new TextComponentString(
+                    "Designation not sent: no block or eligible entity is on the camera ray."));
+            return;
+        }
+        java.util.UUID entityId = aim.isEntity() ? aim.getEntity().getUniqueID() : null;
+        net.vas.rdp.uav.designation.DesignationType type = entityId == null
+                ? net.vas.rdp.uav.designation.DesignationType.POINT
+                : net.vas.rdp.uav.designation.DesignationType.ENTITY;
+        RdpUavNetwork.requestDesignation(
+                net.vas.rdp.uav.designation.DesignationSource.CROSSHAIR, type,
+                origin.x, origin.y, origin.z, direction.x, direction.y, direction.z,
+                ClientAimRayTracer.MAX_REACH, entityId,
+                minecraft.displayWidth, minecraft.displayHeight,
+                DESIGNATION_FRAME_SEQUENCE.incrementAndGet());
+        minecraft.player.sendMessage(new TextComponentString(
+                "Camera designation submitted; waiting for server validation."));
     }
 
     private void lockAiTarget(Minecraft minecraft) {

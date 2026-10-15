@@ -190,6 +190,25 @@ The snapshot is persisted with mission NBT and is used for both initial
 candidate discovery and reacquisition; a generic registry ID is never treated
 as sufficient MCheli aircraft identity.
 
+Classification is a separate, server-side projection. `TargetClassifier`
+combines registry-prefix rules with loaded McHeli definition evidence, and
+`TargetClassificationPolicy` applies the fixed precedence
+`PROTECTED > FRIENDLY > HOSTILE > NEUTRAL > UNKNOWN`. Conflicting categories
+are retained and flagged. `TargetPolicy.Decision` exposes that result for
+diagnostics and confidence gating, while target telemetry synchronizes only
+the classification, confidence, and conflict flag to the client HUD. This
+projection is not an authorization grant. Protected or friendly classification
+cannot be bypassed by the legacy selectable-vehicle exception.
+
+Destructive attack and kamikaze handlers use
+`DestructiveAuthorizationRegistry` for a transient, single-use grant bound to
+mission, owner, aircraft, target, and dimension. It expires after 40 server
+ticks and must be consumed at the server arming boundary. Successful arming is
+then recorded on the mission as a committed authorization for persistence and
+lifecycle accounting; the short grant expiry is not treated as a way to revoke
+an operation already handed to WingMan or native McHeli behavior. Pending
+grants are memory-only and are never restored after a world restart.
+
 ## 2. Project layout
 
 ```text
@@ -405,11 +424,34 @@ creation and validates all of the following:
 Never trust owner, aircraft, dimension, target, or permission values supplied
 by a client packet.
 
+### Server-validated designation compositions
+
+The designation tab and `L` key submit camera rays as client intent. The server
+validates ownership, dimension, expiry, aircraft capability, and every target
+before creating any mission. Promotion is all-or-nothing and preserves the
+operator's selection order.
+
+The current mission model remains single-target. A composed designation list
+therefore becomes a linked sequence of ordinary missions rather than changing
+`RDPMission.targetSpec` into a multi-target field. The next mission is created
+only after the prior mission reaches `COMPLETE`; abort, failure, or aircraft
+loss ends the sequence. Each child starts without destructive authorization,
+so the operator must authorize each attack objective independently. Remaining
+designations stay attached while queued, cannot be removed from the queue, and
+are detached if the chain ends without completion.
+
+`MissionObjective` stores each follow-on designation ID, target specification,
+and exact entity UUID. `MissionNbtCodec` persists the bounded sequence in
+schema 12; older mission saves default to an empty sequence. Composition is
+limited to eight total objectives, and the GUI's selection order is the chain
+order.
+
 ## 5. Persistence and restart behavior
 
 `RDPMissionWorldData` stores mission records through `WorldSavedData`.
-`MissionNbtCodec` encodes mission configuration and state fields. Reports have
-their own `RDPScanReportRepository`.
+`MissionNbtCodec` encodes mission configuration and state fields, including
+linked designation objectives. Reports have their own
+`RDPScanReportRepository`.
 
 Persistence is server-side and world-specific. The current implementation is
 not a complete restart/recovery system. In particular:

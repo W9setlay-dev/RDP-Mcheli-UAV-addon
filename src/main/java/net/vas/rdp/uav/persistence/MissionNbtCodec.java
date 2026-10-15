@@ -16,7 +16,7 @@ import net.vas.rdp.uav.target.TargetSpec;
 import java.util.UUID;
 
 public final class MissionNbtCodec {
-    private static final int CURRENT_SCHEMA = 11;
+    private static final int CURRENT_SCHEMA = 12;
     private MissionNbtCodec() {
     }
 
@@ -67,6 +67,8 @@ public final class MissionNbtCodec {
         tag.setString("childMissionId", mission.getChildMissionId() == null
                 ? "" : mission.getChildMissionId().toString());
         tag.setString("targetUuid", mission.getTargetId() == null ? "" : mission.getTargetId().toString());
+        tag.setString("sourceDesignationId", mission.getSourceDesignationId() == null
+                ? "" : mission.getSourceDesignationId().toString());
         tag.setString("lastTargetReason", mission.getLastTargetReason() == null
                 ? "" : mission.getLastTargetReason());
         net.vas.rdp.uav.mission.LastKnownTargetPosition lastKnownPosition =
@@ -105,6 +107,26 @@ public final class MissionNbtCodec {
                 route.appendTag(point);
             }
             tag.setTag("patrolRoute", route);
+        }
+        if (!mission.getFollowOnObjectives().isEmpty()) {
+            NBTTagList objectives = new NBTTagList();
+            for (net.vas.rdp.uav.mission.MissionObjective objective
+                    : mission.getFollowOnObjectives()) {
+                NBTTagCompound objectiveTag = new NBTTagCompound();
+                objectiveTag.setString("designationId", objective.getDesignationId().toString());
+                TargetSpec objectiveTarget = objective.getTargetSpec();
+                objectiveTag.setString("targetMode", objectiveTarget.getMode().name());
+                objectiveTag.setString("targetId", objectiveTarget.getRegistryId() == null
+                        ? "" : objectiveTarget.getRegistryId());
+                objectiveTag.setDouble("targetX", objectiveTarget.getX());
+                objectiveTag.setDouble("targetY", objectiveTarget.getY());
+                objectiveTag.setDouble("targetZ", objectiveTarget.getZ());
+                objectiveTag.setString("priority", objectiveTarget.getPriority().name());
+                objectiveTag.setString("targetUuid", objective.getTargetEntityId() == null
+                        ? "" : objective.getTargetEntityId().toString());
+                objectives.appendTag(objectiveTag);
+            }
+            tag.setTag("followOnObjectives", objectives);
         }
         return tag;
     }
@@ -232,6 +254,47 @@ public final class MissionNbtCodec {
             policy.withMinimumConfidence(tag.getDouble("policyMinimumConfidence"));
         }
         mission.setTargetPolicy(policy.snapshot());
+        if (tag.hasKey("sourceDesignationId")
+                && !tag.getString("sourceDesignationId").isEmpty()) {
+            mission.setSourceDesignationId(parseUuid(
+                    tag.getString("sourceDesignationId"), "sourceDesignationId"));
+        }
+        if (tag.hasKey("followOnObjectives")) {
+            NBTTagList objectivesTag = tag.getTagList("followOnObjectives", 10);
+            if (objectivesTag.tagCount() > RDPMission.MAX_COMPOSED_OBJECTIVES - 1) {
+                throw new IllegalArgumentException("Composed objective list exceeds its limit");
+            }
+            java.util.List<net.vas.rdp.uav.mission.MissionObjective> objectives =
+                    new java.util.ArrayList<>();
+            java.util.HashSet<UUID> designationIds = new java.util.HashSet<>();
+            for (int i = 0; i < objectivesTag.tagCount(); i++) {
+                NBTTagCompound objectiveTag = objectivesTag.getCompoundTagAt(i);
+                UUID designationId = requiredUuid(objectiveTag, "designationId");
+                if (!designationIds.add(designationId)) {
+                    throw new IllegalArgumentException("Duplicate composed designation ID");
+                }
+                TargetSelectionMode objectiveMode = enumValue(
+                        objectiveTag, "targetMode", TargetSelectionMode.class);
+                TargetPriority objectivePriority = enumValue(
+                        objectiveTag, "priority", TargetPriority.class);
+                TargetSpec objectiveTarget = objectiveMode == TargetSelectionMode.MANUAL
+                        ? TargetSpec.manual(requiredString(objectiveTag, "targetId"),
+                        objectivePriority)
+                        : objectiveMode == TargetSelectionMode.POINT
+                        ? TargetSpec.point(finiteDouble(objectiveTag, "targetX"),
+                        finiteDouble(objectiveTag, "targetY"),
+                        finiteDouble(objectiveTag, "targetZ"), objectivePriority)
+                        : null;
+                if (objectiveTarget == null) {
+                    throw new IllegalArgumentException("Unsupported composed target mode");
+                }
+                String objectiveEntityId = objectiveTag.getString("targetUuid");
+                objectives.add(new net.vas.rdp.uav.mission.MissionObjective(
+                        designationId, objectiveTarget, objectiveEntityId.isEmpty()
+                        ? null : parseUuid(objectiveEntityId, "targetUuid")));
+            }
+            mission.setFollowOnObjectives(objectives);
+        }
         if (tag.hasKey("lastTransitionReason")) {
             mission.restoreTransitionReason(tag.getString("lastTransitionReason"));
         }

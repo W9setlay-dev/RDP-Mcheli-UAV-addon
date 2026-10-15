@@ -4,8 +4,12 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import net.vas.rdp.uav.formation.WingmanRole;
 import net.vas.rdp.uav.path.OrbitPrimitive;
+import net.vas.rdp.uav.mission.MissionType;
+import net.vas.rdp.uav.designation.DesignationSource;
+import net.vas.rdp.uav.designation.DesignationType;
 import org.junit.Test;
 
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.UUID;
 
@@ -86,5 +90,78 @@ public class PacketSerializationTest {
                 UUID.randomUUID(), OrbitPrimitive.ORBIT, false, 0L);
 
         assertFalse(status.isEntering());
+    }
+
+    @Test
+    public void designationRequestAndPromotionPacketsRoundTrip() {
+        UUID designationA = UUID.randomUUID();
+        UUID designationB = UUID.randomUUID();
+        RdpUavNetwork.PacketDesignationRequest request =
+                new RdpUavNetwork.PacketDesignationRequest(
+                        DesignationSource.CROSSHAIR, DesignationType.ENTITY,
+                        1.0D, 2.0D, 3.0D, 0.0D, 0.0D, 1.0D,
+                        128.0D, designationA, "minecraft:zombie", 1920, 1080, 77L);
+        ByteBuf requestBuffer = Unpooled.buffer();
+        try {
+            request.toBytes(requestBuffer);
+            RdpUavNetwork.PacketDesignationRequest decoded =
+                    new RdpUavNetwork.PacketDesignationRequest();
+            decoded.fromBytes(requestBuffer);
+            assertEquals(designationA, decoded.candidateEntityUuid());
+        } finally {
+            requestBuffer.release();
+        }
+
+        RdpUavNetwork.PacketDesignationPromoteToMission promote =
+                new RdpUavNetwork.PacketDesignationPromoteToMission(
+                        Arrays.asList(designationA, designationB), MissionType.STRIKE.name());
+        ByteBuf promoteBuffer = Unpooled.buffer();
+        try {
+            promote.toBytes(promoteBuffer);
+            RdpUavNetwork.PacketDesignationPromoteToMission decoded =
+                    new RdpUavNetwork.PacketDesignationPromoteToMission();
+            decoded.fromBytes(promoteBuffer);
+            assertEquals(Arrays.asList(designationA, designationB), decoded.designationIds());
+            assertEquals(MissionType.STRIKE.name(), decoded.missionType());
+        } finally {
+            promoteBuffer.release();
+        }
+    }
+
+    @Test
+    public void targetTelemetryClassificationProjectionRoundTrips() {
+        RdpUavNetwork.TargetTelemetry source = new RdpUavNetwork.TargetTelemetry();
+        ByteBuf buffer = Unpooled.buffer();
+        try {
+            source.toBytes(buffer);
+            RdpUavNetwork.TargetTelemetry decoded = new RdpUavNetwork.TargetTelemetry();
+            decoded.fromBytes(buffer);
+
+            assertEquals("UNKNOWN", decoded.getClassification());
+            assertEquals(0.0D, decoded.getClassificationConfidence(), 0.0D);
+            assertFalse(decoded.hasClassificationConflict());
+        } finally {
+            buffer.release();
+        }
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void promotionPacketRejectsOversizedSelections() {
+        java.util.ArrayList<UUID> tooMany = new java.util.ArrayList<>();
+        for (int i = 0; i <= net.vas.rdp.uav.mission.RDPMission.MAX_COMPOSED_OBJECTIVES;
+             i++) tooMany.add(UUID.randomUUID());
+        new RdpUavNetwork.PacketDesignationPromoteToMission(tooMany, MissionType.STRIKE.name());
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void promotionPacketRejectsUnknownMissionType() {
+        ByteBuf buffer = Unpooled.buffer();
+        try {
+            buffer.writeInt(0);
+            buffer.writeShort(7).writeBytes("INVALID".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            new RdpUavNetwork.PacketDesignationPromoteToMission().fromBytes(buffer);
+        } finally {
+            buffer.release();
+        }
     }
 }

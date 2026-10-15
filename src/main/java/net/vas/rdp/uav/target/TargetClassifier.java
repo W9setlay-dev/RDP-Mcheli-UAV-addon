@@ -32,6 +32,37 @@ public final class TargetClassifier {
 
     private TargetClassifier() { }
 
+    public static TargetClassificationResult classifyDetailed(String registryId) {
+        return classifyDetailed(new TargetIdentity(registryId, null, 0),
+                java.util.Collections.<TargetEvidence>emptyList());
+    }
+
+    public static TargetClassificationResult classifyDetailed(
+            TargetIdentity identity, java.util.List<TargetEvidence> evidence) {
+        return TargetClassificationPolicy.defaults().classify(identity, evidence);
+    }
+
+    public static TargetClassificationResult classifyDetailed(Entity entity, int dimension) {
+        if (entity == null) {
+            return TargetClassificationPolicy.defaults().classify(
+                    new TargetIdentity("rdpuav:unknown", null, dimension),
+                    java.util.Collections.<TargetEvidence>emptyList());
+        }
+        net.minecraft.util.ResourceLocation key = net.minecraft.entity.EntityList.getKey(entity);
+        String registryId = key == null ? "rdpuav:unknown" : key.toString();
+        java.util.List<TargetEvidence> evidence = new java.util.ArrayList<>();
+        if (isHostileVehicle(entity)) {
+            String definition = entity instanceof MCH_EntityAircraft
+                    && ((MCH_EntityAircraft) entity).getAcInfo() != null
+                    ? ((MCH_EntityAircraft) entity).getAcInfo().name : "unknown";
+            evidence.add(new TargetEvidence(Classification.HOSTILE,
+                    TargetEvidence.Source.NATIVE_DEFINITION, 0.9D, -1L,
+                    "HOSTILE_VEHICLE_DEFINITION:" + definition));
+        }
+        return classifyDetailed(new TargetIdentity(registryId, entity.getUniqueID(), dimension),
+                evidence);
+    }
+
     public static boolean isHostileNamespace(String namespace) {
         if (namespace == null) return false;
         String normalized = namespace.trim().toLowerCase(java.util.Locale.ROOT);

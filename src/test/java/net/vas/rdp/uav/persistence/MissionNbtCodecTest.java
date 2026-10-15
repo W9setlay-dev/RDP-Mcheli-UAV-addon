@@ -4,6 +4,7 @@ import net.minecraft.nbt.NBTTagCompound;
 import net.vas.rdp.uav.mission.ControlOwner;
 import net.vas.rdp.uav.mission.MissionType;
 import net.vas.rdp.uav.mission.MissionExecutionStage;
+import net.vas.rdp.uav.mission.MissionObjective;
 import net.vas.rdp.uav.mission.MissionState;
 import net.vas.rdp.uav.mission.RDPMission;
 import net.vas.rdp.uav.target.TargetPriority;
@@ -11,6 +12,7 @@ import net.vas.rdp.uav.target.TargetSpec;
 import org.junit.Test;
 
 import java.util.UUID;
+import java.util.Arrays;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -104,6 +106,40 @@ public class MissionNbtCodecTest {
         restored.transitionTo(MissionState.ATTACK_TARGET, 12_007L);
         assertFalse(restored.isTimedOut(24_000L, 12_000L));
         assertTrue(restored.isTimedOut(24_001L, 12_000L));
+    }
+
+    @Test
+    public void composedMissionObjectivesRoundTripInSelectionOrder() {
+        RDPMission source = mission();
+        UUID currentId = UUID.randomUUID();
+        UUID firstId = UUID.randomUUID();
+        UUID secondId = UUID.randomUUID();
+        UUID entityId = UUID.randomUUID();
+        source.setSourceDesignationId(currentId);
+        source.setFollowOnObjectives(Arrays.asList(
+                new MissionObjective(firstId,
+                        TargetSpec.point(10.0D, 32.0D, 20.0D, TargetPriority.HIGH), null),
+                new MissionObjective(secondId,
+                        TargetSpec.manual("minecraft:zombie", TargetPriority.HIGH), entityId)));
+
+        RDPMission restored = MissionNbtCodec.read(MissionNbtCodec.write(source));
+
+        assertEquals(currentId, restored.getSourceDesignationId());
+        assertEquals(2, restored.getFollowOnObjectives().size());
+        assertEquals(firstId, restored.getFollowOnObjectives().get(0).getDesignationId());
+        assertEquals(10.0D, restored.getFollowOnObjectives().get(0)
+                .getTargetSpec().getX(), 0.0D);
+        assertEquals(secondId, restored.getFollowOnObjectives().get(1).getDesignationId());
+        assertEquals(entityId, restored.getFollowOnObjectives().get(1).getTargetEntityId());
+    }
+
+    @Test
+    public void legacyMissionWithoutComposedObjectivesRestoresEmptySequence() {
+        NBTTagCompound legacy = MissionNbtCodec.write(mission());
+        legacy.setInteger("schemaVersion", 11);
+        legacy.removeTag("followOnObjectives");
+
+        assertTrue(MissionNbtCodec.read(legacy).getFollowOnObjectives().isEmpty());
     }
 
     private static RDPMission mission() {

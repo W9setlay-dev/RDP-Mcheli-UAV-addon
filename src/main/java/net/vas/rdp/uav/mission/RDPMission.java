@@ -66,6 +66,9 @@ public final class RDPMission {
     private TargetPolicy.Snapshot targetPolicy = TargetPolicy.builder().snapshot();
     private List<MissionWaypoint> patrolRoute = Collections.emptyList();
     private double cruiseAltitudeY = Double.NaN;
+    private List<MissionObjective> followOnObjectives = Collections.emptyList();
+    private UUID sourceDesignationId;
+    public static final int MAX_COMPOSED_OBJECTIVES = 8;
 
     public RDPMission(UUID missionId, UUID ownerId, UUID aircraftId, String aircraftType,
                       MissionType missionType, TargetSpec targetSpec, boolean attack,
@@ -808,6 +811,29 @@ public final class RDPMission {
         patrolRoute = Collections.unmodifiableList(new ArrayList<>(route));
     }
     public List<MissionWaypoint> getPatrolRoute() { return patrolRoute; }
+    public List<MissionObjective> getFollowOnObjectives() {
+        return followOnObjectives;
+    }
+    public UUID getSourceDesignationId() { return sourceDesignationId; }
+    public void setSourceDesignationId(UUID designationId) {
+        sourceDesignationId = designationId;
+    }
+    public void setFollowOnObjectives(List<MissionObjective> objectives) {
+        if (objectives == null || objectives.size() > MAX_COMPOSED_OBJECTIVES - 1) {
+            throw new IllegalArgumentException("Invalid composed objective count");
+        }
+        java.util.HashSet<UUID> designationIds = new java.util.HashSet<>();
+        java.util.HashSet<UUID> targetIds = new java.util.HashSet<>();
+        for (MissionObjective objective : objectives) {
+            if (objective == null || !designationIds.add(objective.getDesignationId())
+                    || (objective.getTargetEntityId() != null
+                    && (!targetIds.add(objective.getTargetEntityId())
+                    || objective.getTargetEntityId().equals(targetId)))) {
+                throw new IllegalArgumentException("Composed objectives must be non-null and unique");
+            }
+        }
+        followOnObjectives = Collections.unmodifiableList(new ArrayList<>(objectives));
+    }
     public double getCruiseAltitudeY() { return cruiseAltitudeY; }
     public boolean hasCruiseAltitudeY() { return Double.isFinite(cruiseAltitudeY); }
     public void setCruiseAltitudeY(double value) {

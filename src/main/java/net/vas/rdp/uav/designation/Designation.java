@@ -23,6 +23,7 @@ public final class Designation {
     private final TargetPriority priority;
     private final String notes;
     private final UUID attachedMissionId;
+    private final DesignationStatus status;
 
     private Designation(Builder builder) {
         this.designationId = builder.designationId == null ? UUID.randomUUID() : builder.designationId;
@@ -41,6 +42,7 @@ public final class Designation {
         this.priority = builder.priority == null ? TargetPriority.NORMAL : builder.priority;
         this.notes = builder.notes == null ? "" : limit(builder.notes, 256);
         this.attachedMissionId = builder.attachedMissionId;
+        this.status = builder.status == null ? DesignationStatus.ACTIVE : builder.status;
     }
 
     public static Builder builder() {
@@ -63,13 +65,34 @@ public final class Designation {
     public TargetPriority getPriority() { return priority; }
     public String getNotes() { return notes; }
     public UUID getAttachedMissionId() { return attachedMissionId; }
+    public DesignationStatus getStatus() { return status; }
 
     public boolean isExpired(long currentTick) {
         return expiresAtTick != 0L && currentTick >= expiresAtTick;
     }
 
+    public boolean isActive() {
+        return status == DesignationStatus.ACTIVE;
+    }
+
     public boolean isAttached() {
         return attachedMissionId != null;
+    }
+
+    public Designation withStatus(DesignationStatus newStatus) {
+        return copyBuilder().status(newStatus).build();
+    }
+
+    public Designation withAttachedMission(UUID missionId) {
+        return copyBuilder().attachedMissionId(missionId).build();
+    }
+
+    private Builder copyBuilder() {
+        return builder().designationId(designationId).operatorId(operatorId).dimension(dimension)
+                .type(type).source(source).createdAtTick(createdAtTick).expiresAtTick(expiresAtTick)
+                .confidence(confidence).provenance(provenance).point(point).entity(entity).area(area)
+                .composite(composite).priority(priority).notes(notes).attachedMissionId(attachedMissionId)
+                .status(status);
     }
 
     public DesignationView toView() {
@@ -155,14 +178,15 @@ public final class Designation {
         tag.setString("priority", priority.name());
         tag.setString("notes", notes);
         if (attachedMissionId != null) tag.setString("attachedMissionId", attachedMissionId.toString());
-        tag.setInteger("schemaVersion", 1);
+        tag.setString("status", status.name());
+        tag.setInteger("schemaVersion", 2);
         return tag;
     }
 
     public static Designation readFromNBT(NBTTagCompound tag) {
         if (tag == null) throw new IllegalArgumentException("designation tag is required");
         int version = tag.hasKey("schemaVersion") ? tag.getInteger("schemaVersion") : 1;
-        if (version != 1) {
+        if (version < 1 || version > 2) {
             throw new IllegalArgumentException("unsupported schemaVersion " + version);
         }
 
@@ -230,6 +254,7 @@ public final class Designation {
         if (tag.hasKey("attachedMissionId") && !tag.getString("attachedMissionId").isEmpty()) {
             builder.attachedMissionId(UUID.fromString(tag.getString("attachedMissionId")));
         }
+        if (tag.hasKey("status")) builder.status(DesignationStatus.valueOf(tag.getString("status")));
         return builder.build();
     }
 
@@ -308,6 +333,7 @@ public final class Designation {
         private TargetPriority priority = TargetPriority.NORMAL;
         private String notes = "";
         private UUID attachedMissionId;
+        private DesignationStatus status = DesignationStatus.ACTIVE;
 
         public Builder designationId(UUID designationId) { this.designationId = designationId; return this; }
         public Builder operatorId(UUID operatorId) { this.operatorId = operatorId; return this; }
@@ -325,6 +351,7 @@ public final class Designation {
         public Builder priority(TargetPriority priority) { this.priority = priority; return this; }
         public Builder notes(String notes) { this.notes = notes; return this; }
         public Builder attachedMissionId(UUID attachedMissionId) { this.attachedMissionId = attachedMissionId; return this; }
+        public Builder status(DesignationStatus status) { this.status = status; return this; }
 
         public Designation build() {
             return new Designation(this);

@@ -20,6 +20,7 @@ import net.vas.rdp.uav.target.TargetPolicy;
 import net.vas.rdp.uav.mission.MissionDefinition;
 import net.vas.rdp.uav.mission.MissionValidationResult;
 import net.vas.rdp.uav.mission.MissionType;
+import net.vas.rdp.uav.RDPUavMod;
 import net.minecraft.nbt.NBTTagCompound;
 import net.vas.rdp.uav.mission.MissionDefinitionCodec;
 import java.io.IOException;
@@ -57,6 +58,10 @@ public final class GuiMissionControl extends GuiScreen {
     private List<TargetSuggestion> threatSuggestions = Collections.emptyList();
     private MissionGuiTab activeTab = MissionGuiTab.OVERVIEW;
     private int tabPage;
+    private java.util.UUID selectedDesignationId;
+    private final java.util.LinkedHashSet<java.util.UUID> selectedDesignationIds =
+            new java.util.LinkedHashSet<>();
+    private int designationPage;
     private final MissionDefinition definition = new MissionDefinition();
     private NBTTagCompound savedDefinition;
 
@@ -166,6 +171,53 @@ public final class GuiMissionControl extends GuiScreen {
 
     public static void requestRefresh() {
         RdpUavNetwork.requestMissionData(active == null ? 0 : active.missionPage);
+    }
+
+    public static void designationQueueUpdated() {
+        if (active != null) {
+            List<net.vas.rdp.uav.designation.DesignationView> queue =
+                    RDPUavMod.clientDesignationQueue();
+            java.util.HashSet<java.util.UUID> available = new java.util.HashSet<>();
+            for (net.vas.rdp.uav.designation.DesignationView view : queue) {
+                available.add(view.getDesignationId());
+            }
+            boolean selectionChanged = active.selectedDesignationIds.removeIf(
+                    id -> !available.contains(id));
+            if (active.selectedDesignationId == null
+                    || !active.selectedDesignationIds.contains(active.selectedDesignationId)) {
+                active.selectedDesignationId = active.selectedDesignationIds.isEmpty()
+                        ? null : lastSelected(active.selectedDesignationIds);
+            }
+            if (selectionChanged && active.selectedDesignationIds.isEmpty()) {
+                active.status = "Selected designation is no longer in the server queue.";
+            }
+            int pageCount = Math.max(1, (RDPUavMod.clientDesignationQueue().size() + 9) / 10);
+            active.designationPage = Math.min(active.designationPage, pageCount - 1);
+            active.rebuildButtons();
+        }
+    }
+
+    private static java.util.UUID lastSelected(
+            java.util.LinkedHashSet<java.util.UUID> selectedIds) {
+        java.util.UUID last = null;
+        for (java.util.UUID id : selectedIds) last = id;
+        return last;
+    }
+
+    public static void designationResult(String message) {
+        if (message == null) return;
+        Minecraft minecraft = Minecraft.getMinecraft();
+        if (active != null && minecraft.currentScreen == active) {
+            active.status = message;
+            if (active.pendingDangerAction != null
+                    && active.pendingDangerAction.startsWith("designation-")) {
+                active.pendingDangerAction = null;
+                active.pendingDangerMissionId = null;
+            }
+            active.rebuildButtons();
+        } else if (minecraft.player != null) {
+            minecraft.player.sendMessage(new net.minecraft.util.text.TextComponentString(message));
+        }
     }
 
     public static void authorizeSelected() {
@@ -289,10 +341,35 @@ public final class GuiMissionControl extends GuiScreen {
             buttonList.add(new GuiButton(32, right, 128, 220, 20,
                     flirButtonLabel()));
         }
+        if (activeTab == MissionGuiTab.DESIGNATIONS) {
+            buttonList.add(new GuiButton(36, right, 108, 220, 20,
+                    "Add camera designation [" + RdpUavClientKeys.designateKey() + "]"));
+            buttonList.add(new GuiButton(37, right, 134, 105, 20,
+                    selectedDesignationIds.isEmpty() ? "Promote to mission"
+                            : "Promote " + selectedDesignationIds.size() + " targets"));
+            buttonList.add(new GuiButton(38, right + 110, 134, 110, 20,
+                    "Remove designation"));
+            List<net.vas.rdp.uav.designation.DesignationView> designations =
+                    RDPUavMod.clientDesignationQueue();
+            int first = designationPage * 10;
+            int shown = Math.min(designations.size() - first, 10);
+            for (int offset = 0; offset < shown; offset++) {
+                net.vas.rdp.uav.designation.DesignationView view = designations.get(first + offset);
+                String label = (selectedDesignationIds.contains(view.getDesignationId()) ? "> " : "  ")
+                        + view.getType().name() + " / " + view.getSource().name();
+                buttonList.add(new GuiButton(500 + offset, left, 128 + offset * 16,
+                        205, 14, label));
+            }
+            if (designations.size() > 10) {
+                buttonList.add(new GuiButton(39, left + 164, 108, 20, 16, "<"));
+                buttonList.add(new GuiButton(40, left + 187, 108, 20, 16, ">"));
+            }
+        }
         if (activeTab == MissionGuiTab.PATROL && uavMode) {
             buttonList.add(new GuiButton(33, right, 84, 220, 20, "Launch terrain-checked patrol"));
         }
-        if (uavMode && activeTab != MissionGuiTab.PATROL) {
+        if (uavMode && activeTab != MissionGuiTab.PATROL
+                && activeTab != MissionGuiTab.DESIGNATIONS) {
             buttonList.add(new GuiButton(3, left, height - 54, 100, 20,
                     "Authorize [" + RdpUavClientKeys.authorizeKey() + "]"));
             buttonList.add(new GuiButton(4, left + 105, height - 54, 100, 20,
@@ -316,7 +393,7 @@ public final class GuiMissionControl extends GuiScreen {
                     "Target priority: " + targetPriorityLabel()));
             buttonList.add(new GuiButton(31, right, height - 184, 220, 20,
                     "Retask held recon to strike"));
-        } else if (guidedMode) {
+        } else if (guidedMode && activeTab != MissionGuiTab.DESIGNATIONS) {
             buttonList.add(new GuiButton(3, left, height - 54, 100, 20, "Authorize mission"));
             buttonList.add(new GuiButton(4, left + 105, height - 54, 100, 20,
                     abortButtonLabel()));
@@ -333,19 +410,23 @@ public final class GuiMissionControl extends GuiScreen {
             buttonList.add(new GuiButton(25, right, height - 158, 220, 20,
                     "Reassign to crosshair"));
         }
-        buttonList.add(new GuiButton(12, right, 64, 220, 20, filterLabel()));
-        buttonList.add(new GuiButton(30, right, 84, 220, 20, "Apply target policy"));
-        threatSuggestions = collectThreatSuggestions();
-        for (int i = 0; i < threatSuggestions.size() && i < 5; i++) {
-            TargetSuggestion suggestion = threatSuggestions.get(i);
-            buttonList.add(new GuiButton(200 + i, right, 158 + i * 12, 220, 11,
-                    suggestion.label));
+        if (activeTab != MissionGuiTab.DESIGNATIONS) {
+            buttonList.add(new GuiButton(12, right, 64, 220, 20, filterLabel()));
+            buttonList.add(new GuiButton(30, right, 84, 220, 20, "Apply target policy"));
+            threatSuggestions = collectThreatSuggestions();
+            for (int i = 0; i < threatSuggestions.size() && i < 5; i++) {
+                TargetSuggestion suggestion = threatSuggestions.get(i);
+                buttonList.add(new GuiButton(200 + i, right, 158 + i * 12, 220, 11,
+                        suggestion.label));
+            }
         }
-        for (int i = 0, shown = 0; i < missionRows.length && shown < 11; i++) {
-            if (matchesFilter(missionRows[i])) continue;
-            buttonList.add(new GuiButton(100 + i, left, 128 + shown * 17, 205, 15,
-                    (i == selected ? "> " : "  ") + missionRows[i]));
-            shown++;
+        if (activeTab != MissionGuiTab.DESIGNATIONS) {
+            for (int i = 0, shown = 0; i < missionRows.length && shown < 11; i++) {
+                if (matchesFilter(missionRows[i])) continue;
+                buttonList.add(new GuiButton(100 + i, left, 128 + shown * 17, 205, 15,
+                        (i == selected ? "> " : "  ") + missionRows[i]));
+                shown++;
+            }
         }
         if (missionPageCount > 1) {
             buttonList.add(new GuiButton(34, left + 164, 108, 20, 16, "<"));
@@ -376,8 +457,53 @@ public final class GuiMissionControl extends GuiScreen {
                 button.enabled = missionPage > 0;
             } else if (button.id == 35) {
                 button.enabled = missionPage + 1 < missionPageCount;
+            } else if (button.id == 39) {
+                button.enabled = designationPage > 0;
+            } else if (button.id == 40) {
+                button.enabled = (designationPage + 1) * 10
+                        < RDPUavMod.clientDesignationQueue().size();
+            } else if (button.id == 37) {
+                button.enabled = !selectedDesignationIds.isEmpty() && uavMode
+                        && selectedDesignations().size() == selectedDesignationIds.size()
+                        && !containsAttachedDesignation(selectedDesignations());
+            } else if (button.id == 38) {
+                net.vas.rdp.uav.designation.DesignationView selected = selectedDesignation();
+                button.enabled = selected != null && selected.getAttachedMissionId() == null;
             }
         }
+    }
+
+    private net.vas.rdp.uav.designation.DesignationView selectedDesignation() {
+        if (selectedDesignationId == null) return null;
+        for (net.vas.rdp.uav.designation.DesignationView view
+                : RDPUavMod.clientDesignationQueue()) {
+            if (view.getDesignationId().equals(selectedDesignationId)) return view;
+        }
+        return null;
+    }
+
+    private List<net.vas.rdp.uav.designation.DesignationView> selectedDesignations() {
+        List<net.vas.rdp.uav.designation.DesignationView> result = new ArrayList<>();
+        if (selectedDesignationIds.isEmpty()) return result;
+        List<net.vas.rdp.uav.designation.DesignationView> queue =
+                RDPUavMod.clientDesignationQueue();
+        for (java.util.UUID selectedId : selectedDesignationIds) {
+            for (net.vas.rdp.uav.designation.DesignationView view : queue) {
+                if (selectedId.equals(view.getDesignationId())) {
+                    result.add(view);
+                    break;
+                }
+            }
+        }
+        return result;
+    }
+
+    private boolean containsAttachedDesignation(
+            List<net.vas.rdp.uav.designation.DesignationView> designations) {
+        for (net.vas.rdp.uav.designation.DesignationView designation : designations) {
+            if (designation.getAttachedMissionId() != null) return true;
+        }
+        return false;
     }
 
     private void refreshMode() {
@@ -463,6 +589,32 @@ public final class GuiMissionControl extends GuiScreen {
             selected = -1;
             requestData();
             rebuildButtons();
+        } else if (button.id == 39 || button.id == 40) {
+            designationPage = Math.max(0, designationPage + (button.id == 39 ? -1 : 1));
+            rebuildButtons();
+        } else if (button.id >= 500 && button.id < 510) {
+            int index = designationPage * 10 + button.id - 500;
+            List<net.vas.rdp.uav.designation.DesignationView> designations =
+                    RDPUavMod.clientDesignationQueue();
+            if (index >= 0 && index < designations.size()) {
+                java.util.UUID designationId = designations.get(index).getDesignationId();
+                if (selectedDesignationIds.contains(designationId)) {
+                    selectedDesignationIds.remove(designationId);
+                    selectedDesignationId = selectedDesignationIds.isEmpty()
+                            ? null : lastSelected(selectedDesignationIds);
+                } else if (selectedDesignationIds.size()
+                        >= net.vas.rdp.uav.mission.RDPMission.MAX_COMPOSED_OBJECTIVES) {
+                    status = "A composed mission can contain at most "
+                            + net.vas.rdp.uav.mission.RDPMission.MAX_COMPOSED_OBJECTIVES
+                            + " targets.";
+                } else {
+                    selectedDesignationIds.add(designationId);
+                    selectedDesignationId = designationId;
+                }
+                pendingDangerAction = null;
+                pendingDangerMissionId = null;
+                rebuildButtons();
+            }
         } else if (button.id >= 300 && button.id < 300 + MissionGuiTab.values().length) {
             activeTab = MissionGuiTab.values()[button.id - 300];
             if (patrolRouteField != null) patrolRouteField.setFocused(false);
@@ -538,6 +690,16 @@ public final class GuiMissionControl extends GuiScreen {
             rebuildButtons();
         }
         else if (button.id == 33) createPatrolMission();
+        else if (button.id == 36) {
+            RdpUavClientKeys.submitDesignation(mc);
+            status = "Camera designation submitted; waiting for server validation.";
+        } else if (button.id == 37) {
+            confirmPromoteSelectedDesignations();
+        } else if (button.id == 38) {
+            confirmDesignationAction("remove-designation",
+                    this::removeSelectedDesignation,
+                    "Remove the selected server-side designation?");
+        }
         else if (button.id == 1) { help = !help; rebuildButtons(); }
         else if (button.id == 2) mc.displayGuiScreen(null);
         else if (button.id == 3) confirmDangerAction("authorize", GuiMissionControl::authorizeSelected, "Authorizing the selected mission will arm server-side controls.");
@@ -599,6 +761,72 @@ public final class GuiMissionControl extends GuiScreen {
             selected = button.id - 100;
             rebuildButtons();
         }
+    }
+
+    private void confirmDesignationAction(String action, Runnable execute, String message) {
+        net.vas.rdp.uav.designation.DesignationView designation = selectedDesignation();
+        if (designation == null) {
+            status = "Select a designation first.";
+            pendingDangerAction = null;
+            pendingDangerMissionId = null;
+            rebuildButtons();
+            return;
+        }
+        String id = designation.getDesignationId().toString();
+        if (action.equals(pendingDangerAction)
+                && java.util.Objects.equals(id, pendingDangerMissionId)) {
+            pendingDangerAction = null;
+            pendingDangerMissionId = null;
+            execute.run();
+            rebuildButtons();
+            return;
+        }
+        pendingDangerAction = action;
+        pendingDangerMissionId = id;
+        status = message + " Press again to confirm.";
+        rebuildButtons();
+    }
+
+    private void confirmPromoteSelectedDesignations() {
+        List<net.vas.rdp.uav.designation.DesignationView> selected = selectedDesignations();
+        if (selected.isEmpty() || selected.size() != selectedDesignationIds.size()
+                || containsAttachedDesignation(selected)) {
+            status = "Select one or more active, unattached designations.";
+            pendingDangerAction = null;
+            pendingDangerMissionId = null;
+            rebuildButtons();
+            return;
+        }
+        StringBuilder signature = new StringBuilder();
+        List<java.util.UUID> designationIds = new ArrayList<>();
+        for (net.vas.rdp.uav.designation.DesignationView designation : selected) {
+            if (signature.length() > 0) signature.append(',');
+            signature.append(designation.getDesignationId());
+            designationIds.add(designation.getDesignationId());
+        }
+        if ("promote-designations".equals(pendingDangerAction)
+                && signature.toString().equals(pendingDangerMissionId)) {
+            pendingDangerAction = null;
+            pendingDangerMissionId = null;
+            RdpUavNetwork.promoteDesignations(designationIds, MissionType.STRIKE);
+            status = "Ordered mission composition submitted; each objective requires its own operator authorization.";
+        } else {
+            pendingDangerAction = "promote-designations";
+            pendingDangerMissionId = signature.toString();
+            status = "Promote these " + selected.size()
+                    + " ordered targets as linked missions? Press again to confirm.";
+        }
+        rebuildButtons();
+    }
+
+    private void removeSelectedDesignation() {
+        net.vas.rdp.uav.designation.DesignationView designation = selectedDesignation();
+        if (designation == null) {
+            status = "Select a designation to remove.";
+            return;
+        }
+        RdpUavNetwork.removeDesignation(designation.getDesignationId());
+        status = "Designation removal submitted; waiting for server confirmation.";
     }
 
     private void confirmDangerAction(String action, Runnable execute, String confirmText) {
@@ -881,9 +1109,11 @@ public final class GuiMissionControl extends GuiScreen {
             int left = width / 2 - 220;
             int right = width / 2 + 15;
             drawString(fontRenderer, "SECTION: " + activeTab.name(), left, 30, 0xB0D8FF);
-            drawString(fontRenderer, activeTab == MissionGuiTab.PATROL
-                    ? "PATROL WAYPOINTS (x z [loiter-seconds]; ...)"
-                    : "ENTITY ID FILTER (namespace:path)", left, 42, 0xB0D8FF);
+            if (activeTab != MissionGuiTab.DESIGNATIONS) {
+                drawString(fontRenderer, activeTab == MissionGuiTab.PATROL
+                        ? "PATROL WAYPOINTS (x z [loiter-seconds]; ...)"
+                        : "ENTITY ID FILTER (namespace:path)", left, 42, 0xB0D8FF);
+            }
             if (activeTab == MissionGuiTab.VALIDATION) {
                 MissionValidationResult validation = MissionValidationResult.validate(definition);
                 drawString(fontRenderer, validation.isValid() ? "VALID" : "INVALID",
@@ -903,9 +1133,14 @@ public final class GuiMissionControl extends GuiScreen {
                         right, 64, 0xAAAAAA);
                 drawString(fontRenderer, "Example: 120 80 30; 160 80 0; 160 120 15",
                         left, 96, 0xFFFFFF);
-            } else if (targetField != null) targetField.drawTextBox();
-            drawString(fontRenderer, "MISSION FILTER", right, 30, 0xB0D8FF);
-            if (activeTab != MissionGuiTab.PATROL) {
+            } else if (activeTab != MissionGuiTab.DESIGNATIONS && targetField != null) {
+                targetField.drawTextBox();
+            }
+            if (activeTab != MissionGuiTab.DESIGNATIONS) {
+                drawString(fontRenderer, "MISSION FILTER", right, 30, 0xB0D8FF);
+            }
+            if (activeTab != MissionGuiTab.PATROL
+                    && activeTab != MissionGuiTab.DESIGNATIONS) {
                 if (filterField != null) filterField.drawTextBox();
                 drawString(fontRenderer, "TARGET POLICY (include=...,require=...,exclude=...)", left, 73, 0xB0D8FF);
                 if (policyField != null) policyField.drawTextBox();
@@ -916,9 +1151,11 @@ public final class GuiMissionControl extends GuiScreen {
                         left, 100, 0xB0D8FF);
                 if (cruiseAltitudeField != null) cruiseAltitudeField.drawTextBox();
             }
-            drawString(fontRenderer, activeTab == MissionGuiTab.PATROL ? "PATROL / LOITER ROUTE"
-                    : uavMode ? "UAV MISSIONS" : "GUIDED WEAPON MODE",
-                    left, 80, 0x88FFAA);
+            if (activeTab != MissionGuiTab.DESIGNATIONS) {
+                drawString(fontRenderer, activeTab == MissionGuiTab.PATROL ? "PATROL / LOITER ROUTE"
+                        : uavMode ? "UAV MISSIONS" : "GUIDED WEAPON MODE",
+                        left, 80, 0x88FFAA);
+            }
             if (guidedMode) drawString(fontRenderer, "PAYLOAD: " + guidanceSummary,
                     right, 80, 0x88FFAA);
             if (guidedWeaponRows.length > 0) {
@@ -947,6 +1184,10 @@ public final class GuiMissionControl extends GuiScreen {
         int panelTop = 108;
         drawRect(left - 4, panelTop, left + 209, height - 113, 0x66000000);
         drawRect(right - 4, panelTop, right + 224, height - 113, 0x66000000);
+        if (activeTab == MissionGuiTab.DESIGNATIONS) {
+            drawDesignationQueue(left, right, panelTop);
+            return;
+        }
         drawString(fontRenderer, "SERVER MISSIONS (" + (missionPage + 1)
                 + "/" + missionPageCount + ")", left, panelTop + 2, 0xB0D8FF);
         if (missionRows.length == 0) {
@@ -978,6 +1219,60 @@ public final class GuiMissionControl extends GuiScreen {
             }
             drawThreatSuggestions(right, panelTop + 56);
             drawTelemetry(right, panelTop + 140);
+        }
+    }
+
+    private void drawDesignationQueue(int left, int right, int panelTop) {
+        List<net.vas.rdp.uav.designation.DesignationView> designations =
+                RDPUavMod.clientDesignationQueue();
+        drawString(fontRenderer, "SERVER DESIGNATIONS (" + designations.size() + ")",
+                left, panelTop + 2, 0xB0D8FF);
+        drawString(fontRenderer, "Select targets in mission order; each later objective starts",
+                left, panelTop + 10, 0xAAAAAA);
+        drawString(fontRenderer, "after the prior mission completes and needs fresh authorization.",
+                left, panelTop + 18, 0xAAAAAA);
+        if (designations.isEmpty()) {
+            drawString(fontRenderer, "No confirmed designations.", left, panelTop + 24, 0xAAAAAA);
+        } else {
+            int first = designationPage * 10;
+            for (int i = first; i < designations.size() && i < first + 10; i++) {
+                net.vas.rdp.uav.designation.DesignationView view = designations.get(i);
+                String row = view.getType().name() + " / " + view.getSource().name()
+                        + "  " + String.format(java.util.Locale.ROOT, "C%.2f", view.getConfidence());
+                drawString(fontRenderer, fontRenderer.trimStringToWidth(row, 205),
+                        left, panelTop + 22 + (i - first) * 16,
+                        selectedDesignationIds.contains(view.getDesignationId())
+                                ? 0x88FFAA : 0xFFFFFF);
+            }
+        }
+        drawString(fontRenderer, "SELECTED DESIGNATION", right, panelTop + 2, 0xB0D8FF);
+        net.vas.rdp.uav.designation.DesignationView selected = selectedDesignation();
+        if (selected == null) {
+            drawString(fontRenderer, "Select a server-confirmed entry.", right,
+                    panelTop + 22, 0xAAAAAA);
+            drawString(fontRenderer, "Client input is provisional until accepted.",
+                    right, panelTop + 38, 0xAAAAAA);
+            return;
+        }
+        drawString(fontRenderer, "TYPE: " + selected.getType().name()
+                + " / SOURCE: " + selected.getSource().name(), right, panelTop + 22, 0xFFFFFF);
+        drawString(fontRenderer, "CONFIDENCE: "
+                + String.format(java.util.Locale.ROOT, "%.2f", selected.getConfidence()),
+                right, panelTop + 38, 0xFFFFFF);
+        drawString(fontRenderer, "TARGET: " + (selected.getResolvedEntityUuid() == null
+                ? "POINT" : selected.getResolvedEntityUuid().toString()),
+                right, panelTop + 54, 0xFFFFFF);
+        drawString(fontRenderer, String.format(java.util.Locale.ROOT, "XYZ: %.1f / %.1f / %.1f",
+                selected.getResolvedX(), selected.getResolvedY(), selected.getResolvedZ()),
+                right, panelTop + 70, 0xFFFFFF);
+        long now = mc == null || mc.world == null ? 0L : mc.world.getTotalWorldTime();
+        String expiry = selected.getExpiresAtTick() == 0L ? "NEVER"
+                : selected.getExpiresAtTick() <= now ? "EXPIRED"
+                : (selected.getExpiresAtTick() - now) + " ticks";
+        drawString(fontRenderer, "EXPIRES: " + expiry, right, panelTop + 86, 0xFFCC66);
+        if (selected.getAttachedMissionId() != null) {
+            drawString(fontRenderer, "ATTACHED: " + selected.getAttachedMissionId(),
+                    right, panelTop + 102, 0x88FFAA);
         }
     }
 
