@@ -1,0 +1,11 @@
+# Copied to the game configuration directory as rdp-uav-formation.cfg.
+defaultPreset=WEDGE
+maxWingmen=8
+sideSpacing=12.0
+altitudeSpacing=4.0
+rearSpacing=16.0
+minHorizontalSeparation=24.0
+minVerticalSeparation=8.0
+conflictTimeWindowTicks=60
+maxResolutionAttempts=3
+minimumTurnRadiusOverride=0.0

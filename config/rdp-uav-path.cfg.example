@@ -1,0 +1,6 @@
+# Copied to the game configuration directory as rdp-uav-path.cfg.
+orbitRadiusMultiplier=2.5
+orbitSampleIntervalTicks=5
+terminalDiveAngles=20,30,40,50,60
+terminalMinimumRun=48
+terminalMaximumRun=192

@@ -32,6 +32,18 @@ public final class SwarmManager {
     private final SwarmReplanner replanner = new SwarmReplanner();
     private final SwarmTaskAllocator taskAllocator = new SwarmTaskAllocator();
     private final SwarmTargetRecoveryPolicy targetRecovery = new SwarmTargetRecoveryPolicy();
+    private final net.vas.rdp.uav.formation.FormationCoordinator formationCoordinator =
+            new net.vas.rdp.uav.formation.FormationCoordinator();
+    private final net.vas.rdp.uav.formation.WingmanTaskingService wingmanTasking =
+            new net.vas.rdp.uav.formation.WingmanTaskingService();
+    private final net.vas.rdp.uav.deconfliction.TrajectoryPredictor trajectoryPredictor =
+            new net.vas.rdp.uav.deconfliction.TrajectoryPredictor();
+    private final java.util.Map<UUID, java.util.List<net.vas.rdp.uav.deconfliction.Conflict>>
+            airspaceConflicts = new java.util.HashMap<>();
+    private final java.util.Map<UUID, java.util.Set<String>> reportedAirspaceConflicts =
+            new java.util.HashMap<>();
+    private final java.util.Map<UUID, Integer> formationSyncHashes = new java.util.HashMap<>();
+    private net.vas.rdp.uav.deconfliction.AirspaceDeconflictionService airspaceService;
 
     public SwarmManager() { this(null); }
     public SwarmManager(MissionManager missions) { this.missions = missions; }
@@ -40,6 +52,15 @@ public final class SwarmManager {
             throw new IllegalStateException("Swarm system is disabled by server configuration.");
         }
         SwarmRecord record = new SwarmRecord(UUID.randomUUID(), owner, name);
+        record.setFormation(initialFormation(
+                net.vas.rdp.uav.formation.FormationConfig.defaultPreset));
+        record.setConfiguration(record.getConfiguration().toBuilder()
+                .maximumMembers(Math.min(SwarmConfig.maximumSize,
+                        net.vas.rdp.uav.formation.FormationConfig.maximumWingmen))
+                .horizontalSpacing(net.vas.rdp.uav.formation.FormationConfig.sideSpacing)
+                .verticalSpacing(net.vas.rdp.uav.formation.FormationConfig.altitudeSpacing)
+                .build());
+        reconcileFormation(record);
         RDPUavSwarmWorldData.get(world).put(record);
         return record;
     }
@@ -59,11 +80,15 @@ public final class SwarmManager {
             if (!existing.getSwarmId().equals(swarmId)
                     && isMember(existing, member.getAircraftId())) return false;
         }
+        int maximumMembers = Math.min(record.getMissionMaximumMembers(),
+                Math.min(record.getConfiguration().getMaximumMembers(),
+                        Math.min(net.vas.rdp.uav.formation.FormationConfig.maximumWingmen,
+                                Math.min(SwarmConfig.maximumSize,
+                                        SwarmConfig.maximumForProfile(member.getProfile())))));
         if (!record.isMissionParticipation()
-                || record.getMembers().size() >= Math.min(record.getMissionMaximumMembers(),
-                Math.min(record.getConfiguration().getMaximumMembers(), Math.min(SwarmConfig.maximumSize,
-                        SwarmConfig.maximumForProfile(member.getProfile()))))) return false;
+                || record.getMembers().size() >= maximumMembers) return false;
         record.add(member);
+        reconcileFormation(record);
         RDPUavSwarmWorldData.get(world).markDirty();
         return true;
     }
@@ -364,6 +389,7 @@ public final class SwarmManager {
         if (world == null || world.isRemote || !owns(record, owner) || formation == null
                 || record.getState() == SwarmState.DISBANDED) return false;
         record.setFormation(formation);
+        reconcileFormation(record);
         propagateFormation(world, record);
         record.setState(SwarmState.REORGANIZING);
         record.setState(SwarmState.READY);
@@ -384,6 +410,7 @@ public final class SwarmManager {
             RDPMissionWorldData.get(world).markDirty();
         }
         record.remove(aircraftId);
+        reconcileFormation(record);
         RDPUavSwarmWorldData.get(world).markDirty();
         return true;
     }
@@ -396,6 +423,7 @@ public final class SwarmManager {
                 || configuration == null
                 || configuration.getMaximumMembers() > SwarmConfig.maximumSize) return false;
         record.setConfiguration(configuration);
+        reconcileFormation(record);
         record.setMissionMaximumMembers(configuration.getMaximumMembers());
         record.setMissionParticipation(participation);
         RDPUavSwarmWorldData.get(world).markDirty();
@@ -411,6 +439,7 @@ public final class SwarmManager {
         record.setDesignatedLeader(aircraftId);
         record.setCommanderId(aircraftId);
         record.setLeadership(SwarmLeadership.DESIGNATED_LEADER);
+        reconcileFormation(record);
         RDPUavSwarmWorldData.get(world).markDirty();
         return true;
     }
@@ -439,6 +468,7 @@ public final class SwarmManager {
                 || !record.getAssignmentManager().assign(record, aircraftId, role)) {
             return false;
         }
+        reconcileFormation(record);
         RDPUavSwarmWorldData.get(world).markDirty();
         return true;
     }
@@ -452,6 +482,7 @@ public final class SwarmManager {
                 record.setDesignatedLeader(aircraftId);
                 record.setCommanderId(aircraftId);
                 record.setLeadership(SwarmLeadership.DESIGNATED_LEADER);
+                reconcileFormation(record);
                 RDPUavSwarmWorldData.get(world).markDirty();
                 return true;
             }
@@ -625,6 +656,19 @@ public final class SwarmManager {
             }
             reconcileMissionState(world, swarm);
             taskAllocator.assignAutonomyRoles(swarm);
+            reconcileFormation(swarm);
+            for (SwarmMember member : swarm.getMembers()) {
+                RDPMission memberMission = missionFor(
+                        world, swarm.getSwarmId(), member.getAircraftId());
+                if (memberMission == null || memberMission.isTerminal()) {
+                    member.setRoleConstraints(null);
+                } else {
+                    member.setRoleConstraints(roleConstraints(swarm, memberMission.getState())
+                            .get(member.getAircraftId()));
+                }
+            }
+            syncFormationIfChanged(world, swarm);
+            reconcileAirspace(world, swarm);
             SwarmTargetRegistry sharedTarget = swarm.getTargetRegistry();
             if (sharedTarget.getTargetId() != null
                     && sharedTarget.getDimension() == world.provider.getDimension()) {
@@ -695,6 +739,158 @@ public final class SwarmManager {
         }
         if (changed || observationPersistenceDue) {
             RDPUavSwarmWorldData.get(world).markDirty();
+        }
+    }
+
+    /** Generates server-side role constraints using the swarm's authoritative assignments. */
+    public java.util.Map<UUID, net.vas.rdp.uav.formation.RoleConstraints> roleConstraints(
+            SwarmRecord swarm, net.vas.rdp.uav.mission.MissionState missionState) {
+        if (swarm == null || missionState == null) {
+            throw new IllegalArgumentException("Swarm and mission state are required");
+        }
+        java.util.Map<UUID, net.vas.rdp.uav.formation.WingmanRole> roles =
+                new java.util.LinkedHashMap<>();
+        UUID leader = swarm.referenceMember();
+        for (SwarmMember member : swarm.getMembers()) {
+            net.vas.rdp.uav.formation.WingmanRole role =
+                    net.vas.rdp.uav.formation.WingmanRole.fromSwarmRole(member.getRole());
+            roles.put(member.getAircraftId(), member.getAircraftId().equals(leader)
+                    ? net.vas.rdp.uav.formation.WingmanRole.LEADER : role);
+        }
+        return wingmanTasking.generateRoleConstraints(missionState, roles);
+    }
+
+    /** Returns the most recent server-side predicted conflicts for one swarm. */
+    public java.util.List<net.vas.rdp.uav.deconfliction.Conflict> airspaceConflicts(
+            UUID swarmId) {
+        java.util.List<net.vas.rdp.uav.deconfliction.Conflict> conflicts =
+                airspaceConflicts.get(swarmId);
+        return conflicts == null ? java.util.Collections.emptyList() : conflicts;
+    }
+
+    private void reconcileFormation(SwarmRecord swarm) {
+        if (swarm == null || swarm.getFormation() == SwarmFormation.CUSTOM) return;
+        net.vas.rdp.uav.formation.FormationPreset preset =
+                net.vas.rdp.uav.formation.FormationCoordinator
+                        .fromSwarmFormation(swarm.getFormation());
+        if (swarm.getFormation() == SwarmFormation.COLUMN
+                && net.vas.rdp.uav.formation.FormationConfig.defaultPreset
+                == net.vas.rdp.uav.formation.FormationPreset.TRAIL) {
+            preset = net.vas.rdp.uav.formation.FormationPreset.TRAIL;
+        }
+        formationCoordinator.reconcile(swarm, preset);
+    }
+
+    private void syncFormationIfChanged(World world, SwarmRecord swarm) {
+        int hash = 1;
+        UUID leader = swarm.referenceMember();
+        java.util.List<net.vas.rdp.uav.network.PacketFormationSync.FormationSlotView> views =
+                new java.util.ArrayList<>();
+        for (SwarmMember member : swarm.getMembers()) {
+            FormationSlot slot = member.getSlot();
+            if (slot == null) continue;
+            net.vas.rdp.uav.formation.WingmanRole role =
+                    member.getAircraftId().equals(leader)
+                            ? net.vas.rdp.uav.formation.WingmanRole.LEADER
+                            : net.vas.rdp.uav.formation.WingmanRole
+                            .fromSwarmRole(member.getRole());
+            views.add(new net.vas.rdp.uav.network.PacketFormationSync.FormationSlotView(
+                    member.getAircraftId(), slot.getIndex(), role,
+                    slot.getX(), slot.getY(), slot.getZ()));
+            hash = 31 * hash + member.getAircraftId().hashCode();
+            hash = 31 * hash + slot.getIndex();
+            hash = 31 * hash + role.hashCode();
+            hash = 31 * hash + Double.valueOf(slot.getX()).hashCode();
+            hash = 31 * hash + Double.valueOf(slot.getY()).hashCode();
+            hash = 31 * hash + Double.valueOf(slot.getZ()).hashCode();
+        }
+        Integer previousHash = formationSyncHashes.get(swarm.getSwarmId());
+        if (previousHash != null && previousHash == hash) return;
+        net.minecraft.entity.player.EntityPlayerMP owner = onlineOwner(world, swarm.getOwnerId());
+        if (owner == null) return;
+        net.vas.rdp.uav.network.RdpUavNetwork.syncFormation(owner, views);
+        formationSyncHashes.put(swarm.getSwarmId(), hash);
+    }
+
+    private void reconcileAirspace(World world, SwarmRecord swarm) {
+        java.util.List<net.vas.rdp.uav.deconfliction.PredictedTrajectory> trajectories =
+                new java.util.ArrayList<>();
+        long tick = world.getTotalWorldTime();
+        for (SwarmMember member : swarm.getMembers()) {
+            if (!member.isAvailable()) continue;
+            MCH_EntityAircraft aircraft = aircraft(world, member.getAircraftId());
+            if (aircraft == null || aircraft.getAcInfo() == null) continue;
+            if (!Double.isFinite(aircraft.motionX) || !Double.isFinite(aircraft.motionY)
+                    || !Double.isFinite(aircraft.motionZ)) {
+                net.vas.rdp.uav.RdpUavDebug.event("Deconfliction", "PREDICTION_SKIPPED",
+                        "swarm", swarm.getSwarmId(), "aircraft", member.getAircraftId(),
+                        "reason", "NON_FINITE_MOTION");
+                continue;
+            }
+            UavVehicleProfile profile =
+                    UavVehicleProfiles.forAircraft(aircraft.getAcInfo().name);
+            trajectories.add(trajectoryPredictor.predict(member.getAircraftId(),
+                    aircraft.posX, aircraft.posY, aircraft.posZ,
+                    aircraft.motionX, aircraft.motionY, aircraft.motionZ,
+                    aircraft.rotationYaw, aircraft.rotationPitch, aircraft.rotationRoll,
+                    profile.isHelicopterProfile(), tick));
+        }
+        java.util.List<net.vas.rdp.uav.deconfliction.Conflict> conflicts =
+                deconflictionService().detectConflicts(trajectories);
+        airspaceConflicts.put(swarm.getSwarmId(), conflicts);
+        java.util.Set<String> current = new java.util.HashSet<>();
+        net.minecraft.entity.player.EntityPlayerMP owner =
+                onlineOwner(world, swarm.getOwnerId());
+        java.util.Set<String> reported = reportedAirspaceConflicts.computeIfAbsent(
+                swarm.getSwarmId(), ignored -> new java.util.HashSet<>());
+        java.util.Set<String> updatedReported = new java.util.HashSet<>(reported);
+        for (net.vas.rdp.uav.deconfliction.Conflict conflict : conflicts) {
+            String key = conflict.getAircraftA() + ":" + conflict.getAircraftB();
+            current.add(key);
+            if (owner != null && !reported.contains(key)) {
+                net.vas.rdp.uav.network.RdpUavNetwork.sendDeconflictionAlert(
+                        owner, conflict.getAircraftA(), conflict.getAircraftB(),
+                        "PREDICTED_SEPARATION_VIOLATION", 0);
+                updatedReported.add(key);
+            }
+        }
+        updatedReported.retainAll(current);
+        reported.clear();
+        reported.addAll(updatedReported);
+    }
+
+    private net.vas.rdp.uav.deconfliction.AirspaceDeconflictionService deconflictionService() {
+        if (airspaceService == null) {
+            airspaceService = new net.vas.rdp.uav.deconfliction.AirspaceDeconflictionService(
+                    net.vas.rdp.uav.formation.FormationConfig.minimumHorizontalSeparation,
+                    net.vas.rdp.uav.formation.FormationConfig.minimumVerticalSeparation,
+                    net.vas.rdp.uav.formation.FormationConfig.conflictTimeWindowTicks,
+                    net.vas.rdp.uav.formation.FormationConfig.maximumResolutionAttempts);
+        }
+        return airspaceService;
+    }
+
+    private static net.minecraft.entity.player.EntityPlayerMP onlineOwner(
+            World world, UUID ownerId) {
+        for (net.minecraft.entity.player.EntityPlayer player : world.playerEntities) {
+            if (player instanceof net.minecraft.entity.player.EntityPlayerMP
+                    && ownerId.equals(player.getUniqueID())) {
+                return (net.minecraft.entity.player.EntityPlayerMP) player;
+            }
+        }
+        return null;
+    }
+
+    private static SwarmFormation initialFormation(
+            net.vas.rdp.uav.formation.FormationPreset preset) {
+        switch (preset) {
+            case ECHELON_RIGHT:
+            case ECHELON_LEFT: return SwarmFormation.GRID;
+            case LINE_ABREAST: return SwarmFormation.LINE;
+            case TRAIL:
+            case COLUMN: return SwarmFormation.COLUMN;
+            case WEDGE: return SwarmFormation.WEDGE;
+            default: throw new IllegalStateException("Unsupported default formation: " + preset);
         }
     }
 

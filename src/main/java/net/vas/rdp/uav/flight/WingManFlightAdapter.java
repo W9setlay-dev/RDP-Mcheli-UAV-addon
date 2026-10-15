@@ -13,10 +13,13 @@ import net.minecraft.entity.Entity;
 import net.minecraft.world.World;
 import net.vas.rdp.uav.RdpUavDebug;
 import net.vas.rdp.uav.energy.UavEnergyHandler;
+import net.vas.rdp.uav.deconfliction.TrajectorySample;
 import net.vas.rdp.uav.mission.MissionManager;
 import net.vas.rdp.uav.mission.MissionMovementAuthority;
 import net.vas.rdp.uav.mission.RDPMission;
 import net.vas.rdp.uav.mission.PatrolRoutePlanner;
+import net.vas.rdp.uav.path.PathPlanner;
+import net.vas.rdp.uav.path.Waypoint;
 import net.vas.rdp.uav.profile.UavExecutionProfile;
 import net.vas.rdp.uav.profile.UavVehicleProfile;
 import net.vas.rdp.uav.profile.UavVehicleProfiles;
@@ -24,6 +27,7 @@ import net.vas.rdp.uav.world.MinecraftWorldPerceptionAdapter;
 import net.vas.rdp.uav.world.WorldPerceptionAdapter;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 import java.util.Locale;
@@ -46,6 +50,8 @@ public final class WingManFlightAdapter {
     private final Map<UUID, Double> terminalPreviousDistance = new HashMap<>();
     private final Map<UUID, Long> terminalLastDiagnosticTick = new HashMap<>();
     private final Map<UUID, CachedTerrainPlan> terrainPlans = new HashMap<>();
+    private final Map<UUID, CachedRoutePath> routePaths = new HashMap<>();
+    private final PathPlanner pathPlanner = new PathPlanner();
     private final Map<UUID, TerminalGuidanceMetrics> terminalMetrics = new HashMap<>();
     private final Map<UUID, TerminalGuidanceMetrics.Classification> terminalLastClassification
             = new HashMap<>();
@@ -106,9 +112,11 @@ public final class WingManFlightAdapter {
             net.vas.rdp.uav.swarm.SwarmRecord swarm =
                     net.vas.rdp.uav.RDPUavMod.swarms().find(world, mission.getSwarmId());
             net.vas.rdp.uav.swarm.SwarmFormationGuidance.Target formationTarget =
-                    net.vas.rdp.uav.swarm.SwarmFormationGuidance.offsetTarget(swarm,
+                    shouldHoldFormation(swarm, aircraft.getUniqueID())
+                            ? net.vas.rdp.uav.swarm.SwarmFormationGuidance.offsetTarget(swarm,
                             aircraft.getUniqueID(), targetX, targetY, targetZ,
-                            aircraft.posX, aircraft.posZ, aircraft.rotationYaw);
+                            aircraft.posX, aircraft.posZ, aircraft.rotationYaw)
+                            : null;
             if (formationTarget != null) {
                 targetX = formationTarget.x;
                 targetY = formationTarget.y;
@@ -116,6 +124,16 @@ public final class WingManFlightAdapter {
             }
         }
         AircraftState state = aircraftStates.observe(aircraft, entry, mission, tick);
+        boolean terminalStage = mission.getExecutionStage()
+                == net.vas.rdp.uav.mission.MissionExecutionStage.TERMINAL;
+        TrajectorySample pathSample = terminalStage ? null
+                : routePathSample(aircraft.getUniqueID(), entry, mission, profile, state,
+                targetX, targetY, targetZ);
+        if (pathSample != null) {
+            targetX = pathSample.getX();
+            targetY = pathSample.getY();
+            targetZ = pathSample.getZ();
+        }
         double baseTargetX = targetX;
         double baseTargetY = targetY;
         double baseTargetZ = targetZ;
@@ -123,8 +141,10 @@ public final class WingManFlightAdapter {
                 usesHelicopterFlightModel(aircraft));
         boolean absoluteAltitude = mission.hasCruiseAltitudeY()
                 && mission.getState() != net.vas.rdp.uav.mission.MissionState.KAMIKADZE_TARGET;
-        NativeFlightControlCommand baseCommand = controller.update(state,
-                baseTargetX, baseTargetY, baseTargetZ, tick, absoluteAltitude);
+        NativeFlightControlCommand baseCommand = pathSample == null
+                ? controller.update(state, baseTargetX, baseTargetY, baseTargetZ,
+                tick, absoluteAltitude)
+                : controller.update(state, pathSample, tick, absoluteAltitude);
         net.vas.rdp.uav.flight.OperatorTrimState.Snapshot trim =
                 OperatorTrimRegistry.snapshot(aircraft.getUniqueID(), mission.getMissionId(), tick);
         double horizontalDistance = Math.hypot(targetX - state.getX(), targetZ - state.getZ());
@@ -144,8 +164,16 @@ public final class WingManFlightAdapter {
                     "position", state.getX() + "," + state.getY() + "," + state.getZ(),
                     "safeNode", targetX + "," + targetY + "," + targetZ);
         }
-        NativeFlightControlCommand command = controller.update(state, targetX, targetY,
-                targetZ, tick, absoluteAltitude && !terminalCommit);
+        boolean pathHeadingStillApplies = pathSample != null && terrainPlan.isSafe()
+                && Math.hypot(targetX - pathSample.getX(),
+                targetZ - pathSample.getZ()) <= 3.0D;
+        NativeFlightControlCommand command = pathHeadingStillApplies
+                ? controller.update(state, new TrajectorySample(targetX, targetY, targetZ,
+                pathSample.getYaw(), pathSample.getPitch(), pathSample.getRoll(),
+                pathSample.getTickOffset(), pathSample.getConfidence()),
+                tick, absoluteAltitude && !terminalCommit)
+                : controller.update(state, targetX, targetY, targetZ,
+                tick, absoluteAltitude && !terminalCommit);
         if (!command.isSupported()) {
             RdpUavDebug.debug("FlightControl", "control held aircraft={} reason={} sampleTick={}",
                     aircraft.getUniqueID(), command.getReason(), state.getSampleTick());
@@ -218,6 +246,50 @@ public final class WingManFlightAdapter {
         if (aircraft == null || aircraft.getAcInfo() == null) return aircraft instanceof MCH_EntityHeli;
         UavVehicleProfile profile = UavVehicleProfiles.forAircraft(aircraft.getAcInfo().name);
         return aircraft instanceof MCH_EntityHeli || profile.isHelicopterProfile();
+    }
+
+    private static boolean shouldHoldFormation(
+            net.vas.rdp.uav.swarm.SwarmRecord swarm, UUID aircraftId) {
+        if (swarm == null) return true;
+        for (net.vas.rdp.uav.swarm.SwarmMember member : swarm.getMembers()) {
+            if (aircraftId.equals(member.getAircraftId())
+                    && member.getRoleConstraints() != null) {
+                return member.getRoleConstraints().isHoldFormation();
+            }
+        }
+        return true;
+    }
+
+    private TrajectorySample routePathSample(UUID aircraftId, WingmanEntry entry,
+                                             RDPMission mission,
+                                             UavVehicleProfile profile,
+                                             AircraftState state,
+                                             double targetX, double targetY,
+                                             double targetZ) {
+        if (state == null || !Double.isFinite(state.getX())
+                || !Double.isFinite(state.getY()) || !Double.isFinite(state.getZ())
+                || !Float.isFinite(state.getYaw())) {
+            return null;
+        }
+        CachedRoutePath path = routePaths.get(aircraftId);
+        if (path == null || !path.matches(mission.getMissionId(), entry.missionIndex,
+                entry.autoState, targetX, targetY, targetZ)) {
+            double dx = targetX - state.getX();
+            double dz = targetZ - state.getZ();
+            float targetHeading = Math.hypot(dx, dz) < 0.5D
+                    ? state.getYaw()
+                    : (float) Math.toDegrees(Math.atan2(-dx, dz));
+            List<TrajectorySample> samples = pathPlanner.planRoute(
+                    Collections.singletonList(
+                            new Waypoint(targetX, targetY, targetZ, targetHeading)),
+                    profile, state.getX(), state.getY(), state.getZ(), state.getYaw());
+            if (samples.isEmpty()) return null;
+            path = new CachedRoutePath(mission.getMissionId(), entry.missionIndex,
+                    entry.autoState,
+                    targetX, targetY, targetZ, samples);
+            routePaths.put(aircraftId, path);
+        }
+        return path.sampleAhead(state.getX(), state.getZ());
     }
 
     private TerrainRoutePlanner.Plan cachedTerrainPlan(World world,
@@ -968,6 +1040,7 @@ public final class WingManFlightAdapter {
             terminalLastDiagnosticTick.remove(aircraft.getUniqueID());
             terminalMetrics.remove(aircraft.getUniqueID());
             terminalLastClassification.remove(aircraft.getUniqueID());
+            routePaths.remove(aircraft.getUniqueID());
         }
     }
 
@@ -1353,5 +1426,66 @@ public final class WingManFlightAdapter {
             throw new IllegalArgumentException("WingMan plan name and nodes are required");
         }
         MissionPlan.put(name, new ArrayList<>(nodes));
+    }
+
+    private static final class CachedRoutePath {
+        private static final double TARGET_REPLAN_DISTANCE_SQUARED = 9.0D;
+        private static final long LOOKAHEAD_TICKS = 5L;
+
+        private final UUID missionId;
+        private final int routeNodeIndex;
+        private final AutonomousState autonomousState;
+        private final double targetX;
+        private final double targetY;
+        private final double targetZ;
+        private final List<TrajectorySample> samples;
+        private int progressIndex;
+
+        private CachedRoutePath(UUID missionId, int routeNodeIndex,
+                                AutonomousState autonomousState,
+                                double targetX, double targetY,
+                                double targetZ, List<TrajectorySample> samples) {
+            this.missionId = missionId;
+            this.routeNodeIndex = routeNodeIndex;
+            this.autonomousState = autonomousState;
+            this.targetX = targetX;
+            this.targetY = targetY;
+            this.targetZ = targetZ;
+            this.samples = samples;
+        }
+
+        private boolean matches(UUID candidateMissionId, int candidateRouteNodeIndex,
+                                AutonomousState candidateAutonomousState,
+                                double x, double y, double z) {
+            double dx = targetX - x;
+            double dy = targetY - y;
+            double dz = targetZ - z;
+            return missionId.equals(candidateMissionId)
+                    && routeNodeIndex == candidateRouteNodeIndex
+                    && autonomousState == candidateAutonomousState
+                    && dx * dx + dy * dy + dz * dz <= TARGET_REPLAN_DISTANCE_SQUARED;
+        }
+
+        private TrajectorySample sampleAhead(double x, double z) {
+            int nearestIndex = progressIndex;
+            double nearestDistanceSquared = Double.POSITIVE_INFINITY;
+            for (int index = progressIndex; index < samples.size(); index++) {
+                TrajectorySample sample = samples.get(index);
+                double dx = sample.getX() - x;
+                double dz = sample.getZ() - z;
+                double distanceSquared = dx * dx + dz * dz;
+                if (distanceSquared < nearestDistanceSquared) {
+                    nearestDistanceSquared = distanceSquared;
+                    nearestIndex = index;
+                }
+            }
+            progressIndex = nearestIndex;
+            long lookaheadTick = samples.get(progressIndex).getTickOffset() + LOOKAHEAD_TICKS;
+            for (int index = progressIndex + 1; index < samples.size(); index++) {
+                TrajectorySample sample = samples.get(index);
+                if (sample.getTickOffset() >= lookaheadTick) return sample;
+            }
+            return samples.get(samples.size() - 1);
+        }
     }
 }

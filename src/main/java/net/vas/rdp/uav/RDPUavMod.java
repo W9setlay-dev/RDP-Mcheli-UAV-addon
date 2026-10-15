@@ -50,6 +50,8 @@ public final class RDPUavMod {
         net.vas.rdp.uav.energy.UavEnergyConfig.load(event.getModConfigurationDirectory());
         net.vas.rdp.uav.profile.UavVehicleProfiles.load(event.getModConfigurationDirectory());
         net.vas.rdp.uav.swarm.SwarmConfig.load(event.getModConfigurationDirectory());
+        net.vas.rdp.uav.formation.FormationConfig.load(event.getModConfigurationDirectory());
+        net.vas.rdp.uav.path.PathConfig.load(event.getModConfigurationDirectory());
         net.vas.rdp.uav.target.TargetPolicy.load(event.getModConfigurationDirectory());
         net.vas.rdp.uav.flight.KamikazeConfig.load(event.getModConfigurationDirectory());
         net.vas.rdp.uav.flight.SquareStrikeConfig.load(event.getModConfigurationDirectory());

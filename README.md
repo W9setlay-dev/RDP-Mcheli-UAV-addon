@@ -641,3 +641,7 @@ For a complete trace, filter `latest.log` by the aircraft UUID or objective
 UUID and follow `assignment_authorized`, `native_launch_accepted` or
 `native_launch_rejected`, `projectile_state`, `native_target_update`,
 `target_lost`/`avoidance_waypoint`, and the terminal state event.
+
+## Swarm formation and path planning
+
+See [the redesign guide](docs/SWARM_PATH_REDESIGN.md) for architecture, network ownership, configuration, validation, and current limitations.

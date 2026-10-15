@@ -1,5 +1,7 @@
 package net.vas.rdp.uav.swarm;
 
+import net.vas.rdp.uav.formation.RoleConstraints;
+
 import java.util.UUID;
 
 public final class SwarmMember {
@@ -13,6 +15,7 @@ public final class SwarmMember {
     private boolean operatorControlled;
     private UUID assignedTarget;
     private SwarmRole role = SwarmRole.RESERVE;
+    private transient RoleConstraints roleConstraints;
 
     public SwarmMember(UUID aircraftId, String profile, boolean longRange, boolean payload) {
         if (aircraftId == null || profile == null || profile.trim().isEmpty()) {
@@ -46,4 +49,6 @@ public final class SwarmMember {
         if (value == null) throw new IllegalArgumentException("Swarm role is required");
         role = value;
     }
+    public RoleConstraints getRoleConstraints() { return roleConstraints; }
+    public void setRoleConstraints(RoleConstraints value) { roleConstraints = value; }
 }

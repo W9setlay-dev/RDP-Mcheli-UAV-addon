@@ -8,7 +8,11 @@ import net.vas.rdp.uav.profile.UavVehicleProfile;
  * <p>This class does not mutate an aircraft and does not claim to be a
  * replacement for MCheliCE physics. It converts observed state and a target
  * track into a bounded, profile-aware waypoint.</p>
+ *
+ * @deprecated Use {@link net.vas.rdp.uav.path.PathPlanner} for newly planned
+ * route trajectories; this compatibility planner remains available for legacy callers.
  */
+@Deprecated
 public final class FlightGuidancePlanner {
     private FlightGuidancePlanner() { }
 

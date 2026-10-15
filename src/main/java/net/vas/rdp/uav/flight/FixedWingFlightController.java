@@ -1,5 +1,6 @@
 package net.vas.rdp.uav.flight;
 
+import net.vas.rdp.uav.deconfliction.TrajectorySample;
 import net.vas.rdp.uav.profile.UavVehicleProfile;
 import net.vas.rdp.uav.mission.ControlOwner;
 
@@ -32,6 +33,31 @@ public final class FixedWingFlightController implements AirframeController {
     public NativeFlightControlCommand update(AircraftState state, double targetX,
                                              double targetY, double targetZ,
                                              long currentTick, boolean absoluteAltitude) {
+        return update(state, targetX, targetY, targetZ, currentTick,
+                absoluteAltitude, Float.NaN);
+    }
+
+    /** Follows a sampled path point while blending its tangent into yaw lead. */
+    public NativeFlightControlCommand update(AircraftState state,
+                                             TrajectorySample sample,
+                                             long currentTick) {
+        return update(state, sample, currentTick, false);
+    }
+
+    @Override
+    public NativeFlightControlCommand update(AircraftState state,
+                                             TrajectorySample sample,
+                                             long currentTick,
+                                             boolean absoluteAltitude) {
+        if (sample == null) throw new IllegalArgumentException("Trajectory sample is required");
+        return update(state, sample.getX(), sample.getY(), sample.getZ(),
+                currentTick, absoluteAltitude, sample.getYaw());
+    }
+
+    private NativeFlightControlCommand update(AircraftState state, double targetX,
+                                             double targetY, double targetZ,
+                                             long currentTick, boolean absoluteAltitude,
+                                             float desiredPathHeading) {
         if (state == null || finite(targetX, targetY, targetZ) || currentTick < 0L) {
             throw new IllegalArgumentException("Invalid fixed-wing controller inputs");
         }
@@ -56,13 +82,16 @@ public final class FixedWingFlightController implements AirframeController {
         float track = Double.isFinite(state.getGroundTrackYaw())
                 ? (float) state.getGroundTrackYaw() : state.getYaw();
         float trackError = NativeControlMath.angleDelta(course, track);
+        float pathHeadingError = Float.isFinite(desiredPathHeading)
+                ? NativeControlMath.angleDelta(desiredPathHeading, state.getYaw()) : 0.0F;
 
         double speed = Math.max(0.0D, state.getHorizontalSpeed());
         double turnRadius = Math.max(8.0D, profile.getTurnRadius());
         double nominalYawRate = Math.toDegrees(Math.min(0.12D,
                 Math.max(0.01D, Math.max(speed, profile.getStallSpeed()) / turnRadius)));
         float yawLead = NativeControlMath.clamp(
-                headingError * 0.35F + trackError * 0.12F, -18.0F, 18.0F);
+                headingError * 0.35F + trackError * 0.12F
+                        + pathHeadingError * 0.15F, -18.0F, 18.0F);
         float desiredYaw = normalize(state.getYaw() + yawLead);
         float desiredRoll = NativeControlMath.clamp(
                 headingError * 0.58F + trackError * 0.18F,

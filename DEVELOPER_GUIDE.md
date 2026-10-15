@@ -954,3 +954,7 @@ or flight control. A swarm member can be unavailable or manually controlled
 without destroying the aggregate; reconciliation marks disconnected members and
 degrades the swarm when no reference member is available. Individual mission
 execution remains exclusively in `MissionManager` and `MissionLifecycle`.
+
+## Swarm formation and path planning
+
+See [the redesign guide](docs/SWARM_PATH_REDESIGN.md) for implementation details, server/client boundaries, packet contracts, and known runtime limitations.

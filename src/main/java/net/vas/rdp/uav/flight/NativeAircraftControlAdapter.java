@@ -2,6 +2,7 @@ package net.vas.rdp.uav.flight;
 
 import com.norwood.mcheli.aircraft.MCH_EntityAircraft;
 import com.norwood.mcheli.helicopter.MCH_EntityHeli;
+import net.vas.rdp.uav.deconfliction.TrajectorySample;
 import net.minecraft.world.World;
 import net.vas.rdp.uav.mission.MissionManager;
 import net.vas.rdp.uav.mission.MissionMovementAuthority;
@@ -92,6 +93,25 @@ public final class NativeAircraftControlAdapter {
                     "motionZ", aircraft.motionZ);
         }
         return true;
+    }
+
+    /** Computes and applies one path sample through the existing leased control boundary. */
+    public static boolean applyTrajectorySample(World world, MissionManager missions,
+                                                MCH_EntityAircraft aircraft,
+                                                RDPMission mission, AircraftState state,
+                                                TrajectorySample sample, long tick) {
+        if (aircraft == null || mission == null || state == null || sample == null
+                || !aircraft.getUniqueID().equals(state.getAircraftId())
+                || !mission.getMissionId().equals(state.getMissionId())) {
+            return false;
+        }
+        UavVehicleProfile profile = profileFor(aircraft);
+        if (profile == null) return false;
+        NativeFlightControlCommand command = aircraft instanceof MCH_EntityHeli
+                || profile.isHelicopterProfile()
+                ? new HelicopterFlightController(profile).update(state, sample, tick)
+                : new FixedWingFlightController(profile).update(state, sample, tick);
+        return apply(world, missions, aircraft, mission, command, tick);
     }
 
     public static boolean canControlAircraft(MCH_EntityAircraft aircraft) {

@@ -114,7 +114,41 @@ public final class RdpUavNetwork {
                     PacketDesignationReject.class, 34, Side.CLIENT);
             CHANNEL.registerMessage(ClientDesignationQueueSyncHandler.class,
                     PacketDesignationQueueSync.class, 35, Side.CLIENT);
+            CHANNEL.registerMessage(
+                    net.vas.rdp.uav.client.FormationStatusClientHandler.Formation.class,
+                    PacketFormationSync.class, 36, Side.CLIENT);
+            CHANNEL.registerMessage(
+                    net.vas.rdp.uav.client.FormationStatusClientHandler.Alert.class,
+                    PacketDeconflictionAlert.class, 37, Side.CLIENT);
+            CHANNEL.registerMessage(
+                    net.vas.rdp.uav.client.FormationStatusClientHandler.Orbit.class,
+                    PacketOrbitStatus.class, 38, Side.CLIENT);
         }
+    }
+
+    /** Sends authoritative formation geometry to one client as a read-only snapshot. */
+    public static void syncFormation(EntityPlayerMP player,
+                                     java.util.List<PacketFormationSync.FormationSlotView> slots) {
+        if (player == null || player.world == null || player.world.isRemote || slots == null) return;
+        CHANNEL.sendTo(new PacketFormationSync(slots), player);
+    }
+
+    /** Sends a server-detected unresolved conflict notice to one client. */
+    public static void sendDeconflictionAlert(EntityPlayerMP player,
+                                              java.util.UUID aircraftA,
+                                              java.util.UUID aircraftB,
+                                              String reason, int attempts) {
+        if (player == null || player.world == null || player.world.isRemote) return;
+        CHANNEL.sendTo(new PacketDeconflictionAlert(
+                aircraftA, aircraftB, reason, attempts), player);
+    }
+
+    /** Sends an authoritative orbit-entry or exit event to one client. */
+    public static void sendOrbitStatus(EntityPlayerMP player, java.util.UUID aircraft,
+                                       net.vas.rdp.uav.path.OrbitPrimitive primitive,
+                                       boolean entering, long serverTick) {
+        if (player == null || player.world == null || player.world.isRemote) return;
+        CHANNEL.sendTo(new PacketOrbitStatus(aircraft, primitive, entering, serverTick), player);
     }
 
     public static void openMissionControl(EntityPlayerMP player) {

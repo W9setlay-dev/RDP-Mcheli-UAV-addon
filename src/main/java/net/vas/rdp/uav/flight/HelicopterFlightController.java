@@ -1,5 +1,6 @@
 package net.vas.rdp.uav.flight;
 
+import net.vas.rdp.uav.deconfliction.TrajectorySample;
 import net.vas.rdp.uav.profile.UavVehicleProfile;
 import net.vas.rdp.uav.mission.ControlOwner;
 
@@ -28,6 +29,31 @@ public final class HelicopterFlightController implements AirframeController {
     public NativeFlightControlCommand update(AircraftState state, double targetX,
                                              double targetY, double targetZ,
                                              long currentTick, boolean absoluteAltitude) {
+        return update(state, targetX, targetY, targetZ, currentTick,
+                absoluteAltitude, Float.NaN);
+    }
+
+    /** Follows a sampled path point while blending its tangent into yaw lead. */
+    public NativeFlightControlCommand update(AircraftState state,
+                                             TrajectorySample sample,
+                                             long currentTick) {
+        return update(state, sample, currentTick, false);
+    }
+
+    @Override
+    public NativeFlightControlCommand update(AircraftState state,
+                                             TrajectorySample sample,
+                                             long currentTick,
+                                             boolean absoluteAltitude) {
+        if (sample == null) throw new IllegalArgumentException("Trajectory sample is required");
+        return update(state, sample.getX(), sample.getY(), sample.getZ(),
+                currentTick, absoluteAltitude, sample.getYaw());
+    }
+
+    private NativeFlightControlCommand update(AircraftState state, double targetX,
+                                              double targetY, double targetZ,
+                                              long currentTick, boolean absoluteAltitude,
+                                              float desiredPathHeading) {
         if (state == null || finite(targetX, targetY, targetZ) || currentTick < 0L) {
             throw new IllegalArgumentException("Invalid helicopter controller inputs");
         }
@@ -49,8 +75,11 @@ public final class HelicopterFlightController implements AirframeController {
                 ? normalize(state.getYaw())
                 : normalize((float) Math.toDegrees(Math.atan2(-dx, dz)));
         float headingError = NativeControlMath.angleDelta(course, state.getYaw());
+        float pathHeadingError = Float.isFinite(desiredPathHeading)
+                ? NativeControlMath.angleDelta(desiredPathHeading, state.getYaw()) : 0.0F;
         float desiredYaw = normalize(state.getYaw()
-                + NativeControlMath.clamp(headingError * 0.32F, -12.0F, 12.0F));
+                + NativeControlMath.clamp(headingError * 0.32F
+                + pathHeadingError * 0.18F, -12.0F, 12.0F));
 
         double radians = Math.toRadians(desiredYaw);
         double forwardError = -dx * Math.sin(radians) + dz * Math.cos(radians);

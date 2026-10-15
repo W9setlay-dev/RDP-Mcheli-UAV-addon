@@ -6,5 +6,6 @@ public enum SwarmRole {
     TRACKER,
     EXECUTOR,
     SUPPORT,
-    RESERVE
+    RESERVE,
+    DECOY
 }
