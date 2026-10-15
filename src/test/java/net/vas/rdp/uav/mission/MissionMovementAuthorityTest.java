@@ -85,6 +85,66 @@ public class MissionMovementAuthorityTest {
     }
 
     @Test
+    public void directRiderOnDispatchedMissionUsesSupervisedControlAndRetainsLease() {
+        RDPMission mission = mission();
+        mission.transitionTo(MissionState.DISPATCHED, 1L);
+        UUID aircraftId = mission.getAircraftId();
+        try {
+            MissionMovementAuthority.applyDirectRiderOperatorState(
+                    mission, true, false, 2L);
+
+            assertEquals(ControlOwner.SUPERVISED_OPERATOR, mission.getControlOwner());
+            assertTrue(MissionMovementAuthority.nativeWingManRequired(mission));
+            assertTrue(MissionMovementAuthority.claimControl(mission, aircraftId, 2L));
+            assertTrue(MissionMovementAuthority.canIssueNativeControl(mission, aircraftId, 2L));
+
+            MissionMovementAuthority.applyDirectRiderOperatorState(
+                    mission, false, false, 3L);
+            assertEquals(ControlOwner.MISSION_AI, mission.getControlOwner());
+            assertTrue(MissionMovementAuthority.nativeWingManRequired(mission));
+        } finally {
+            MissionMovementAuthority.releaseControl(aircraftId, mission.getMissionId());
+        }
+    }
+
+    @Test
+    public void directRiderOnPreDispatchMissionUsesManualControl() {
+        RDPMission mission = mission();
+
+        MissionMovementAuthority.applyDirectRiderOperatorState(
+                mission, true, false, 1L);
+
+        assertEquals(ControlOwner.MANUAL, mission.getControlOwner());
+        assertFalse(MissionMovementAuthority.nativeWingManRequired(mission));
+    }
+
+    @Test
+    public void directRiderTransitionsFromManualToSupervisedWhenMissionDispatches() {
+        RDPMission mission = mission();
+        MissionMovementAuthority.applyDirectRiderOperatorState(
+                mission, true, false, 1L);
+        mission.transitionTo(MissionState.DISPATCHED, 2L);
+
+        MissionMovementAuthority.applyDirectRiderOperatorState(
+                mission, true, false, 3L);
+
+        assertEquals(ControlOwner.SUPERVISED_OPERATOR, mission.getControlOwner());
+        assertTrue(MissionMovementAuthority.nativeWingManRequired(mission));
+    }
+
+    @Test
+    public void directRiderDoesNotOverrideRecoveryOwnership() {
+        RDPMission mission = mission();
+        mission.transitionTo(MissionState.WAITING_FOR_WORLD, 1L);
+
+        MissionMovementAuthority.applyDirectRiderOperatorState(
+                mission, true, false, 2L);
+
+        assertEquals(ControlOwner.RECOVERY, mission.getControlOwner());
+        assertTrue(MissionMovementAuthority.nativeWingManRequired(mission));
+    }
+
+    @Test
     public void missionControlLeaseRejectsDuplicateAircraftClaim() {
         RDPMission first = mission();
         RDPMission second = mission();

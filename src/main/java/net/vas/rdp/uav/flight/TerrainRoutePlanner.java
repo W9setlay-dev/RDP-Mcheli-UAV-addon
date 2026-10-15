@@ -174,6 +174,12 @@ public final class TerrainRoutePlanner {
     private static double clamp(double value, double minimum, double maximum) {
         return Math.max(minimum, Math.min(maximum, value));
     }
+    static boolean isWorldDataUnavailableReason(String reason) {
+        return "CORRIDOR_UNLOADED".equals(reason)
+                || "CORRIDOR_UNKNOWN".equals(reason)
+                || "AIRSPACE_UNLOADED".equals(reason)
+                || "AIRSPACE_UNKNOWN".equals(reason);
+    }
     private static boolean finite(double... values) {
         for (double value : values) if (!Double.isFinite(value)) return false;
         return true;
@@ -280,5 +286,8 @@ public final class TerrainRoutePlanner {
         public double getHighestSurface() { return highestSurface; }
         public double getCurrentAgl() { return currentAgl; }
         public String getReason() { return reason; }
+        public boolean isWaitingForWorld() {
+            return isWorldDataUnavailableReason(reason);
+        }
     }
 }

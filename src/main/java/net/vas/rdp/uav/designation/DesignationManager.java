@@ -107,7 +107,7 @@ public final class DesignationManager {
                 || designationIds.isEmpty()
                 || designationIds.size() > RDPMission.MAX_COMPOSED_OBJECTIVES) return null;
         MCH_EntityAircraft aircraft = UavControlAccess.findControlledAircraft(player);
-        if (aircraft == null || !UavControlAccess.isOperator(aircraft, player)
+        if (!UavControlAccess.isOperator(aircraft, player)
                 || RDPUavMod.missions().ensureAuthorized(aircraft, player)
                 || RDPUavMod.missions().isAircraftUnavailable(player.world, aircraft.getUniqueID(), player.getUniqueID())) {
             return null;

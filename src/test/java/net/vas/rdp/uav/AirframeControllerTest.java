@@ -114,6 +114,12 @@ public class AirframeControllerTest {
         assertEquals("STALE_OR_INVALID_AIRCRAFT_STATE", command.getReason());
     }
 
+    @Test(expected = IllegalArgumentException.class)
+    public void nativeFlightCommandRejectsReverseThrottle() {
+        NativeFlightControlCommand.setpoints(
+                0.0F, 0.0F, 0.0F, -0.01D, 0.0D, 0.0D, 0.0D);
+    }
+
     @Test
     public void terminalFixedWingUsesRouteDiveSlopeAndCanCommandSteeperPitch() {
         UavVehicleProfile profile = new UavVehicleProfile(UavExecutionProfile.ONE_WAY,

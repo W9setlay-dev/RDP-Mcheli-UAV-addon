@@ -54,6 +54,51 @@ public final class MissionMovementAuthority {
         }
     }
 
+    public static void applyDirectRiderOperatorState(RDPMission mission,
+                                                     boolean directRiderPresent,
+                                                     boolean operatorAssistActive,
+                                                     long tick) {
+        if (mission == null || tick < 0L) return;
+        if (directRiderPresent && isActivelyDispatched(mission)) {
+            if (mission.getControlOwner() == ControlOwner.MANUAL) {
+                mission.exitManualControl(tick);
+            }
+            applySupervisedOperatorState(mission, true, tick);
+            return;
+        }
+        applyManualOperatorState(mission, directRiderPresent, tick);
+        applySupervisedOperatorState(mission, operatorAssistActive, tick);
+    }
+
+    private static boolean isActivelyDispatched(RDPMission mission) {
+        if (mission == null || mission.isTerminal()) return false;
+        switch (mission.getState()) {
+            case DISPATCHED:
+            case TAXI:
+            case TAKEOFF:
+            case CRUISE:
+            case SEARCHING:
+            case TARGET_ACQUIRED:
+            case TARGET_LOCKED:
+            case ATTACK_TARGET:
+            case APPROACHING:
+            case ON_TARGET:
+            case ORBITING:
+            case SCANNING:
+            case DEEP_SCANNING:
+            case REPORTING:
+            case LAUNCH_ACCEPTED:
+            case PROJECTILE_TRACKED:
+            case IMPACT_OBSERVED:
+            case EFFECT_CONFIRMED:
+            case OUTCOME_UNKNOWN:
+            case DIRECT_LAUNCH_COMPLETE:
+                return true;
+            default:
+                return false;
+        }
+    }
+
     private static boolean acceptsOperatorControl(ControlOwner owner) {
         return owner == ControlOwner.MISSION_AI
                 || owner == ControlOwner.SUPERVISED_OPERATOR

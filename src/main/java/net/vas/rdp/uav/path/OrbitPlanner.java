@@ -117,6 +117,61 @@ public final class OrbitPlanner {
         return java.util.Collections.unmodifiableList(samples);
     }
 
+    /** Generates a segmented circular loop whose direction follows current motion. */
+    public List<Waypoint> planForwardLoop(double centerX, double centerZ,
+                                          double altitude, double radius,
+                                          double currentX, double currentZ,
+                                          double currentHeading,
+                                          double motionX, double motionZ,
+                                          int waypointCount) {
+        validate(centerX, centerZ, altitude, radius, currentX, currentZ,
+                currentHeading, motionX, motionZ);
+        if (radius <= 0.0D || waypointCount < 8 || waypointCount > 64) {
+            throw new IllegalArgumentException("Forward loop requires positive radius and 8 to 64 waypoints");
+        }
+
+        double dx = currentX - centerX;
+        double dz = currentZ - centerZ;
+        double distance = Math.hypot(dx, dz);
+        double approachHeading = Math.hypot(motionX, motionZ) >= 0.05D
+                ? Math.toDegrees(Math.atan2(-motionX, motionZ))
+                : currentHeading;
+        double startAngle;
+        OrbitEntry.OrbitDirection orbitDirection;
+        if (distance > radius) {
+            OrbitEntry entry = computeEntry(currentX, currentZ, approachHeading,
+                    centerX, centerZ, radius);
+            startAngle = Math.atan2(entry.getEntryTangentZ() - centerZ,
+                    entry.getEntryTangentX() - centerX);
+            orbitDirection = entry.getOrbitDirection();
+        } else {
+            if (distance < 2.0D) {
+                double heading = Math.toRadians(approachHeading);
+                dx = -Math.sin(heading);
+                dz = Math.cos(heading);
+            }
+            startAngle = Math.atan2(dz, dx);
+            double tangentX = -Math.sin(startAngle);
+            double tangentZ = Math.cos(startAngle);
+            double tangentProjection = motionX * tangentX + motionZ * tangentZ;
+            orbitDirection = Math.hypot(motionX, motionZ) < 0.05D
+                    || tangentProjection >= 0.0D
+                    ? OrbitEntry.OrbitDirection.LEFT
+                    : OrbitEntry.OrbitDirection.RIGHT;
+        }
+
+        double direction = orbitDirection == OrbitEntry.OrbitDirection.LEFT ? 1.0D : -1.0D;
+        List<Waypoint> waypoints = new ArrayList<>(waypointCount);
+        for (int index = 1; index <= waypointCount; index++) {
+            double angle = startAngle + direction * TWO_PI * index / waypointCount;
+            double heading = angle + direction * Math.PI / 2.0D;
+            waypoints.add(new Waypoint(centerX + radius * Math.cos(angle),
+                    altitude, centerZ + radius * Math.sin(angle),
+                    normalizeYaw(90.0D - Math.toDegrees(heading))));
+        }
+        return java.util.Collections.unmodifiableList(waypoints);
+    }
+
     /** Computes the closest tangent angle compatible with the desired exit heading. */
     public OrbitEntry computeExit(double currentOrbitAngle, double desiredExitHeading,
                                   double centerX, double centerZ, double radius) {

@@ -99,7 +99,7 @@ public final class DubinsPlanner {
                 tmp = Math.atan2(-cosAlpha - cosBeta,
                         d + sinAlpha + sinBeta) - Math.atan2(-2.0D, p);
                 t = mod2pi(-alpha + tmp);
-                q = mod2pi(-beta + t);
+                q = mod2pi(-beta + tmp);
                 break;
             case RSL:
                 pSquared = d * d - 2.0D + 2.0D * cosAlphaBeta
@@ -141,7 +141,9 @@ public final class DubinsPlanner {
             double endHeading,
             double length, double radius, double speed) {
         List<TrajectorySample> samples = new ArrayList<>();
-        double step = speed * SAMPLE_INTERVAL_TICKS;
+        // Keep sampled turns fine enough that each chord still advances along
+        // its local tangent instead of aliasing into an apparent reverse leg.
+        double step = Math.min(speed * SAMPLE_INTERVAL_TICKS, radius * Math.PI / 8.0D);
         long previousTick = -1L;
         for (double distance = 0.0D; distance < length; distance += step) {
             Pose pose = poseAt(type, parameters, startX, startZ, startAngle,

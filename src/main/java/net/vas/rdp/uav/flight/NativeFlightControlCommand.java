@@ -3,9 +3,10 @@ package net.vas.rdp.uav.flight;
 /**
  * Absolute, bounded flight setpoints produced by an airframe controller.
  *
- * <p>The command describes desired attitude and engine throttle. It never
- * changes entity position or motion; MCheliCE remains responsible for flight
- * physics and collision response.</p>
+ * <p>The command describes desired attitude and forward engine throttle in
+ * {@code [0, 1]}; reverse propulsion is not represented. It never changes
+ * entity position or motion; MCheliCE remains responsible for flight physics
+ * and collision response.</p>
  */
 public final class NativeFlightControlCommand {
     private final boolean supported;

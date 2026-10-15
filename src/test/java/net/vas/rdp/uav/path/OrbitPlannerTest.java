@@ -54,4 +54,37 @@ public class OrbitPlannerTest {
         assertTrue(minZ < 0.0D);
         assertTrue(maxZ > 0.0D);
     }
+
+    @Test
+    public void planForwardLoop_followsTangentMotionAndKeepsWaypointsForward() {
+        List<Waypoint> waypoints = planner.planForwardLoop(0.0D, 0.0D,
+                80.0D, 32.0D, 32.0D, 0.0D, 0.0D,
+                0.0D, 1.0D, 16);
+
+        assertEquals(16, waypoints.size());
+        for (int index = 0; index < waypoints.size(); index++) {
+            Waypoint previous = waypoints.get(index);
+            Waypoint current = waypoints.get((index + 1) % waypoints.size());
+            double heading = Math.toRadians(90.0D - previous.getHeading());
+            double projection = (current.getX() - previous.getX()) * Math.cos(heading)
+                    + (current.getZ() - previous.getZ()) * Math.sin(heading);
+            assertTrue("each loop segment must advance along its tangent", projection > 0.0D);
+        }
+    }
+
+    @Test
+    public void planForwardLoop_outsideRadiusUsesTangentEntry() {
+        List<Waypoint> waypoints = planner.planForwardLoop(0.0D, 0.0D,
+                80.0D, 16.0D, 40.0D, 10.0D, 90.0D,
+                0.0D, 1.0D, 16);
+        List<Waypoint> yawOpposesMotion = planner.planForwardLoop(0.0D, 0.0D,
+                80.0D, 16.0D, 40.0D, 10.0D, 180.0D,
+                0.0D, 1.0D, 16);
+
+        Waypoint first = waypoints.get(0);
+        assertEquals(16.0D, Math.hypot(first.getX(), first.getZ()), 1.0E-7D);
+        assertTrue(Double.isFinite(first.getHeading()));
+        assertEquals(first.getX(), yawOpposesMotion.get(0).getX(), 1.0E-8D);
+        assertEquals(first.getZ(), yawOpposesMotion.get(0).getZ(), 1.0E-8D);
+    }
 }

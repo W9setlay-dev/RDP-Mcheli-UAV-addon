@@ -10,8 +10,12 @@ import net.minecraft.world.World;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
 
+import java.util.ArrayDeque;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 /** Client-only crosshair trace that follows the active Minecraft render camera. */
 @SideOnly(Side.CLIENT)
@@ -72,13 +76,14 @@ public final class ClientAimRayTracer {
                 Math.max(start.z, entityTraceEnd.z)
         ).grow(BROAD_PHASE_GROWTH);
 
+        Set<Entity> ignoredMountChain = ignoredMountChain(camera, ignoredEntities);
         List<Entity> candidates = world.getEntitiesWithinAABBExcludingEntity(camera, searchBox);
         Entity closestEntity = null;
         Vec3d closestEntityHit = null;
         for (Entity candidate : candidates) {
             if (candidate == null || candidate.isDead || candidate.world != world
                     || !candidate.canBeCollidedWith()
-                    || isIgnored(candidate, camera, ignoredEntities)) {
+                    || ignoredMountChain.contains(candidate)) {
                 continue;
             }
 
@@ -110,13 +115,27 @@ public final class ClientAimRayTracer {
         return result;
     }
 
-    private static boolean isIgnored(Entity candidate, Entity camera,
-                                     Entity... ignoredEntities) {
-        if (candidate == camera || ignoredEntities == null) return candidate == camera;
-        for (Entity ignored : ignoredEntities) {
-            if (candidate == ignored) return true;
+    private static Set<Entity> ignoredMountChain(Entity camera, Entity... ignoredEntities) {
+        Set<Entity> ignored = Collections.newSetFromMap(
+                new IdentityHashMap<Entity, Boolean>());
+        ArrayDeque<Entity> pending = new ArrayDeque<>();
+        addEntity(pending, camera);
+        if (ignoredEntities != null) {
+            for (Entity entity : ignoredEntities) addEntity(pending, entity);
         }
-        return false;
+        while (!pending.isEmpty()) {
+            Entity entity = pending.removeFirst();
+            if (!ignored.add(entity)) continue;
+            addEntity(pending, entity.getRidingEntity());
+            for (Entity passenger : entity.getPassengers()) {
+                addEntity(pending, passenger);
+            }
+        }
+        return ignored;
+    }
+
+    private static void addEntity(ArrayDeque<Entity> pending, Entity entity) {
+        if (entity != null) pending.addLast(entity);
     }
 
     private static boolean hasInvalidVector(Vec3d vector) {

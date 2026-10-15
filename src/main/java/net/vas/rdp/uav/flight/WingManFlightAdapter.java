@@ -18,6 +18,7 @@ import net.vas.rdp.uav.mission.MissionManager;
 import net.vas.rdp.uav.mission.MissionMovementAuthority;
 import net.vas.rdp.uav.mission.RDPMission;
 import net.vas.rdp.uav.mission.PatrolRoutePlanner;
+import net.vas.rdp.uav.path.OrbitPlanner;
 import net.vas.rdp.uav.path.PathPlanner;
 import net.vas.rdp.uav.path.Waypoint;
 import net.vas.rdp.uav.profile.UavExecutionProfile;
@@ -52,6 +53,7 @@ public final class WingManFlightAdapter {
     private final Map<UUID, CachedTerrainPlan> terrainPlans = new HashMap<>();
     private final Map<UUID, CachedRoutePath> routePaths = new HashMap<>();
     private final PathPlanner pathPlanner = new PathPlanner();
+    private final OrbitPlanner orbitPlanner = new OrbitPlanner();
     private final Map<UUID, TerminalGuidanceMetrics> terminalMetrics = new HashMap<>();
     private final Map<UUID, TerminalGuidanceMetrics.Classification> terminalLastClassification
             = new HashMap<>();
@@ -65,6 +67,15 @@ public final class WingManFlightAdapter {
                                      long tick) {
         if (aircraft == null) return;
         aircraftStates.observe(aircraft, getEntry(aircraft), mission, tick);
+    }
+
+    public boolean isWaitingForTerrain(MCH_EntityAircraft aircraft,
+                                       RDPMission mission, long tick) {
+        if (aircraft == null || mission == null || tick < 0L) return false;
+        CachedTerrainPlan cached = terrainPlans.get(aircraft.getUniqueID());
+        return cached != null && cached.missionId.equals(mission.getMissionId())
+                && tick >= cached.tick && tick - cached.tick < 5L
+                && cached.plan.isWaitingForWorld();
     }
 
     /**
@@ -194,8 +205,8 @@ public final class WingManFlightAdapter {
         boolean operatorAssistActive = Math.abs(operatorYawDelta) > 0.02D
                 || Math.abs(operatorPitchDelta) > 0.02D
                 || Math.abs(operatorRollDelta) > 0.02D;
-        MissionMovementAuthority.applyManualOperatorState(mission, operatorInStation, tick);
-        MissionMovementAuthority.applySupervisedOperatorState(mission, operatorAssistActive, tick);
+        MissionMovementAuthority.applyDirectRiderOperatorState(
+                mission, operatorInStation, operatorAssistActive, tick);
         if (!operatorAssistActive) {
             OperatorTrimRegistry.clear(aircraft.getUniqueID(), mission.getMissionId());
         }
@@ -632,23 +643,14 @@ public final class WingManFlightAdapter {
         }
         WingmanEntry entry = getEntry(aircraft);
         if (entry == null || entry.mission == null || radius < 16.0D) return false;
-        double dx = aircraft.posX - centerX;
-        double dz = aircraft.posZ - centerZ;
-        double radial = Math.hypot(dx, dz);
-        double angle = radial < 2.0D
-                ? Math.toRadians(aircraft.getYaw())
-                : Math.atan2(dz, dx);
-        double tangentX = Math.sin(angle);
-        double tangentZ = -Math.cos(angle);
-        double direction = aircraft.motionX * tangentX + aircraft.motionZ * tangentZ >= 0.0D
-                ? 1.0D : -1.0D;
         List<MissionNode> route = new ArrayList<>();
-        // Eight connected forward waypoints approximate a continuous circle
-        // while keeping each native waypoint short and deterministic.
-        for (int i = 1; i <= 8; i++) {
-            double pointAngle = angle + direction * Math.PI * 2.0D * i / 8.0D;
-            route.add(MissionNode.flyTo(centerX + Math.cos(pointAngle) * radius,
-                    altitude, centerZ + Math.sin(pointAngle) * radius));
+        // Short tangent-following legs avoid asking a fixed-wing aircraft to
+        // reverse its course between station-hold waypoints.
+        List<Waypoint> loop = orbitPlanner.planForwardLoop(
+                centerX, centerZ, altitude, radius, aircraft.posX, aircraft.posZ,
+                aircraft.getYaw(), aircraft.motionX, aircraft.motionZ, 16);
+        for (Waypoint waypoint : loop) {
+            route.add(MissionNode.flyTo(waypoint.getX(), waypoint.getY(), waypoint.getZ()));
         }
         entry.mission = route;
         entry.missionIndex = 0;

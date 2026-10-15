@@ -78,6 +78,13 @@ position or motion. A crewed aircraft is rejected as
 `OPERATOR_CONTROL_CONFLICT`; an unmapped definition remains
 `UNSUPPORTED_PROFILE`.
 
+When a direct rider is present during a dispatched mission phase, movement
+ownership remains `SUPERVISED_OPERATOR` so the server controller keeps its
+lease while blending bounded trim. A rider in a pre-dispatch mission retains
+manual control; recovery and terminal owners are not overridden. The client
+does not write aircraft attitude directly: camera/key corrections travel
+through the existing server-validated trim packet.
+
 `AircraftStateEstimator` normally records finite McHeli motion and derives
 velocity from sampled position history. If any native motion component is
 non-finite, the state snapshot falls back to position-delta velocity using the

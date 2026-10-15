@@ -41,4 +41,14 @@ public class TerrainRoutePlannerAltitudeTest {
         assertFalse(decision.isSafe());
         assertEquals("CRUISE_ALTITUDE_OUT_OF_WORLD_BOUNDS", decision.getReason());
     }
+
+    @Test
+    public void unloadedOrUnknownWorldDataIsClassifiedAsWaitable() {
+        assertTrue(TerrainRoutePlanner.isWorldDataUnavailableReason("CORRIDOR_UNLOADED"));
+        assertTrue(TerrainRoutePlanner.isWorldDataUnavailableReason("CORRIDOR_UNKNOWN"));
+        assertTrue(TerrainRoutePlanner.isWorldDataUnavailableReason("AIRSPACE_UNLOADED"));
+        assertTrue(TerrainRoutePlanner.isWorldDataUnavailableReason("AIRSPACE_UNKNOWN"));
+        assertFalse(TerrainRoutePlanner.isWorldDataUnavailableReason(
+                "AIRSPACE_COLLISION_BLOCKED"));
+    }
 }

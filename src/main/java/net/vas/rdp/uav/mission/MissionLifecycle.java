@@ -487,13 +487,21 @@ public final class MissionLifecycle {
                 dirty = true;
                 continue;
             }
-            if (mission.getState() == MissionState.WAITING_FOR_WORLD
+            boolean terrainWaitReason = mission.getState() == MissionState.WAITING_FOR_WORLD
+                    && "TERRAIN_UNAVAILABLE".equals(mission.getLastTransitionReason());
+            boolean terrainUnavailableWait = terrainWaitReason
+                    && flight.isWaitingForTerrain(aircraft, mission, tick);
+            if (!terrainUnavailableWait && (mission.getState() == MissionState.WAITING_FOR_WORLD
                     || mission.getState() == MissionState.WAITING_FOR_FUEL
                     || mission.getState() == MissionState.EXECUTION_STALLED
                     || mission.getState() == MissionState.RECOVERING
-                    || mission.getState() == MissionState.REPLAN) {
+                    || mission.getState() == MissionState.REPLAN)) {
                 if (mission.getState() != MissionState.REPLAN) {
-                    mission.transitionTo(MissionState.REPLAN, tick);
+                    if (terrainWaitReason) {
+                        mission.transitionTo(MissionState.REPLAN, tick, "TERRAIN_AVAILABLE");
+                    } else {
+                        mission.transitionTo(MissionState.REPLAN, tick);
+                    }
                 }
                 dirty = true;
             }
@@ -848,6 +856,19 @@ public final class MissionLifecycle {
         if (mission.getMissionType() == MissionType.PATROL) {
             return updatePatrol(world, mission, aircraft, tick);
         }
+        if (flight.isWaitingForTerrain(aircraft, mission, tick)) {
+            if (mission.getState() != MissionState.WAITING_FOR_WORLD) {
+                mission.transitionTo(MissionState.WAITING_FOR_WORLD, tick,
+                        "TERRAIN_UNAVAILABLE");
+                RdpUavDebug.event("MissionRuntime", "WAITING_FOR_TERRAIN",
+                        "mission", mission.getMissionId(),
+                        "aircraft", aircraft.getUniqueID(), "tick", tick);
+                RDPMissionWorldData.get(world).markDirty();
+                return true;
+            }
+            mission.beginRouteProgressWindow(tick);
+            return false;
+        }
         if (mission.getState() == MissionState.REPLAN && target != null
                 && isDirectNativeWeaponMission(mission, aircraft)) {
             if (tick - mission.getLastUpdateTick() < GUIDANCE_RETRY_INTERVAL) {
@@ -860,7 +881,8 @@ public final class MissionLifecycle {
             String replanReason = mission.getLastTransitionReason();
             boolean stalledRoute = "NO_PROGRESS_TIMEOUT".equals(replanReason)
                     || "ROUTE_STALLED_TARGET_RETAINED".equals(replanReason)
-                    || "ROUTE_STALLED_NO_TARGET".equals(replanReason);
+                    || "ROUTE_STALLED_NO_TARGET".equals(replanReason)
+                    || "TERRAIN_AVAILABLE".equals(replanReason);
             if (!stalledRoute && routeAlreadyDispatched(aircraft, target, mission)) {
                 if (mission.getTargetSelectionMode() == TargetSelectionMode.POINT) {
                     mission.transitionTo(MissionState.TARGET_LOCKED, tick);

@@ -1,6 +1,7 @@
 package net.vas.rdp.uav.network;
 
 import io.netty.buffer.ByteBuf;
+import net.minecraft.entity.EntityList;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.BlockPos;
@@ -17,6 +18,7 @@ import com.norwood.mcheli.aircraft.MCH_EntityAircraft;
 import com.norwood.mcheli.weapon.MCH_WeaponSet;
 import com.norwood.mcheli.weapon.MCH_EntityBaseBullet;
 import net.vas.rdp.uav.RdpUavDebug;
+import net.vas.rdp.uav.designation.DesignationWorldData;
 import net.vas.rdp.uav.flight.KamikazePilotOverride;
 import net.vas.rdp.uav.weapon.GuidedStrikeObjective;
 import net.vas.rdp.uav.weapon.GuidedWeaponAdapter;
@@ -1835,7 +1837,7 @@ public final class RdpUavNetwork {
                         entityPayload = new net.vas.rdp.uav.designation.Designation.EntityPayload(
                                 candidateEntity.getUniqueID(),
                                 net.minecraft.entity.EntityList.getKey(candidateEntity) == null ? null
-                                        : net.minecraft.entity.EntityList.getKey(candidateEntity).toString(),
+                                        : Objects.requireNonNull(EntityList.getKey(candidateEntity)).toString(),
                                 candidateEntity.posX, candidateEntity.posY, candidateEntity.posZ,
                                 player.world.getTotalWorldTime());
                     } else {
@@ -1850,7 +1852,7 @@ public final class RdpUavNetwork {
                                 resolved.x, resolved.y, resolved.z, false,
                                 (int) Math.floor(resolved.y));
                     }
-                    if (candidateEntity == null && (hit == null || hit.hitVec == null)) {
+                    if (candidateEntity == null && hit.hitVec == null) {
                         notifyDesignationReject(player, source,
                                 net.vas.rdp.uav.designation.RejectReason.NO_HIT,
                                 "No valid target was resolved from the server ray");
@@ -1868,7 +1870,7 @@ public final class RdpUavNetwork {
                             .expiresAtTick(player.world.getTotalWorldTime() + net.vas.rdp.uav.designation.DesignationConfig.designationTtlTicks)
                             .confidence(1.0F)
                             .provenance(candidateEntity != null
-                                    ? (net.minecraft.entity.EntityList.getKey(candidateEntity) == null ? "entity" : net.minecraft.entity.EntityList.getKey(candidateEntity).toString())
+                                    ? (net.minecraft.entity.EntityList.getKey(candidateEntity) == null ? "entity" : Objects.requireNonNull(EntityList.getKey(candidateEntity)).toString())
                                     : "ray-hit")
                             .point(pointPayload)
                             .entity(entityPayload)
@@ -1991,7 +1993,7 @@ public final class RdpUavNetwork {
                             "Designation is missing, attached to a mission, or owned by another operator");
                     return;
                 }
-                net.vas.rdp.uav.designation.DesignationWorldData.get(player.world).remove(designation.getDesignationId());
+                Objects.requireNonNull(DesignationWorldData.get(player.world)).remove(designation.getDesignationId());
                 syncDesignationQueue(player);
             });
             return null;

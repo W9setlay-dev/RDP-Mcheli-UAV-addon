@@ -15,6 +15,12 @@ aircraft, mission, route node, and autonomous state; it replans when the route
 target materially changes. Terminal-stage guidance deliberately retains its
 existing direct path.
 
+Fixed-wing reconnaissance station holds use a sixteen-point loop oriented from
+observed ground motion, with a tangent entry when the aircraft is outside the
+hold radius. Dubins samples are bounded by turn angle and tests verify that
+successive points advance along their local headings. Native flight commands
+represent only nonnegative engine throttle; reverse propulsion is not modeled.
+
 The pure path API also provides orbit, figure-eight, and racetrack primitives,
 plus a straight terminal-approach utility. Those primitives are planning
 capabilities; no claim is made that every primitive is currently selected by

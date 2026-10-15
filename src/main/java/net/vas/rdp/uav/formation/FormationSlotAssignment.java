@@ -46,15 +46,15 @@ public final class FormationSlotAssignment {
                         break;
                     case LINE_ABREAST:
                         side = (slot % 2 == 1 ? 1.0D : -1.0D)
-                                * ((slot + 1) / 2) * sideSpacing;
+                                * ((double) (slot + 1) / 2) * sideSpacing;
                         break;
                     case TRAIL:
                         rear = slot * rearSpacing;
                         break;
                     case WEDGE:
                         side = (slot % 2 == 1 ? 1.0D : -1.0D)
-                                * ((slot + 1) / 2) * sideSpacing;
-                        rear = ((slot + 1) / 2) * rearSpacing;
+                                * ((double) (slot + 1) / 2) * sideSpacing;
+                        rear = ((double) (slot + 1) / 2) * rearSpacing;
                         break;
                     case COLUMN:
                         rear = slot * rearSpacing;
