@@ -1,6 +1,7 @@
 package net.vas.rdp.uav.network;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import net.minecraft.entity.EntityList;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.util.ResourceLocation;
@@ -18,6 +19,8 @@ import com.norwood.mcheli.aircraft.MCH_EntityAircraft;
 import com.norwood.mcheli.weapon.MCH_WeaponSet;
 import com.norwood.mcheli.weapon.MCH_EntityBaseBullet;
 import net.vas.rdp.uav.RdpUavDebug;
+import net.vas.rdp.uav.debug.DebugChannel;
+import net.vas.rdp.uav.debug.DebugContext;
 import net.vas.rdp.uav.designation.DesignationWorldData;
 import net.vas.rdp.uav.flight.KamikazePilotOverride;
 import net.vas.rdp.uav.weapon.GuidedStrikeObjective;
@@ -36,8 +39,13 @@ public final class RdpUavNetwork {
     private static final int MISSION_PAGE_SIZE = 11;
     private static final int MAX_MISSION_PAGE_COUNT =
             Integer.MAX_VALUE / MISSION_PAGE_SIZE + 1;
-    private static final SimpleNetworkWrapper CHANNEL = NetworkRegistry.INSTANCE.newSimpleChannel(
-            new ResourceLocation(RDPUavMod.MOD_ID, "control").toString());
+    private static final java.util.Map<Class<?>, IMessageHandler<?, ?>> RECEIVER_HANDLERS =
+            new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.Map<Class<?>, Side> RECEIVER_SIDES =
+            new java.util.concurrent.ConcurrentHashMap<>();
+    private static final InstrumentedNetworkChannel CHANNEL = new InstrumentedNetworkChannel(
+            NetworkRegistry.INSTANCE.newSimpleChannel(
+                    new ResourceLocation(RDPUavMod.MOD_ID, "control").toString()));
     private static final net.vas.rdp.uav.flight.WingManFlightAdapter FLIGHT_ADAPTER =
             new net.vas.rdp.uav.flight.WingManFlightAdapter();
     private static final GuidedWeaponAdapter GUIDED_ADAPTER =
@@ -49,6 +57,116 @@ public final class RdpUavNetwork {
     private static boolean initialized;
 
     private RdpUavNetwork() { }
+
+    private static int encodedPayloadBytes(IMessage message) {
+        ByteBuf buffer = Unpooled.buffer();
+        try {
+            message.toBytes(buffer);
+            return buffer.readableBytes();
+        } finally {
+            buffer.release();
+        }
+    }
+
+    private static final class InstrumentedNetworkChannel {
+        private final SimpleNetworkWrapper delegate;
+
+        private InstrumentedNetworkChannel(SimpleNetworkWrapper delegate) {
+            this.delegate = delegate;
+        }
+
+        @SuppressWarnings("unchecked")
+        private <REQ extends IMessage, REPLY extends IMessage> void registerMessage(
+                Class<? extends IMessageHandler<REQ, REPLY>> handlerClass,
+                Class<REQ> requestMessageType, int discriminator, Side side) {
+            try {
+                RECEIVER_HANDLERS.put(requestMessageType, handlerClass.newInstance());
+            } catch (InstantiationException | IllegalAccessException failure) {
+                throw new IllegalStateException("Unable to create packet handler "
+                        + handlerClass.getName(), failure);
+            }
+            RECEIVER_SIDES.put(requestMessageType, side);
+            delegate.registerMessage((Class<? extends IMessageHandler<REQ, REPLY>>) (Class<?>)
+                    ReceiveInstrumentationHandler.class, requestMessageType, discriminator, side);
+        }
+
+        private void sendTo(IMessage message, EntityPlayerMP player) {
+            if (!DebugChannel.NETWORK.isEnabled()) {
+                delegate.sendTo(message, player);
+                return;
+            }
+            int payloadBytes = encodedPayloadBytes(message);
+            long startedAt = System.nanoTime();
+            delegate.sendTo(message, player);
+            DebugChannel.NETWORK.debug(DebugContext.none(),
+                    "PACKET_SEND_DISPATCH direction=server_to_client"
+                            + " type=" + message.getClass().getSimpleName()
+                            + " payload_bytes=" + payloadBytes
+                            + " dispatch_ms="
+                            + net.vas.rdp.uav.debug.ConsoleSink.formatDurationMillis(
+                            (System.nanoTime() - startedAt) / 1_000_000.0D));
+        }
+
+        private void sendToServer(IMessage message) {
+            if (!DebugChannel.NETWORK.isEnabled()) {
+                delegate.sendToServer(message);
+                return;
+            }
+            int payloadBytes = encodedPayloadBytes(message);
+            long startedAt = System.nanoTime();
+            delegate.sendToServer(message);
+            DebugChannel.NETWORK.debug(DebugContext.none(),
+                    "PACKET_SEND_DISPATCH direction=client_to_server"
+                            + " type=" + message.getClass().getSimpleName()
+                            + " payload_bytes=" + payloadBytes
+                            + " dispatch_ms="
+                            + net.vas.rdp.uav.debug.ConsoleSink.formatDurationMillis(
+                            (System.nanoTime() - startedAt) / 1_000_000.0D));
+        }
+    }
+
+    public static final class ReceiveInstrumentationHandler
+            implements IMessageHandler<IMessage, IMessage> {
+        public ReceiveInstrumentationHandler() { }
+
+        @Override
+        public IMessage onMessage(IMessage message, MessageContext context) {
+            boolean debugEnabled = DebugChannel.NETWORK.isEnabled();
+            int payloadBytes = debugEnabled ? encodedPayloadBytes(message) : 0;
+            long startedAt = debugEnabled ? System.nanoTime() : 0L;
+            Side receiverSide = RECEIVER_SIDES.get(message.getClass());
+            boolean returned = false;
+            try {
+                IMessageHandler<?, ?> handler = RECEIVER_HANDLERS.get(message.getClass());
+                if (handler == null) {
+                    throw new IllegalStateException("No packet handler registered for "
+                            + message.getClass().getName());
+                }
+                IMessage reply = invokeHandler(handler, message, context);
+                returned = true;
+                return reply;
+            } finally {
+                if (debugEnabled) {
+                    DebugChannel.NETWORK.debug(DebugContext.none(),
+                            "PACKET_RECEIVED direction="
+                                    + (receiverSide == Side.SERVER
+                                    ? "client_to_server" : "server_to_client")
+                                    + " type=" + message.getClass().getSimpleName()
+                                    + " payload_bytes=" + payloadBytes
+                                    + " handler_dispatch_ms="
+                                    + net.vas.rdp.uav.debug.ConsoleSink.formatDurationMillis(
+                                    (System.nanoTime() - startedAt) / 1_000_000.0D)
+                                    + " returned=" + returned);
+                }
+            }
+        }
+
+        @SuppressWarnings("unchecked")
+        private static <REQ extends IMessage, REPLY extends IMessage> REPLY invokeHandler(
+                IMessageHandler<?, ?> handler, IMessage message, MessageContext context) {
+            return ((IMessageHandler<REQ, REPLY>) handler).onMessage((REQ) message, context);
+        }
+    }
 
     public static void init() {
         if (initialized) return;
@@ -189,6 +307,14 @@ public final class RdpUavNetwork {
                                               net.vas.rdp.uav.designation.RejectReason reason,
                                               String detail) {
         if (player == null) return;
+        if (DebugChannel.DESIGNATION.isEnabled()) {
+            DebugChannel.DESIGNATION.warn(new DebugContext(null, null, null,
+                            player.getUniqueID().toString(),
+                            player.world == null ? 0 : player.dimension,
+                            player.world == null ? 0L : player.world.getTotalWorldTime()),
+                    "DESIGNATION_REJECTED source=" + source + " reason=" + reason
+                            + " detailLength=" + (detail == null ? 0 : detail.length()));
+        }
         CHANNEL.sendTo(new PacketDesignationReject(source, reason, detail,
                 player.world == null ? 0L : player.world.getTotalWorldTime()), player);
     }
@@ -196,6 +322,15 @@ public final class RdpUavNetwork {
     public static void notifyDesignationConfirm(EntityPlayerMP player,
                                                net.vas.rdp.uav.designation.Designation designation) {
         if (player == null || designation == null) return;
+        if (DebugChannel.DESIGNATION.isEnabled()) {
+            DebugChannel.DESIGNATION.info(new DebugContext(null, null, null,
+                            player.getUniqueID().toString(), designation.getDimension(),
+                            player.world == null ? 0L : player.world.getTotalWorldTime()),
+                    "DESIGNATION_ACCEPTED id=" + designation.getDesignationId()
+                            + " type=" + designation.getType()
+                            + " source=" + designation.getSource()
+                            + " confidence=" + designation.getConfidence());
+        }
         CHANNEL.sendTo(new PacketDesignationConfirm(designation.getDesignationId(),
                         designation.getType(), designation.getSource(),
                         designation.getPoint() != null ? designation.getPoint().x : 0D,
@@ -459,7 +594,20 @@ public final class RdpUavNetwork {
     }
 
     public static void syncTargetTelemetry(EntityPlayerMP player) {
-        CHANNEL.sendTo(TargetTelemetry.from(player), player);
+        TargetTelemetry telemetry = TargetTelemetry.from(player);
+        if (DebugChannel.TELEMETRY.isEnabled()) {
+            DebugChannel.TELEMETRY.debug(new DebugContext(
+                            telemetry.missionId.isEmpty() ? null : telemetry.missionId,
+                            null, telemetry.targetUuid.isEmpty() ? null : telemetry.targetUuid,
+                            player.getUniqueID().toString(), player.dimension,
+                            player.world.getTotalWorldTime()),
+                    "TELEMETRY_FRAME_SENT active=" + telemetry.active
+                            + " missionState="
+                            + net.vas.rdp.uav.debug.DebugText.safeValue(telemetry.missionState)
+                            + " targetState="
+                            + net.vas.rdp.uav.debug.DebugText.safeValue(telemetry.targetState));
+        }
+        CHANNEL.sendTo(telemetry, player);
     }
 
     public static void syncSwarmTelemetry(EntityPlayerMP player) {
@@ -3907,6 +4055,13 @@ public final class RdpUavNetwork {
                 }
                 Objects.requireNonNull(player.getServer()).getCommandManager().executeCommand(player,
                         "rdpuav mission square " + parameters);
+                if (DebugChannel.STRIKE.isEnabled()) {
+                    DebugChannel.STRIKE.info(new DebugContext(null,
+                                    aircraft.getUniqueID().toString(), null,
+                                    player.getUniqueID().toString(), player.dimension,
+                                    player.world.getTotalWorldTime()),
+                            "SQUARE_STRIKE_REQUEST_DISPATCHED parameters=" + parameters);
+                }
                 java.util.List<net.vas.rdp.uav.mission.RDPMission> missions =
                         net.vas.rdp.uav.persistence.RDPMissionWorldData.get(player.world)
                                 .getRepository().byOwner(player.getUniqueID());
@@ -4180,6 +4335,24 @@ public final class RdpUavNetwork {
                             message.classificationConfidence, message.classificationConflict);
                     net.vas.rdp.uav.client.RdpUavTargetHud.instance().receive(hud);
                 });
+                if (DebugChannel.TELEMETRY.isEnabled()) {
+                    DebugChannel.TELEMETRY.debug(new DebugContext(
+                                    message.missionId.isEmpty() ? null : message.missionId,
+                                    null, message.targetUuid.isEmpty() ? null : message.targetUuid,
+                                    null, message.dimension, 0L),
+                            "TELEMETRY_FRAME_RECEIVED active=" + message.active
+                                            + " missionState="
+                                            + net.vas.rdp.uav.debug.DebugText.safeValue(message.missionState)
+                                            + " targetState="
+                                            + net.vas.rdp.uav.debug.DebugText.safeValue(message.targetState));
+                }
+                if (DebugChannel.DATALINK.isEnabled()) {
+                    DebugChannel.DATALINK.debug(DebugContext.none(),
+                            "DATALINK_FRAME_RECEIVED mission=" + message.missionId
+                                    + " active=" + message.active
+                                    + " targetState="
+                                    + net.vas.rdp.uav.debug.DebugText.safeValue(message.targetState));
+                }
                 return null;
             }
         }

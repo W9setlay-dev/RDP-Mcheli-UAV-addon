@@ -16,6 +16,8 @@ import net.vas.rdp.uav.mission.MissionManager;
 import net.vas.rdp.uav.mission.MissionContext;
 import net.vas.rdp.uav.mission.MissionOrchestrator;
 import net.vas.rdp.uav.network.RdpUavNetwork;
+import net.vas.rdp.uav.debug.DebugChannel;
+import net.vas.rdp.uav.debug.DebugContext;
 
 /**
  * Forge entry point for the RDP UAV mission system.
@@ -214,6 +216,9 @@ public final class RDPUavMod {
     }
 
     private static final class ServerTickHandler {
+        private final java.util.Set<java.util.UUID> telemetrySubscribers =
+                new java.util.HashSet<>();
+
         @SubscribeEvent(priority = EventPriority.HIGHEST)
         public void onWorldTick(TickEvent.WorldTickEvent event) {
             if (event.world.isRemote) {
@@ -242,6 +247,14 @@ public final class RDPUavMod {
                     && event.world.getMinecraftServer() != null) {
                 for (EntityPlayer player : event.world.playerEntities) {
                     if (player instanceof EntityPlayerMP) {
+                        if (telemetrySubscribers.add(player.getUniqueID())
+                                && DebugChannel.TELEMETRY.isEnabled()) {
+                            DebugChannel.TELEMETRY.info(new DebugContext(null, null, null,
+                                            player.getUniqueID().toString(),
+                                            event.world.provider.getDimension(),
+                                            event.world.getTotalWorldTime()),
+                                    "TELEMETRY_SUBSCRIBE stream=target");
+                        }
                         RdpUavNetwork.syncTargetTelemetry((EntityPlayerMP) player);
                         RdpUavNetwork.syncSwarmTelemetry((EntityPlayerMP) player);
                         RdpUavNetwork.syncDesignationQueue((EntityPlayerMP) player);
@@ -254,6 +267,14 @@ public final class RDPUavMod {
         public void onPlayerLoggedOut(
                 net.minecraftforge.fml.common.gameevent.PlayerEvent.PlayerLoggedOutEvent event) {
             if (event.player == null || event.player.world == null || event.player.world.isRemote) return;
+            if (telemetrySubscribers.remove(event.player.getUniqueID())
+                    && DebugChannel.TELEMETRY.isEnabled()) {
+                DebugChannel.TELEMETRY.info(new DebugContext(null, null, null,
+                                event.player.getUniqueID().toString(),
+                                event.player.dimension,
+                                event.player.world.getTotalWorldTime()),
+                        "TELEMETRY_UNSUBSCRIBE stream=target reason=PLAYER_LOGOUT");
+            }
             RdpUavNetwork.clearDesignationRequests(event.player.getUniqueID());
             net.vas.rdp.uav.designation.DesignationWorldData data =
                     net.vas.rdp.uav.designation.DesignationWorldData.getIfPresent(event.player.world);

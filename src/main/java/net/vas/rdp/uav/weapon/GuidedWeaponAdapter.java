@@ -10,6 +10,8 @@ import net.minecraft.entity.Entity;
 import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.BlockPos;
 import net.vas.rdp.uav.RdpUavDebug;
+import net.vas.rdp.uav.debug.DebugChannel;
+import net.vas.rdp.uav.debug.DebugContext;
 import net.vas.rdp.uav.target.TargetPolicy;
 
 /**
@@ -78,6 +80,16 @@ public final class GuidedWeaponAdapter {
                     "weapon", selectedPriority, "reason", "NO_GUIDED_WEAPON");
             return GuidedWeaponDecision.reject("NO_GUIDED_WEAPON");
         }
+        if (DebugChannel.WEAPON.isEnabled()) {
+            DebugChannel.WEAPON.debug(new DebugContext(null,
+                            aircraft.getUniqueID().toString(),
+                            objective == null || objective.getContactId() == null ? null
+                                    : objective.getContactId().toString(),
+                            null, world.provider.getDimension(), world.getTotalWorldTime()),
+                    "WEAPON_SELECTED name="
+                            + net.vas.rdp.uav.debug.DebugText.safeValue(selectedPriority)
+                            + " directLaunch=" + directLaunch);
+        }
         GuidedWeaponDecision decision = validate(aircraft, objective, aircraftSpeed, selectedPriority);
         if (!decision.isAccepted()) {
             RdpUavDebug.debug("Guidance", "aircraft={} weapon={} objective={} decision={}",
@@ -93,6 +105,16 @@ public final class GuidedWeaponAdapter {
             return GuidedWeaponDecision.reject("UNSUPPORTED_GUIDANCE");
         }
         MCH_WeaponSet weapon = findWeapon(aircraft, decision.getWeapon());
+        if (DebugChannel.GUIDANCE.isEnabled()) {
+            DebugChannel.GUIDANCE.debug(new DebugContext(null,
+                            aircraft.getUniqueID().toString(),
+                            objective.getContactId() == null ? null
+                                    : objective.getContactId().toString(), null,
+                            world.provider.getDimension(), world.getTotalWorldTime()),
+                    "GUIDANCE_SOURCE_SELECTED source=" + capability.getBehavior()
+                            + " objective=" + objective.getType()
+                            + " directLaunch=" + directLaunch);
+        }
         boolean mcheliCanLoadChunk = GuidedChunkCapability.fromWeaponSet(weapon);
         boolean allowUnloadedTarget = GuidedChunkCapability.allowUnloadedTarget(
                 capability.supportsUnloadedTargetExecution(), mcheliCanLoadChunk);

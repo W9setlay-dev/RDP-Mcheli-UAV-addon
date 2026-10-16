@@ -25,6 +25,9 @@ import net.vas.rdp.uav.target.TargetSpec;
 import net.vas.rdp.uav.flight.WingManFlightAdapter;
 import net.vas.rdp.uav.profile.UavVehicleProfiles;
 import net.vas.rdp.uav.RdpUavDebug;
+import net.vas.rdp.uav.debug.DebugCommandService;
+import net.vas.rdp.uav.debug.DebugChannel;
+import net.vas.rdp.uav.debug.DebugContext;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
@@ -32,6 +35,8 @@ import java.util.UUID;
 import javax.annotation.Nonnull;
 
 public final class RdpUavCommand extends CommandBase {
+    private final DebugCommandService debugCommands = new DebugCommandService();
+
     @Override
     @Nonnull
     public String getName() {
@@ -41,7 +46,7 @@ public final class RdpUavCommand extends CommandBase {
     @Override
     @Nonnull
     public String getUsage(@NotNull ICommandSender sender) {
-        return "/rdpuav authorize | debug on|off|status|reload | swarm create <name> | swarm add <id> | swarm remove <id> <aircraft> | swarm pause|resume|disband <id> | swarm reform <id> <formation> | mission return | mission ...";
+        return "/rdpuav authorize | debug status|list|preset|channel|capture|dump|emergency|reload | swarm create <name> | swarm add <id> | swarm remove <id> <aircraft> | swarm pause|resume|disband <id> | swarm reform <id> <formation> | mission return | mission ...";
     }
 
     @Override
@@ -56,7 +61,35 @@ public final class RdpUavCommand extends CommandBase {
                     "pause", "resume", "reform", "disband", "status");
         }
         if (args.length == 2 && "debug".equalsIgnoreCase(args[0])) {
-            return getListOfStringsMatchingLastWord(args, "on", "off", "status", "reload", "mission");
+            return getListOfStringsMatchingLastWord(args, "on", "off", "status", "reload",
+                    "mission", "list", "preset", "channel", "capture", "dump", "emergency");
+        }
+        if (args.length == 3 && "debug".equalsIgnoreCase(args[0])
+                && "preset".equalsIgnoreCase(args[1])) {
+            return getListOfStringsMatchingLastWord(args, "OFF", "LIGHT", "MISSION",
+                    "NETWORK", "VISION", "FULL", "TRACE");
+        }
+        if (args.length == 3 && "debug".equalsIgnoreCase(args[0])
+                && "channel".equalsIgnoreCase(args[1])) {
+            java.util.ArrayList<String> ids = new java.util.ArrayList<>();
+            for (net.vas.rdp.uav.debug.DebugChannel channel
+                    : net.vas.rdp.uav.debug.DebugChannel.values()) {
+                ids.add(channel.getId());
+            }
+            return getListOfStringsMatchingLastWord(args, ids.toArray(new String[0]));
+        }
+        if (args.length == 4 && "debug".equalsIgnoreCase(args[0])
+                && "channel".equalsIgnoreCase(args[1])) {
+            return getListOfStringsMatchingLastWord(args, "on", "off", "level");
+        }
+        if (args.length == 5 && "debug".equalsIgnoreCase(args[0])
+                && "channel".equalsIgnoreCase(args[1])
+                && "level".equalsIgnoreCase(args[3])) {
+            return getListOfStringsMatchingLastWord(args, "TRACE", "DEBUG", "INFO", "WARN", "ERROR");
+        }
+        if (args.length == 3 && "debug".equalsIgnoreCase(args[0])
+                && "capture".equalsIgnoreCase(args[1])) {
+            return getListOfStringsMatchingLastWord(args, "start", "stop");
         }
         if (args.length == 2 && "mission".equalsIgnoreCase(args[0])) {
             return getListOfStringsMatchingLastWord(args, "create", "ai",
@@ -67,12 +100,20 @@ public final class RdpUavCommand extends CommandBase {
 
     @Override
     public void execute(@NotNull MinecraftServer server, @NotNull ICommandSender sender, String[] args) {
-        if (args.length >= 2 && "debug".equalsIgnoreCase(args[0])) {
+        if (DebugChannel.COMMAND.isEnabled()) {
+            DebugChannel.COMMAND.debug(DebugContext.none(),
+                    "COMMAND_ENTER root=rdpuav subcommand="
+                            + net.vas.rdp.uav.debug.DebugText.safeValue(
+                            args == null || args.length == 0 ? "none" : args[0])
+                            + " sender="
+                            + net.vas.rdp.uav.debug.DebugText.safeValue(sender.getName()));
+        }
+        if (args.length >= 1 && "debug".equalsIgnoreCase(args[0])) {
             if (!sender.canUseCommand(2, getName())) {
                 sender.sendMessage(new TextComponentString("Debug logging requires operator permission."));
                 return;
             }
-            handleDebug(sender, args);
+            handleDebug(server, sender, args);
             return;
         }
         if (!(sender instanceof EntityPlayer)) {
@@ -262,7 +303,12 @@ public final class RdpUavCommand extends CommandBase {
         }
     }
 
-    private void handleDebug(ICommandSender sender, String[] args) {
+    private void handleDebug(MinecraftServer server, ICommandSender sender, String[] args) {
+        if (args.length < 2) {
+            sender.sendMessage(new TextComponentString(
+                    "Usage: /rdpuav debug status|list|preset|channel|capture|dump|emergency|reload"));
+            return;
+        }
         String action = args[1];
         if ("mission".equalsIgnoreCase(action)) {
             if (args.length < 3) {
@@ -282,18 +328,11 @@ public final class RdpUavCommand extends CommandBase {
             sender.sendMessage(new TextComponentString("RDP UAV " + RdpUavDebug.status()));
             return;
         }
-        if ("on".equalsIgnoreCase(action)) {
-            RdpUavDebug.setEnabled(true);
-        } else if ("off".equalsIgnoreCase(action)) {
-            RdpUavDebug.setEnabled(false);
-        } else if ("reload".equalsIgnoreCase(action)) {
-            RdpUavDebug.reload();
-        } else if (!"status".equalsIgnoreCase(action)) {
-            sender.sendMessage(new TextComponentString(
-                    "Usage: /rdpuav debug on|off|status|reload"));
-            return;
+        String[] debugArguments = java.util.Arrays.copyOfRange(args, 1, args.length);
+        java.io.File logsDirectory = server.getFile("logs");
+        for (String line : debugCommands.execute(debugArguments, true, logsDirectory)) {
+            sender.sendMessage(new TextComponentString(line));
         }
-        sender.sendMessage(new TextComponentString("RDP UAV " + RdpUavDebug.status()));
     }
 
     private void authorize(EntityPlayer player) {

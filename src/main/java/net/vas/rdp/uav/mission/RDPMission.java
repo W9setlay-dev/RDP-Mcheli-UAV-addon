@@ -1,6 +1,8 @@
 package net.vas.rdp.uav.mission;
 
 import net.vas.rdp.uav.RdpUavDebug;
+import net.vas.rdp.uav.debug.DebugChannel;
+import net.vas.rdp.uav.debug.DebugContext;
 import net.vas.rdp.uav.flight.RouteProgressTracker;
 import net.vas.rdp.uav.target.TargetPriority;
 import net.vas.rdp.uav.target.TargetSelectionMode;
@@ -150,6 +152,15 @@ public final class RDPMission {
                 "dimension", dimension,
                 "target", targetId,
                 "reason", lastTransitionReason);
+        if (DebugChannel.MISSION.isEnabled()) {
+            DebugChannel.MISSION.debug(new DebugContext(missionId.toString(),
+                            aircraftId.toString(), targetId == null ? null : targetId.toString(),
+                            ownerId == null ? null : ownerId.toString(), dimension, tick),
+                    "MISSION_STATE_TRANSITION from=" + previousState + " to=" + nextState
+                            + " phase=" + phase + " controlOwner=" + controlOwner
+                            + " reason=" + net.vas.rdp.uav.debug.DebugText.safeValue(
+                            lastTransitionReason));
+        }
     }
 
     public void validateStateConsistency() {

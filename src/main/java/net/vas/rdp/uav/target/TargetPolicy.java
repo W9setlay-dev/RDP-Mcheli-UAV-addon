@@ -9,6 +9,8 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.RayTraceResult;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
+import net.vas.rdp.uav.debug.DebugChannel;
+import net.vas.rdp.uav.debug.DebugContext;
 import net.minecraftforge.common.config.Configuration;
 
 import java.io.File;
@@ -296,6 +298,13 @@ public final class TargetPolicy {
                             ? entity.dimension : world.provider.getDimension());
             boolean vehicle = TargetClassifier.isVehicleId(id);
             boolean hostile = classification.getClassification() == Classification.HOSTILE;
+            if (DebugChannel.FILTER.isEnabled()) {
+                DebugChannel.FILTER.debug(DebugContext.none(),
+                        "TARGET_CLASSIFIED registry=" + id
+                                + " classification=" + classification.getClassification()
+                                + " confidence=" + classification.getConfidence()
+                                + " vehicle=" + vehicle + " hostile=" + hostile);
+            }
             if (vehicle && !allowVehicleTargets) {
                 return Decision.reject(ResultCode.NOT_HOSTILE,
                         "HOSTILE_VEHICLES_DISABLED", classification);

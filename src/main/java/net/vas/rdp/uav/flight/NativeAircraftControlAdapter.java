@@ -10,6 +10,8 @@ import net.vas.rdp.uav.mission.RDPMission;
 import net.vas.rdp.uav.profile.UavVehicleProfile;
 import net.vas.rdp.uav.profile.UavVehicleProfiles;
 import net.vas.rdp.uav.RdpUavDebug;
+import net.vas.rdp.uav.debug.DebugChannel;
+import net.vas.rdp.uav.debug.DebugContext;
 
 /**
  * The single addon-owned MCheliCE movement boundary.
@@ -75,6 +77,22 @@ public final class NativeAircraftControlAdapter {
         if (tick % 20L == 0L) {
             OperatorTrimState.Snapshot trim = OperatorTrimRegistry.snapshot(
                     aircraft.getUniqueID(), mission.getMissionId(), tick);
+            if (DebugChannel.FLIGHT.isEnabled()) {
+                DebugChannel.FLIGHT.debug(new DebugContext(mission.getMissionId().toString(),
+                                aircraft.getUniqueID().toString(),
+                                mission.getTargetId() == null ? null
+                                        : mission.getTargetId().toString(),
+                                null, world.provider.getDimension(), tick),
+                        "COMMAND_APPLIED stage=" + mission.getExecutionStage()
+                                + " owner=" + mission.getControlOwner()
+                                + " profile=" + profile.getExecutionProfile()
+                                + " commandedYaw=" + command.getYaw()
+                                + " commandedPitch=" + command.getPitch()
+                                + " commandedRoll=" + command.getRoll()
+                                + " commandedThrottle=" + command.getThrottle()
+                                + " appliedYaw=" + yaw + " appliedPitch=" + pitch
+                                + " appliedRoll=" + roll + " appliedThrottle=" + throttle);
+            }
             RdpUavDebug.event("FlightControl", "COMMAND_APPLIED",
                     "mission", mission.getMissionId(), "aircraft", aircraft.getUniqueID(),
                     "stage", mission.getExecutionStage(), "owner", mission.getControlOwner(),

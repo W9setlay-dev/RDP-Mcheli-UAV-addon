@@ -6,6 +6,9 @@ import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import net.vas.rdp.uav.debug.DebugChannel;
+import net.vas.rdp.uav.debug.DebugContext;
+import net.vas.rdp.uav.debug.DebugTimer;
 
 /** Single client worker with one pending latest-frame slot and bounded pixel ownership. */
 final class VisionProcessingWorker {
@@ -132,6 +135,8 @@ final class VisionProcessingWorker {
             }
 
             long startedAt = System.nanoTime();
+            DebugTimer debugTimer = DebugChannel.VISION.isEnabled()
+                    ? DebugTimer.start() : null;
             String key = frame.getSourceId() + "\n" + frame.getCameraId();
             try {
                 if (!key.equals(trackerSource)) {
@@ -141,6 +146,23 @@ final class VisionProcessingWorker {
                 List<VisualDetection> detections = frameDetector.detect(frame);
                 List<PerceptionTracker.TrackView> tracks =
                         tracker.update(frame.getSequence(), detections);
+                double processingMillis = debugTimer == null
+                        ? Double.NaN : debugTimer.stopMillis();
+                if (debugTimer != null && frame.getSequence() % 25L == 0L) {
+                    DebugChannel.VISION.debug(DebugContext.none(),
+                            "INFERENCE_COMPLETE source="
+                                    + net.vas.rdp.uav.debug.DebugText.safeValue(
+                                    frame.getSourceId())
+                                    + " camera="
+                                    + net.vas.rdp.uav.debug.DebugText.safeValue(
+                                    frame.getCameraId())
+                                    + " sequence=" + frame.getSequence()
+                                    + " detections=" + detections.size()
+                                    + " tracks=" + tracks.size()
+                                    + " processing_ms="
+                                    + net.vas.rdp.uav.debug.ConsoleSink.formatDurationMillis(
+                                    processingMillis));
+                }
                 long publishedAt = System.nanoTime();
                 if (running && key.equals(activeSourceKey)) {
                     snapshot = new PerceptionSnapshot(PerceptionSnapshot.State.OPERATIONAL,
@@ -153,6 +175,16 @@ final class VisionProcessingWorker {
             } catch (RuntimeException failure) {
                 long failedAt = System.nanoTime();
                 LOGGER.log(Level.SEVERE, "Client visual perception frame failed", failure);
+                if (DebugChannel.VISION.isEnabled()
+                        || DebugChannel.VISION.isLevelEnabled(
+                        net.vas.rdp.uav.debug.DebugLevel.ERROR)) {
+                    DebugChannel.VISION.error(DebugContext.none(),
+                            "FRAME_PROCESSING_FAILED source="
+                                    + net.vas.rdp.uav.debug.DebugText.safeValue(
+                                    frame.getSourceId())
+                                    + " sequence=" + frame.getSequence()
+                                    + " reason=" + failure.getClass().getSimpleName(), failure);
+                }
                 if (running && key.equals(activeSourceKey)) {
                     snapshot = new PerceptionSnapshot(PerceptionSnapshot.State.DEGRADED,
                             frame.getSequence(), frame.getCapturedAtNanos(), failedAt,

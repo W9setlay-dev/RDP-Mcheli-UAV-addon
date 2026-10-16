@@ -12,6 +12,8 @@ import com.norwood.mcheli.weapon.MCH_WeaponSet;
 import net.minecraft.entity.Entity;
 import net.minecraft.world.World;
 import net.vas.rdp.uav.RdpUavDebug;
+import net.vas.rdp.uav.debug.DebugChannel;
+import net.vas.rdp.uav.debug.DebugContext;
 import net.vas.rdp.uav.energy.UavEnergyHandler;
 import net.vas.rdp.uav.deconfliction.TrajectorySample;
 import net.vas.rdp.uav.mission.MissionManager;
@@ -169,6 +171,17 @@ public final class WingManFlightAdapter {
         targetY = terrainPlan.getY();
         targetZ = terrainPlan.getZ();
         if (!terrainPlan.isSafe()) {
+            if (DebugChannel.TAWS.isEnabled()) {
+                DebugChannel.TAWS.warn(new DebugContext(mission.getMissionId().toString(),
+                                aircraft.getUniqueID().toString(),
+                                mission.getTargetId() == null ? null
+                                        : mission.getTargetId().toString(),
+                                null, world.provider.getDimension(), tick),
+                        "TERRAIN_HOLD reason=" + terrainPlan.getReason()
+                                + " agl=" + terrainPlan.getCurrentAgl()
+                                + " requestedY=" + baseTargetY
+                                + " safeY=" + targetY);
+            }
             RdpUavDebug.event("FlightControl", "TERRAIN_HOLD",
                     "mission", mission.getMissionId(), "aircraft", aircraft.getUniqueID(),
                     "tick", tick, "reason", terrainPlan.getReason(),
@@ -299,6 +312,13 @@ public final class WingManFlightAdapter {
                     entry.autoState,
                     targetX, targetY, targetZ, samples);
             routePaths.put(aircraftId, path);
+            if (DebugChannel.WAYPOINT.isEnabled()) {
+                DebugChannel.WAYPOINT.debug(DebugContext.of(mission.getMissionId().toString(),
+                                aircraftId.toString()),
+                        "ROUTE_PATH_RESOLVED nodeIndex=" + entry.missionIndex
+                                + " samples=" + samples.size()
+                                + " target=" + targetX + "," + targetY + "," + targetZ);
+            }
         }
         return path.sampleAhead(state.getX(), state.getZ());
     }
@@ -363,7 +383,14 @@ public final class WingManFlightAdapter {
         double minimum = profile.getMinimumExecutionAltitude() > 0D
                 ? profile.getMinimumExecutionAltitude() : 4D;
         double standoff = Math.max(8D, minimum);
-        return Math.max(targetY + standoff, minimum);
+        double resolvedY = Math.max(targetY + standoff, minimum);
+        if (DebugChannel.STANDOFF.isEnabled()) {
+            DebugChannel.STANDOFF.debug(DebugContext.of(null,
+                            aircraft == null ? null : aircraft.getUniqueID().toString()),
+                    "STANDOFF_RESOLVED targetY=" + targetY + " minimum=" + minimum
+                            + " distance=" + standoff + " resolvedY=" + resolvedY);
+        }
+        return resolvedY;
     }
 
     @SuppressWarnings("unused")
@@ -1076,6 +1103,12 @@ public final class WingManFlightAdapter {
         if (tracker == null) {
             tracker = new ContinuousTargetTracker(trackingParameters(aircraft));
             targetTrackers.put(aircraftId, tracker);
+            if (DebugChannel.GUIDANCE.isEnabled()) {
+                DebugChannel.GUIDANCE.debug(new DebugContext(null,
+                                aircraftId.toString(), target.getUniqueID().toString(),
+                                null, aircraft.world.provider.getDimension(), tick),
+                        "GUIDANCE_SOURCE_SELECTED source=moving_target_tracker");
+            }
         }
         ContinuousTargetTracker.Solution solution = tracker.update(tick,
                 aircraft.posX, aircraft.posY, aircraft.posZ,

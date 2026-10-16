@@ -9,6 +9,8 @@ import com.norwood.mcheli.uav.WidgetUavCameraFeed;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Gui;
 import net.vas.rdp.uav.RdpUavDebug;
+import net.vas.rdp.uav.debug.DebugChannel;
+import net.vas.rdp.uav.debug.DebugContext;
 import net.minecraftforge.client.event.RenderGameOverlayEvent;
 import net.minecraftforge.client.event.RenderWorldLastEvent;
 import net.minecraftforge.event.world.WorldEvent;
@@ -80,6 +82,12 @@ public final class VisionClientEvents {
             RdpUavDebug.event("Vision", "OBSERVATION_SESSION_STARTED",
                     "session", observation.snapshot().shortSessionId(),
                     "camera", cameraId, "source", "mcheli-uav-feed");
+            if (DebugChannel.VISION.isEnabled()) {
+                DebugChannel.VISION.debug(DebugContext.none(),
+                        "OBSERVATION_SESSION_STARTED session="
+                                + observation.snapshot().shortSessionId()
+                                + " camera=" + cameraId + " source=mcheli-uav-feed");
+            }
         }
         try {
             if (capture.capture(minecraft)) {
@@ -90,6 +98,11 @@ public final class VisionClientEvents {
                     RdpUavDebug.event("Vision", "FRAME_CAPTURE_ISSUED",
                             "session", session,
                             "sequence", sequence);
+                    if (DebugChannel.VISION.isEnabled()) {
+                        DebugChannel.VISION.debug(DebugContext.none(),
+                                "FRAME_CAPTURE_ISSUED session=" + session
+                                        + " sequence=" + sequence);
+                    }
                     loggedCaptureSession = session;
                 }
             } else {
@@ -102,6 +115,13 @@ public final class VisionClientEvents {
             RdpUavDebug.event("Vision", "CAPTURE_FAILED",
                     "session", observation.snapshot().shortSessionId(),
                     "reason", failure.getClass().getSimpleName());
+            if (DebugChannel.VISION.isEnabled()
+                    || DebugChannel.VISION.isLevelEnabled(
+                    net.vas.rdp.uav.debug.DebugLevel.ERROR)) {
+                DebugChannel.VISION.error(DebugContext.none(),
+                        "CAPTURE_FAILED session=" + observation.snapshot().shortSessionId()
+                                + " reason=" + failure.getClass().getSimpleName(), failure);
+            }
         }
     }
 
@@ -117,6 +137,11 @@ public final class VisionClientEvents {
             if (sessionWasActive) {
                 RdpUavDebug.event("Vision", "OBSERVATION_SESSION_STOPPED",
                         "session", session, "reason", "DISABLED");
+                if (DebugChannel.VISION.isEnabled()) {
+                    DebugChannel.VISION.info(DebugContext.none(),
+                            "OBSERVATION_SESSION_STOPPED session=" + session
+                                    + " reason=DISABLED");
+                }
             }
         }
         if (!hasGlContext()) return;
@@ -149,6 +174,11 @@ public final class VisionClientEvents {
             if (sessionWasActive) {
                 RdpUavDebug.event("Vision", "OBSERVATION_SESSION_STOPPED",
                         "session", session, "reason", "FEED_TIMEOUT");
+                if (DebugChannel.VISION.isEnabled()) {
+                    DebugChannel.VISION.info(DebugContext.none(),
+                            "OBSERVATION_SESSION_STOPPED session=" + session
+                                    + " reason=FEED_TIMEOUT");
+                }
             }
         }
     }
@@ -164,6 +194,11 @@ public final class VisionClientEvents {
             if (sessionWasActive) {
                 RdpUavDebug.event("Vision", "OBSERVATION_SESSION_STOPPED",
                         "session", session, "reason", "WORLD_UNLOAD");
+                if (DebugChannel.VISION.isEnabled()) {
+                    DebugChannel.VISION.info(DebugContext.none(),
+                            "OBSERVATION_SESSION_STOPPED session=" + session
+                                    + " reason=WORLD_UNLOAD");
+                }
             }
             resetGpuResources = true;
         }
@@ -415,12 +450,21 @@ public final class VisionClientEvents {
             long sequence = status.getProcessedSequence();
             if (!status.shortSessionId().equals(loggedResultSession)
                     || sequence % 25L == 0L) {
+                double processingMillis = state.getProcessingNanos() / 1_000_000.0D;
                 RdpUavDebug.event("Vision", "RESULT_PUBLISHED",
                         "session", status.shortSessionId(),
                         "sequence", sequence,
                         "tracks", state.getTracks().size(),
-                        "processing_ms", TimeUnit.NANOSECONDS.toMillis(
-                                state.getProcessingNanos()));
+                        "processing_ms", state.getProcessingNanos() / 1_000_000.0D);
+                if (DebugChannel.VISION.isEnabled()) {
+                    DebugChannel.VISION.debug(DebugContext.none(),
+                            "RESULT_PUBLISHED session=" + status.shortSessionId()
+                                    + " sequence=" + sequence
+                                    + " tracks=" + state.getTracks().size()
+                                    + " processing_ms="
+                                    + net.vas.rdp.uav.debug.ConsoleSink.formatDurationMillis(
+                                    processingMillis));
+                }
                 loggedResultSession = status.shortSessionId();
             }
         }
@@ -431,6 +475,12 @@ public final class VisionClientEvents {
                     "session", status.shortSessionId(),
                     "state", state.getState(),
                     "reason", state.getStatusReason());
+            if (DebugChannel.VISION.isEnabled()) {
+                DebugChannel.VISION.warn(DebugContext.none(),
+                        "PIPELINE_FAILURE session=" + status.shortSessionId()
+                                + " state=" + state.getState()
+                                + " reasonLength=" + state.getStatusReason().length());
+            }
             loggedFailureReason = state.getStatusReason();
         } else if (state.getState() == PerceptionSnapshot.State.OPERATIONAL) {
             loggedFailureReason = "";
@@ -448,6 +498,12 @@ public final class VisionClientEvents {
             RdpUavDebug.event("Vision", "OVERLAY_RENDERED",
                     "session", status.shortSessionId(),
                     "mode", mode, "sequence", status.getPresentedSequence());
+            if (DebugChannel.VISION.isEnabled()) {
+                DebugChannel.VISION.debug(DebugContext.none(),
+                        "OVERLAY_RENDERED session=" + status.shortSessionId()
+                                + " mode=" + mode + " sequence="
+                                + status.getPresentedSequence());
+            }
             loggedOverlaySession = status.shortSessionId();
             lastLoggedOverlaySequence = status.getPresentedSequence();
         } else if (status.getStage() == VisionObservationStatus.Stage.STATUS_ONLY
@@ -455,6 +511,12 @@ public final class VisionClientEvents {
             RdpUavDebug.event("Vision", "OVERLAY_STATUS_RENDERED",
                     "session", status.shortSessionId(), "mode", mode,
                     "pipeline", status.getPipelineState());
+            if (DebugChannel.VISION.isEnabled()) {
+                DebugChannel.VISION.debug(DebugContext.none(),
+                        "OVERLAY_STATUS_RENDERED session=" + status.shortSessionId()
+                                + " mode=" + mode + " pipeline="
+                                + status.getPipelineState());
+            }
             loggedOverlaySession = status.shortSessionId();
         }
     }

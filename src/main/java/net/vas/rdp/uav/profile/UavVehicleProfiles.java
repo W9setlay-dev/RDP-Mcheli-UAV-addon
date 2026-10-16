@@ -1,15 +1,22 @@
 package net.vas.rdp.uav.profile;
 
 import net.minecraftforge.common.config.Configuration;
+import net.vas.rdp.uav.debug.DebugChannel;
+import net.vas.rdp.uav.debug.DebugContext;
 import java.io.File;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
 
 /** Explicit McHeli definition to RDP execution-policy mapping. */
 public final class UavVehicleProfiles {
     private static final Map<String, UavVehicleProfile> profiles =
             new HashMap<>();
+    private static final Set<String> reportedFallbacks =
+            Collections.synchronizedSet(new HashSet<String>());
     private static final UavVehicleProfile UNKNOWN = new UavVehicleProfile(
             UavExecutionProfile.UNKNOWN, 0, 0, buildLimit(), 0, false, "NONE",
             256, 256, 64);
@@ -17,10 +24,12 @@ public final class UavVehicleProfiles {
     private UavVehicleProfiles() { }
 
     public static void load(File configDir) {
-        Configuration config = new Configuration(new File(configDir, "rdp-uav-vehicles.cfg"));
+        File profileFile = new File(configDir, "rdp-uav-vehicles.cfg");
+        Configuration config = new Configuration(profileFile);
         config.load();
         ensureDefaults(config);
         profiles.clear();
+        reportedFallbacks.clear();
         for (String category : config.getCategoryNames()) {
             if (!category.startsWith("vehicle.")) continue;
             String definition = normalize(category.substring("vehicle.".length()));
@@ -112,6 +121,15 @@ public final class UavVehicleProfiles {
             }
         }
         if (config.hasChanged()) config.save();
+        if (DebugChannel.CONFIG.isEnabled()) {
+            DebugChannel.CONFIG.info(DebugContext.none(),
+                    "VEHICLE_PROFILES_LOADED definitions=" + profiles.size()
+                            + " config=" + profileFile.getName());
+        }
+        if (DebugChannel.JOURNEYMAP.isEnabled()) {
+            DebugChannel.JOURNEYMAP.info(DebugContext.none(),
+                    "WAYPOINT_BRIDGE_STATUS=UNAVAILABLE adapter=not_present");
+        }
     }
 
     private static void ensureDefaults(Configuration config) {
@@ -163,13 +181,32 @@ public final class UavVehicleProfiles {
         UavVehicleProfile profile = profiles.get(normalize(definition));
         String normalized = normalize(definition);
         if (profile == null && normalized.contains("fpv")) {
+            if (DebugChannel.PROFILE.isEnabled() && reportedFallbacks.add(normalized)) {
+                DebugChannel.PROFILE.warn(DebugContext.none(),
+                        "PROFILE_FALLBACK definition="
+                                + net.vas.rdp.uav.debug.DebugText.safeValue(normalized)
+                                + " profile=HELICOPTER_ONE_WAY_FPV source=built_in_fpv_rule");
+            }
             return new UavVehicleProfile(UavExecutionProfile.HELICOPTER_ONE_WAY_FPV, 8, 4, 32,
                     6, false, "SELF_DESTRUCT");
         }
         if (profile == null && (normalized.contains("shahed")
                 || normalized.contains("switchblade") || normalized.equals("zala421"))) {
+            if (DebugChannel.PROFILE.isEnabled() && reportedFallbacks.add(normalized)) {
+                DebugChannel.PROFILE.warn(DebugContext.none(),
+                        "PROFILE_FALLBACK definition="
+                                + net.vas.rdp.uav.debug.DebugText.safeValue(normalized)
+                                + " profile=ONE_WAY source=built_in_definition_rule");
+            }
             return new UavVehicleProfile(UavExecutionProfile.ONE_WAY, 32, 8, 128,
                     4, false, "SELF_DESTRUCT");
+        }
+        if (profile == null && DebugChannel.PROFILE.isEnabled()
+                && reportedFallbacks.add(normalized)) {
+            DebugChannel.PROFILE.warn(DebugContext.none(),
+                    "PROFILE_FALLBACK definition="
+                            + net.vas.rdp.uav.debug.DebugText.safeValue(normalized)
+                            + " profile=UNKNOWN");
         }
         return profile == null ? UNKNOWN : profile;
     }

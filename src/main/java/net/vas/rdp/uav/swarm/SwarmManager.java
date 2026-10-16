@@ -22,6 +22,8 @@ import net.vas.rdp.uav.mission.MissionValidationResult;
 import net.vas.rdp.uav.mission.UavControlAccess;
 import net.vas.rdp.uav.target.TargetPriority;
 import net.vas.rdp.uav.target.TargetSpec;
+import net.vas.rdp.uav.debug.DebugChannel;
+import net.vas.rdp.uav.debug.DebugContext;
 import org.jetbrains.annotations.NotNull;
 
 /** Server-side swarm aggregate; individual missions remain MissionManager-owned. */
@@ -388,6 +390,12 @@ public final class SwarmManager {
         SwarmRecord record = find(world, id);
         if (world == null || world.isRemote || !owns(record, owner) || formation == null
                 || record.getState() == SwarmState.DISBANDED) return false;
+        if (DebugChannel.FORMATION.isEnabled()) {
+            DebugChannel.FORMATION.debug(new DebugContext(null, null, null,
+                            owner == null ? null : owner.toString(),
+                            world.provider.getDimension(), world.getTotalWorldTime()),
+                    "FORMATION_REFORM swarm=" + id + " formation=" + formation);
+        }
         record.setFormation(formation);
         reconcileFormation(record);
         propagateFormation(world, record);
@@ -838,6 +846,14 @@ public final class SwarmManager {
         java.util.List<net.vas.rdp.uav.deconfliction.Conflict> conflicts =
                 deconflictionService().detectConflicts(trajectories);
         airspaceConflicts.put(swarm.getSwarmId(), conflicts);
+        if (DebugChannel.DECONFLICTION.isEnabled() && !conflicts.isEmpty()) {
+            DebugChannel.DECONFLICTION.warn(new DebugContext(null, null, null,
+                            swarm.getOwnerId() == null ? null : swarm.getOwnerId().toString(),
+                            world.provider.getDimension(), tick),
+                    "CONFLICTS_DETECTED swarm=" + swarm.getSwarmId()
+                            + " trajectories=" + trajectories.size()
+                            + " conflicts=" + conflicts.size());
+        }
         java.util.Set<String> current = new java.util.HashSet<>();
         net.minecraft.entity.player.EntityPlayerMP owner =
                 onlineOwner(world, swarm.getOwnerId());

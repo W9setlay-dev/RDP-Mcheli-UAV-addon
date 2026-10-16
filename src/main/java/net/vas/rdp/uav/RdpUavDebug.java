@@ -1,6 +1,7 @@
 package net.vas.rdp.uav;
 
 import net.minecraftforge.common.config.Configuration;
+import net.vas.rdp.uav.debug.DebugConfig;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -21,6 +22,7 @@ public final class RdpUavDebug {
     private static volatile boolean enabled;
     private static volatile boolean missionDiagnostics;
     private static volatile File configFile;
+    private static volatile DebugConfig frameworkConfig;
 
     private RdpUavDebug() { }
 
@@ -41,6 +43,7 @@ public final class RdpUavDebug {
                 "Enable bounded mission lifecycle, route, target, and vehicle telemetry.");
         if (config.hasChanged()) config.save();
         configFile = file;
+        frameworkConfig = DebugConfig.load(configDir);
         LOGGER.info("Debug logging initialized: enabled={} config={}", enabled, file.getPath());
     }
 
@@ -56,6 +59,29 @@ public final class RdpUavDebug {
      */
     public static boolean isMissionDiagnosticsEnabled() {
         return missionDiagnostics;
+    }
+
+    /**
+     * @return the loaded framework configuration, or {@code null} before pre-initialization
+     */
+    public static DebugConfig getFrameworkConfig() {
+        return frameworkConfig;
+    }
+
+    public static File getConfigDirectory() {
+        File file = configFile;
+        return file == null ? null : file.getParentFile();
+    }
+
+    public static synchronized DebugConfig applyPreset(DebugConfig.Preset preset) {
+        File directory = getConfigDirectory();
+        if (directory == null) {
+            throw new IllegalStateException("Debug config is not loaded.");
+        }
+        DebugConfig applied = DebugConfig.applyPreset(directory, preset);
+        frameworkConfig = applied;
+        setEnabled(preset != DebugConfig.Preset.OFF);
+        return applied;
     }
 
     /**
